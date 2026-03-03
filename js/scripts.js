@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v247"; // v247: адрес регион+город (parseAddressFromGeoObject_), дом необязателен; подсказки через бесплатный geocode // v246: подсказки в модалке — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v248"; // v248: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -4400,14 +4400,14 @@ whenYmapsReady(() => {
 });
 
 // Общая логика подсказок адреса для трёх полей (регион+город → улица → дом). Используется в форме заказа и в модалке редактирования.
-// Разбор по запятым (fallback когда нет структуры от геокодера).
+// Разбор по запятым (fallback когда нет структуры от геокодера). Два фрагмента = регион+город (оба в part1), не улица.
 function parseAddressToParts_(fullAddress) {
     const parts = fullAddress.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
     if (parts.length >= 3) {
         return { part1: parts.slice(0, -2).join(', '), part2: parts[parts.length - 2], part3: parts[parts.length - 1] };
     }
     if (parts.length === 2) {
-        return { part1: parts[0], part2: parts[1], part3: '' };
+        return { part1: parts.join(', '), part2: '', part3: '' };
     }
     if (parts.length === 1) {
         return { part1: parts[0], part2: '', part3: '' };
@@ -5500,17 +5500,17 @@ function fillEditOrderForm(order) {
     setEditOrderFieldValue('edit-order-delivery-date', displayDate);
 
     var addr = (order.delivery_address || '').trim();
-    var parts = addr ? addr.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
-    setEditOrderFieldValue('edit-order-address-part1', parts[0] || '');
-    setEditOrderFieldValue('edit-order-address-part2', parts[1] || '');
-    setEditOrderFieldValue('edit-order-address-part3', parts.slice(2).join(', ') || '');
+    var parsedAddr = addr ? parseAddressToParts_(addr) : { part1: '', part2: '', part3: '' };
+    setEditOrderFieldValue('edit-order-address-part1', parsedAddr.part1 || '');
+    setEditOrderFieldValue('edit-order-address-part2', parsedAddr.part2 || '');
+    setEditOrderFieldValue('edit-order-address-part3', parsedAddr.part3 || '');
     var noPlotEl = document.getElementById('edit-order-no-plot');
     if (noPlotEl) noPlotEl.checked = !!(addr && addr.toLowerCase().indexOf('без номера') !== -1);
 
     setEditOrderSelectValue('edit-order-source', order.source || '');
     setEditOrderFieldValue('edit-order-comment', order.comment || '');
 
-    var orderCity = (order.city || '').trim() || (parts[0] || '').trim();
+    var orderCity = (order.city || '').trim() || (parsedAddr.part1 || '').trim();
     editOrderComposition = [];
     editOrderDeliveryCost = typeof order.delivery_cost === 'number' ? order.delivery_cost : (parseInt(order.delivery_cost, 10) || 0);
     if (order.line_items && typeof order.line_items === 'string') {
@@ -12804,27 +12804,17 @@ document.addEventListener('click', function(e) {
 });
 
 /** Подставить адрес доставки из поля калькулятора в 3 поля формы (можно потом править вручную) */
+/** Копирует адрес из поля «Введите адрес доставки» в три поля оформления. Та же логика разбора, что и везде: два фрагмента → регион+город (part1). */
 function syncOrderFormAddressFromCalculator() {
     const raw = document.getElementById('address')?.value?.trim() || '';
     const p1 = document.getElementById('order-address-part1');
     const p2 = document.getElementById('order-address-part2');
     const p3 = document.getElementById('order-address-part3');
     if (!p1 || !p2 || !p3) return;
-
-    const parts = raw.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-    if (parts.length >= 3) {
-        p3.value = parts.pop();
-        p2.value = parts.pop();
-        p1.value = parts.join(', ');
-    } else if (parts.length === 2) {
-        p2.value = parts.pop();
-        p1.value = parts[0];
-        if (!p3.value) p3.value = '';
-    } else if (parts.length === 1) {
-        p1.value = parts[0];
-        if (!p2.value) p2.value = '';
-        if (!p3.value) p3.value = '';
-    }
+    var parsed = parseAddressToParts_(raw);
+    p1.value = parsed.part1;
+    p2.value = parsed.part2;
+    p3.value = parsed.part3;
 }
 
 /** "15.02" или "15.02.2026" -> "2026-02-15" */
