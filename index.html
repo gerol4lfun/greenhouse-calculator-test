@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Калькулятор доставки и стоимости теплиц</title>
+  
+  <!-- Favicon - иконка калькулятора -->
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="shortcut icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+  
+  <!-- Кеш как обычно; при обновлении цен поднимаем ?v= в ссылках ниже и говорим менеджерам «перезайдите в калькулятор» -->
+  <meta http-equiv="Cache-Control" content="public, max-age=31536000">
+  <meta http-equiv="Expires" content="31536000">
+  
+  <!-- Яндекс.Карты -->
+  <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" type="text/javascript"></script>
+  <!-- Supabase JavaScript SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js"></script>
+  
+  <!-- cache-bust: Safari иногда держит старые стили, поэтому версия должна меняться при правках -->
+    <link rel="stylesheet" href="css/styles.css?v=231">
+</head>
+  <body>
+    <!-- Контейнер для уведомлений -->
+    <div id="toast-container" class="toast-container"></div>
+  <!-- Модальное окно FAQ (в начале body для гарантированного отображения) -->
+  <div class="faq-modal hidden" id="faq-modal">
+    <div class="faq-modal-content">
+      <div class="faq-modal-header">
+        <h2><img src="icons/faq.png" alt="" class="icon-img"> FAQ - Часто задаваемые вопросы</h2>
+        <button class="close-modal-button" onclick="closeFAQModal()">×</button>
+      </div>
+      <div class="faq-modal-body">
+        <div class="faq-search-box">
+          <input type="text" id="faq-search-input" placeholder="Поиск по вопросам..." oninput="filterFAQ()">
+        </div>
+        <div id="faq-content">
+          <!-- FAQ будет добавлен через JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно с датами доставки (в начале body для гарантированного отображения) -->
+  <div class="delivery-dates-modal hidden" id="delivery-dates-modal">
+    <div class="delivery-dates-modal-content">
+      <div class="delivery-dates-modal-header">
+        <h2><img src="icons/calendar.png" alt="" class="icon-img"> Актуальные даты доставки по городам</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="close-modal-button" onclick="closeDeliveryDatesModal()">×</button>
+        </div>
+      </div>
+      <div class="delivery-dates-modal-body">
+        <div id="delivery-dates-loading" style="text-align: center; padding: 20px;">
+          Загрузка данных...
+        </div>
+        <div id="delivery-dates-content" style="display: none;">
+          <input type="text" id="delivery-dates-search" placeholder="Поиск по городу..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
+          <div id="delivery-dates-table-container" style="max-height: 500px; overflow-y: auto;">
+            <!-- Таблица будет добавлена через JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно выбора грядок (в начале body для гарантированного отображения) -->
+  <div class="beds-modal hidden" id="beds-modal">
+    <div class="beds-modal-content">
+      <div class="beds-modal-header">
+        <h2><img src="icons/plant.png" alt="" class="icon-img"> Выбор грядок</h2>
+        <button class="close-modal-button" onclick="closeBedsModal()">×</button>
+      </div>
+      <div class="beds-modal-body">
+        <div id="beds-selection">
+          <!-- Грядки будут добавлены через JavaScript -->
+        </div>
+        <div class="beds-assembly-option" style="padding: 15px; border-top: 1px solid #e0e0e0; margin-top: 20px;">
+          <label style="display: flex; align-items: center; cursor: pointer; gap: 10px;">
+            <input type="checkbox" id="beds-assembly-checkbox" style="width: 20px; height: 20px; cursor: pointer;">
+            <span style="font-size: 16px; font-weight: 500;">Добавить сборку грядок</span>
+          </label>
+          <div id="beds-assembly-price" style="margin-top: 8px; margin-left: 30px; color: #666; font-size: 14px;">
+            <!-- Цена будет показана динамически -->
+          </div>
+        </div>
+        <div class="beds-modal-footer">
+          <button class="beds-apply-btn" onclick="applyBedsSelection()">Применить</button>
+          <button class="beds-cancel-btn" onclick="closeBedsModal()">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно «Редактирование заказа» (заготовка) -->
+  <div class="edit-order-modal hidden" id="edit-order-modal" role="dialog" aria-modal="true" aria-labelledby="edit-order-modal-title">
+    <div class="edit-order-modal-content">
+      <div class="edit-order-modal-header">
+        <h2 id="edit-order-modal-title">
+          <img src="icons/edit-order-icon-edit.png" alt="" class="icon-img edit-order-modal-icon-img" aria-hidden="true">
+          Редактирование заказа
+        </h2>
+        <button class="close-modal-button" onclick="requestCloseEditOrderModal()">×</button>
+      </div>
+        <div class="edit-order-modal-body" id="edit-order-modal-body" data-step="1">
+        <!-- Шаг 1: поиск и список -->
+        <div class="edit-order-step" id="edit-order-step1">
+          <label for="edit-order-phone">Телефон клиента</label>
+          <div class="edit-order-search-row">
+            <input type="text" id="edit-order-phone" placeholder="Например: 7 921 123-45-67" autocomplete="off">
+            <button type="button" id="edit-order-search-btn" class="green-button edit-order-btn-with-icon"><img src="icons/edit-order-icon-search.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Найти</button>
+          </div>
+          <p id="edit-order-search-hint" class="edit-order-hint" style="display: none;"></p>
+          <div id="edit-order-list" class="edit-order-list">
+            <p class="edit-order-list-placeholder">Введите телефон и нажмите «Найти».</p>
+          </div>
+        </div>
+        <!-- Шаг 2: форма редактирования заказа -->
+        <div class="edit-order-step edit-order-step2" id="edit-order-step2">
+          <div class="edit-order-form">
+            <section class="edit-order-form-section" aria-labelledby="edit-order-section-contacts">
+              <h3 id="edit-order-section-contacts" class="edit-order-form-section-title">Контакты</h3>
+              <div class="edit-order-field" id="eo-name">
+                <label for="edit-order-client-name">Имя клиента *</label>
+                <input type="text" id="edit-order-client-name" placeholder="Иван" tabindex="1">
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="edit-order-field" id="eo-phone">
+                <label for="edit-order-client-phone">Телефон *</label>
+                <input type="text" id="edit-order-client-phone" placeholder="7 921 123-45-67" autocomplete="off" tabindex="2">
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+            </section>
+            <section class="edit-order-form-section" aria-labelledby="edit-order-section-delivery">
+              <h3 id="edit-order-section-delivery" class="edit-order-form-section-title">Доставка</h3>
+              <div class="edit-order-field" id="eo-date">
+                <label for="edit-order-delivery-date">Дата доставки *</label>
+                <input type="text" id="edit-order-delivery-date" placeholder="ДД.ММ.ГГГГ" tabindex="3">
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="edit-order-field" id="eo-addr1">
+                <label for="edit-order-address-part1">Регион, город *</label>
+                <input type="text" id="edit-order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" tabindex="4">
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="edit-order-field" id="eo-addr2">
+                <label for="edit-order-address-part2">Улица *</label>
+                <input type="text" id="edit-order-address-part2" placeholder="Невский пр." tabindex="5">
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="edit-order-field" id="eo-addr3">
+                <label for="edit-order-address-part3">Дом, участок *</label>
+                <input type="text" id="edit-order-address-part3" placeholder="д. 5, участок 12" tabindex="6">
+                <label class="edit-order-checkbox-label"><input type="checkbox" id="edit-order-no-plot"> Без номера участка</label>
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+            </section>
+            <section class="edit-order-form-section" aria-labelledby="edit-order-section-context">
+              <h3 id="edit-order-section-context" class="edit-order-form-section-title">Контекст заказа</h3>
+              <div class="edit-order-field" id="eo-source">
+                <label for="edit-order-source">Магазин на Авито *</label>
+                <select id="edit-order-source" tabindex="7">
+                  <option value="">— Выберите —</option>
+                  <option value="Строй Мир">Строй Мир</option>
+                  <option value="Дачные решения">Дачные решения</option>
+                  <option value="Конструктивные решения">Конструктивные решения</option>
+                </select>
+                <span class="edit-order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="edit-order-field" id="eo-comment">
+                <label for="edit-order-comment">Комментарий <span class="edit-order-field-optional">(необязательно)</span></label>
+                <textarea id="edit-order-comment" rows="3" placeholder="Дополнительная информация..." tabindex="8"></textarea>
+              </div>
+              <div class="edit-order-field edit-order-composition-block" id="eo-composition">
+              <div class="edit-order-composition-block__title">Состав заказа</div>
+              <div id="edit-order-composition-list" class="edit-order-composition-list" aria-live="polite"></div>
+              <p id="edit-order-composition-empty" class="edit-order-composition-empty">Добавьте хотя бы одну позицию.</p>
+              <div class="edit-order-composition-footer">
+                <span id="edit-order-composition-total" class="edit-order-composition-total-row" aria-live="polite"></span>
+                <button type="button" id="edit-order-add-item-btn" class="edit-order-add-item-btn">+ Добавить теплицу</button>
+              </div>
+              <div id="edit-order-add-item-panel" class="edit-order-add-item-panel hidden">
+                <div class="edit-order-add-item-panel__title">Параметры теплицы</div>
+                <p id="edit-order-add-catalog-hint" class="edit-order-add-catalog-hint hidden" aria-live="polite"></p>
+                <div class="edit-order-add-params-grid">
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-form">Модель (форма)</label>
+                    <select id="edit-order-add-form"><option value="">— Выберите модель —</option></select>
+                  </div>
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-width">Ширина, м</label>
+                    <select id="edit-order-add-width"><option value="">— Сначала модель —</option></select>
+                  </div>
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-length">Длина, м</label>
+                    <select id="edit-order-add-length"><option value="">— Сначала ширину —</option></select>
+                  </div>
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-frame">Каркас</label>
+                    <select id="edit-order-add-frame"><option value="">— Сначала длину —</option></select>
+                  </div>
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-arcStep">Шаг дуг, м</label>
+                    <select id="edit-order-add-arcStep"><option value="">—</option><option value="1">1</option><option value="0.65">0.65</option></select>
+                  </div>
+                  <div class="edit-order-add-item-row">
+                    <label for="edit-order-add-polycarbonate">Поликарбонат</label>
+                    <select id="edit-order-add-polycarbonate"><option value="">— Выберите поликарбонат —</option></select>
+                  </div>
+                </div>
+                <div class="edit-order-add-options-section">
+                  <div class="edit-order-add-item-row edit-order-add-options-title">Допы и сборка</div>
+                  <div class="edit-order-add-checkbox-group-inline" role="group" aria-label="Допы и сборка">
+                    <div class="edit-order-add-item-row edit-order-add-checkbox-row">
+                      <label for="edit-order-add-bracing">Брус</label>
+                      <input type="checkbox" id="edit-order-add-bracing">
+                    </div>
+                    <div class="edit-order-add-item-row edit-order-add-checkbox-row">
+                      <label for="edit-order-add-assembly">Сборка</label>
+                      <input type="checkbox" id="edit-order-add-assembly">
+                    </div>
+                    <div class="edit-order-add-item-row edit-order-add-checkbox-row">
+                      <label for="edit-order-add-ground-hooks">Штыри</label>
+                      <input type="checkbox" id="edit-order-add-ground-hooks">
+                    </div>
+                  </div>
+                  <div class="edit-order-add-item-row edit-order-add-options-title">Монтаж на фундамент</div>
+                  <div class="edit-order-add-checkbox-group-inline" role="group" aria-label="Монтаж на фундамент">
+                    <div class="edit-order-add-item-row edit-order-add-checkbox-row">
+                      <label for="edit-order-add-on-wood">На брус 1 500 ₽</label>
+                      <input type="checkbox" id="edit-order-add-on-wood" data-price="1500">
+                    </div>
+                    <div class="edit-order-add-item-row edit-order-add-checkbox-row">
+                      <label for="edit-order-add-on-concrete">На бетон 2 000 ₽</label>
+                      <input type="checkbox" id="edit-order-add-on-concrete" data-price="2000">
+                    </div>
+                  </div>
+                  <div class="edit-order-add-item-row edit-order-add-options-title">Дополнительные товары</div>
+                  <div class="edit-order-add-products edit-order-add-item-row" role="list">
+                    <div class="edit-order-add-products-header" aria-hidden="true">
+                      <span class="edit-order-add-products-header__name">Товар</span>
+                      <span class="edit-order-add-products-header__qty">Количество</span>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-drip-irrigation-mech-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Капельный полив мех.</span></label>
+                      <select id="edit-order-add-drip-irrigation-mech-qty" data-price="1690" aria-label="Количество: Капельный полив мех."><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-drip-irrigation-auto-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Капельный полив авт.</span></label>
+                      <select id="edit-order-add-drip-irrigation-auto-qty" data-price="4490" aria-label="Количество: Капельный полив авт."><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-window-automation-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Автомат для форточки</span></label>
+                      <select id="edit-order-add-window-automation-qty" data-price="2590" aria-label="Количество: Автомат для форточки"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-additional-window-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Доп. форточка</span></label>
+                      <select id="edit-order-add-additional-window-qty" data-price="1490" aria-label="Количество: Доп. форточка"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-galvanized-tape-30m-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Лента оцинк. 30 м</span></label>
+                      <select id="edit-order-add-galvanized-tape-30m-qty" data-price="1990" aria-label="Количество: Лента оцинк. 30 м"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                    <div class="edit-order-add-product-item" role="listitem">
+                      <label for="edit-order-add-vapor-permeable-tape-25m-qty" class="edit-order-add-product-label"><span class="edit-order-add-product-name">Лента паропроп. 25 м</span></label>
+                      <select id="edit-order-add-vapor-permeable-tape-25m-qty" data-price="1590" aria-label="Количество: Лента паропроп. 25 м"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
+                    </div>
+                  </div>
+                </div>
+                <div class="edit-order-add-item-row edit-order-add-item-row--actions">
+                  <button type="button" id="edit-order-add-calc-btn" class="edit-order-add-calc-btn">Рассчитать</button>
+                  <span id="edit-order-add-price" class="edit-order-add-price"></span>
+                </div>
+                <div id="edit-order-add-breakdown" class="edit-order-add-breakdown hidden" aria-live="polite"></div>
+                <div class="edit-order-add-item-row edit-order-add-item-row--commit" role="group" aria-label="Действия с позицией">
+                  <button type="button" id="edit-order-add-cancel-btn" class="edit-order-add-cancel-btn edit-order-btn-secondary">Закрыть</button>
+                  <span class="edit-order-add-primary-actions">
+                    <button type="button" id="edit-order-add-confirm-btn" class="green-button edit-order-add-confirm-btn hidden" title="Добавить эту теплицу в состав заказа">Добавить в заказ</button>
+                    <button type="button" id="edit-order-save-position-btn" class="green-button edit-order-add-save-btn hidden" title="Сохранить изменения в этой позиции">Сохранить изменения</button>
+                  </span>
+                </div>
+              </div>
+              <span class="edit-order-validation-msg" aria-live="polite"></span>
+            </div>
+            <div id="edit-order-gifts-field" class="edit-order-field edit-order-gifts-field" style="display: none;">
+              <label for="edit-order-gift">Подарки <span class="edit-order-field-optional">(необязательно)</span></label>
+              <div id="edit-order-gifts-block" class="edit-order-gifts-block" style="display: none;">
+                <div id="edit-order-gifts-info" class="edit-order-gifts-info"></div>
+                <div id="edit-order-gifts-selection" class="edit-order-gifts-selection"></div>
+              </div>
+              <input type="text" id="edit-order-gift" placeholder="Подарки от суммы заказа (необязательно)" class="edit-order-gift-input" tabindex="9" autocomplete="off">
+              <p id="edit-order-gift-hint" class="edit-order-gift-hint" aria-live="polite"></p>
+            </div>
+            </section>
+          </div>
+          <p id="edit-order-form-hint" class="edit-order-hint" style="display: none;"></p>
+          <div class="edit-order-step2-actions">
+            <div class="edit-order-step2-actions__left">
+              <button type="button" id="edit-order-undo-btn" class="edit-order-btn-secondary edit-order-btn-with-icon" title="Отменить последнее действие"><span class="edit-order-undo-icon" aria-hidden="true">↩</span>Вернуть</button>
+              <button type="button" id="edit-order-redo-btn" class="edit-order-btn-secondary edit-order-btn-with-icon" title="Вернуть отменённое действие вперёд"><span class="edit-order-redo-icon" aria-hidden="true">↪</span>Вперёд</button>
+            </div>
+            <button type="button" id="edit-order-save-btn" class="green-button edit-order-btn-with-icon" tabindex="10"><img src="icons/edit-order-icon-save.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Сохранить изменения</button>
+          </div>
+        </div>
+    </div>
+  </div>
+</div>
+
+  <!-- Диалог подтверждения закрытия редактирования заказа (несохранённые данные) -->
+  <div class="edit-order-close-confirm hidden" id="edit-order-close-confirm" role="alertdialog" aria-modal="true" aria-labelledby="edit-order-close-confirm-title" aria-describedby="edit-order-close-confirm-text">
+    <div class="edit-order-close-confirm-backdrop"></div>
+    <div class="edit-order-close-confirm-content">
+      <p class="edit-order-close-confirm-title" id="edit-order-close-confirm-title">Несохранённые данные</p>
+      <p class="edit-order-close-confirm-text" id="edit-order-close-confirm-text">Есть несохранённые изменения. Сохранить перед выходом или выйти без сохранения?</p>
+      <div class="edit-order-close-confirm-actions">
+        <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--save" id="edit-order-close-confirm-save">Сохранить</button>
+        <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--stay" id="edit-order-close-confirm-stay">Остаться</button>
+        <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--discard" id="edit-order-close-confirm-discard">Закрыть без сохранения</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Авторизация -->
+  <div class="auth-container" id="auth-container">
+    <h2>Вход в систему</h2>
+    <input type="text" id="login" placeholder="Введите логин" required>
+    <input type="password" id="password" placeholder="Введите пароль" required>
+    <button onclick="authenticate()">Войти</button>
+    <p id="auth-error">Неверный логин или пароль!</p>
+  </div>
+
+  <!-- Калькулятор -->
+  <div class="calculator-container hidden" id="calculator-container">
+    <!-- Контейнер для кнопок вверху справа -->
+    <div class="top-buttons-container">
+      <button class="admin-button hidden" id="admin-button" onclick="toggleAdminPanel()">Админ-панель</button>
+      <button class="logout" onclick="logout()">Выйти</button>
+    </div>
+    <div class="container">
+      
+      <!-- Админ-панель для управления паролями -->
+      <div class="admin-panel hidden" id="admin-panel">
+        <h2>Управление пользователями</h2>
+        <div class="admin-content">
+          <p class="admin-info">Выберите пользователя. Можно изменить имя (логин) и/или пароль. После изменения пароля все пользователи будут разлогинены.</p>
+          
+          <div class="admin-form">
+            <label for="admin-user-select">Пользователь:</label>
+            <select id="admin-user-select">
+              <option value="" disabled selected>Выберите пользователя</option>
+            </select>
+            
+            <label for="admin-new-login">Имя пользователя (логин):</label>
+            <input type="text" id="admin-new-login" placeholder="Логин для входа" autocomplete="off">
+            
+            <label for="admin-new-password">Новый пароль:</label>
+            <input type="password" id="admin-new-password" placeholder="Введите новый пароль (оставьте пустым, если не менять)">
+            
+            <label for="admin-confirm-password">Подтвердите пароль:</label>
+            <input type="password" id="admin-confirm-password" placeholder="Подтвердите пароль">
+            
+            <div class="btn-group">
+              <button class="blue-button" onclick="changeUserPassword()">Сохранить изменения</button>
+              <button class="reset-button" onclick="toggleAdminPanel()">Закрыть</button>
+            </div>
+            
+            <div id="admin-message" class="admin-message"></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Блок доставки -->
+      <div class="block">
+        <div class="block-header">
+          <h2>Доставка</h2>
+          <button class="delivery-dates-button" onclick="showDeliveryDatesModal()" title="Актуальные даты доставки">
+            <span class="calendar-icon"><img src="icons/calendar.png" alt="" class="icon-img-btn"></span>
+            <span class="button-text">Даты доставки</span>
+          </button>
+        </div>
+        <label for="address">Введите адрес доставки:</label>
+        <div class="address-container">
+          <input type="text" id="address" placeholder="Например, Санкт-Петербург, Невский пр." required autocomplete="off">
+          <div id="suggestions"></div>
+        </div>
+        
+        <div class="delivery-options">
+          <label>
+            <input type="radio" name="deliveryType" value="withoutAssembly" checked onchange="updateDeliveryResultDate()">
+            <span>Без сборки</span>
+          </label>
+          <label>
+            <input type="radio" name="deliveryType" value="withAssembly" onchange="updateDeliveryResultDate()">
+            <span>Со сборкой</span>
+          </label>
+        </div>
+        
+        <div class="btn-group">
+          <!-- Синяя кнопка для доставки -->
+          <button class="blue-button" onclick="calculateDeliveryDebounced()">Рассчитать доставку</button>
+          <!-- Красная кнопка для сброса доставки -->
+          <button class="reset-delivery-button" onclick="resetDelivery()">Сбросить доставку</button>
+        </div>
+        
+        <div id="result"></div>
+        <div id="map"></div>
+        
+        <!-- Блок полезных материалов (под картой, внутри блока Доставка) -->
+        <div class="useful-materials-block" style="margin-top: 20px;">
+          <h3 style="margin: 20px 0 15px 0; font-size: 18px; color: #2c3e50; font-weight: 600;"><img src="icons/library.png" alt="" class="icon-img"> Полезные материалы</h3>
+          <div class="materials-grid">
+            <!-- 1. Оформление заказа -->
+            <div class="material-card order-card" id="order-card" onclick="toggleOrderForm()" style="cursor: pointer;">
+              <div class="material-icon material-icon--order">
+                <svg class="material-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="material-content">
+                <h3>Оформление заказа</h3>
+                <p>Заполните данные клиента и отправьте заказ в базу</p>
+              </div>
+              <div class="material-arrow" id="order-card-arrow">▼</div>
+            </div>
+
+            <!-- 2. Редактирование заказа -->
+            <div class="material-card material-card--edit-order" id="edit-orders-card" onclick="openEditOrderModal()" style="cursor: pointer;">
+              <div class="material-icon material-icon--edit-order">
+                <svg class="material-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="material-content">
+                <h3>Редактирование заказа</h3>
+                <p>Посмотреть и отредактировать текущие заказы</p>
+              </div>
+              <div class="material-arrow">→</div>
+            </div>
+
+            <!-- 3. FAQ -->
+            <div class="material-card material-card--faq" onclick="showFAQModal()" style="cursor: pointer;">
+              <div class="material-icon material-icon--faq">
+                <svg class="material-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="material-content">
+                <h3>FAQ</h3>
+                <p>Часто задаваемые вопросы и ответы для работы с клиентами</p>
+              </div>
+              <div class="material-arrow">→</div>
+            </div>
+
+            <!-- 4. Фотографии теплиц -->
+            <a href="#" onclick="event.preventDefault(); showGreenhousesGallery(); return false;" class="material-card material-card--photo">
+              <div class="material-icon material-icon--photo">
+                <svg class="material-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M19 10h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="material-content">
+                <h3>Фотографии теплиц</h3>
+                <p>Галерея фотографий всех видов теплиц для визуального ознакомления</p>
+              </div>
+              <div class="material-arrow">→</div>
+            </a>
+
+            <!-- 5. Инструкции по сборке -->
+            <a href="#" onclick="event.preventDefault(); showInstructionsModal(); return false;" class="material-card material-card--manual">
+              <div class="material-icon material-icon--manual">
+                <svg class="material-icon-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <div class="material-content">
+                <h3>Инструкции по сборке</h3>
+                <p>Подробные инструкции по сборке теплиц всех типов</p>
+              </div>
+              <div class="material-arrow">→</div>
+            </a>
+          </div>
+
+          <!-- Разворачивающаяся форма заказа -->
+          <div class="order-collapse" id="order-collapse">
+            <div class="order-form">
+              <div class="order-calc-warning" id="order-calc-warning">
+                Сначала выполните расчёт в блоке «Стоимость теплицы» ниже и нажмите «Добавить в заказ».
+              </div>
+
+              <section class="order-form-section">
+                <h4 class="order-form-section-title">Контакты</h4>
+                <div class="order-field" id="of-name">
+                  <label for="order-client-name">Имя клиента *</label>
+                  <input type="text" id="order-client-name" placeholder="Иван" tabindex="1">
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field" id="of-phone">
+                  <label for="order-client-phone">Телефон клиента *</label>
+                  <input type="tel" id="order-client-phone" placeholder="79211234567" inputmode="tel" maxlength="18" title="11 цифр, начинается с 7 (79211234567)" tabindex="2">
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div id="order-similar-order-warning" class="order-similar-order-warning hidden" role="status" aria-live="polite"></div>
+              </section>
+
+              <section class="order-form-section">
+                <h4 class="order-form-section-title">Доставка</h4>
+                <div class="order-field" id="of-date">
+                <label>Дата доставки *</label>
+                <div class="order-calendar-wrapper">
+                  <input type="text" id="order-delivery-date-display" class="order-cal-input" readonly placeholder="— Выберите город —" onclick="toggleOrderCalendar()" tabindex="3">
+                  <input type="hidden" id="order-delivery-date" value="">
+                  <div class="order-calendar" id="order-calendar">
+                    <div class="order-cal-header">
+                      <button type="button" class="order-cal-nav" onclick="orderCalNav(-1)">&#8249;</button>
+                      <span class="order-cal-title" id="order-cal-title"></span>
+                      <button type="button" class="order-cal-nav" onclick="orderCalNav(1)">&#8250;</button>
+                    </div>
+                    <div class="order-cal-weekdays">
+                      <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                    </div>
+                    <div class="order-cal-grid" id="order-cal-grid"></div>
+                  </div>
+                </div>
+                <span class="order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="order-field" id="of-addr1">
+                <label for="order-address-part1">Регион, город, населённый пункт *</label>
+                <div class="order-address-row">
+                  <div class="order-address-container">
+                    <input type="text" id="order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" required autocomplete="off" tabindex="4">
+                    <div id="order-suggestions-1" class="order-suggestions"></div>
+                  </div>
+                  <button type="button" class="order-sync-address-btn" onclick="syncOrderFormAddressFromCalculator()" title="Подставить из поля «Введите адрес доставки»">Из доставки</button>
+                </div>
+                <span class="order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="order-field" id="of-addr2">
+                <label for="order-address-part2">Улица *</label>
+                <div class="order-address-container">
+                  <input type="text" id="order-address-part2" placeholder="Невский пр." required autocomplete="off" tabindex="5">
+                  <div id="order-suggestions-2" class="order-suggestions"></div>
+                </div>
+                <span class="order-validation-msg" aria-live="polite"></span>
+              </div>
+              <div class="order-field" id="of-addr3">
+                <label for="order-address-part3">Дом, корпус, участок *</label>
+                <div class="order-address-container">
+                  <input type="text" id="order-address-part3" placeholder="д. 5, корп. 2 или участок 12" required autocomplete="off" tabindex="6">
+                  <div id="order-suggestions-3" class="order-suggestions"></div>
+                </div>
+                <label class="order-checkbox-label">
+                  <input type="checkbox" id="order-no-plot" onchange="toggleOrderHouseField()">
+                  Нет номера участка / дома
+                </label>
+                <span class="order-validation-msg" aria-live="polite"></span>
+              </div>
+              </section>
+
+              <section class="order-form-section">
+                <h4 class="order-form-section-title">Контекст заказа</h4>
+                <div class="order-field" id="of-source">
+                  <label for="order-source">Название магазина на Авито *</label>
+                  <select id="order-source" tabindex="7">
+                    <option value="">— Выберите —</option>
+                    <option value="Строй Мир">Строй Мир</option>
+                    <option value="Дачные решения">Дачные решения</option>
+                    <option value="Конструктивные решения">Конструктивные решения</option>
+                  </select>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field" id="of-manager">
+                  <label for="order-manager">Менеджер *</label>
+                  <select id="order-manager" tabindex="8">
+                    <option value="">— Выберите —</option>
+                    <option value="Юлия">Юлия</option>
+                    <option value="Ольга">Ольга</option>
+                    <option value="Ирина">Ирина</option>
+                  </select>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field">
+                  <label for="order-comment">Комментарий (необязательно)</label>
+                  <textarea id="order-comment" rows="3" placeholder="Дополнительная информация к заказу..." tabindex="9"></textarea>
+                </div>
+              </section>
+
+              <div id="order-cart-block" class="order-cart-block edit-order-composition-block" style="display:none;">
+                <div class="edit-order-composition-block__title order-cart-block__title">Состав заказа</div>
+                <div id="order-cart-list" class="edit-order-composition-list" aria-live="polite"></div>
+              </div>
+              <p id="order-gifts-display" class="order-gifts-display" style="margin: 0.35em 0; font-size: 0.95em; color: #555; display: none;"></p>
+              <p id="order-total-display" class="order-total-display edit-order-composition-total-row" style="margin: 0.5em 0; font-weight: 600;">Итого к оплате: —</p>
+              <button type="button" id="order-submit-btn" class="green-button" onclick="event.stopPropagation(); submitOrder();" tabindex="10">Оформить заказ</button>
+              <div id="order-result" style="display: none;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Блок стоимости теплицы -->
+      <div class="block">
+        <h2>Стоимость теплицы</h2>
+
+        <div class="parameters">
+          <label for="city">Город:</label>
+          <select id="city" onchange="onCityChange()">
+            <option value="" disabled selected>Выберите город</option>
+          </select>
+        </div>
+        <div class="parameters">
+          <label for="form">Форма теплицы:</label>
+          <select id="form" onchange="onFormChange()">
+            <option value="" disabled selected>Сначала выберите город</option>
+          </select>
+        </div>
+        <div class="parameters">
+          <label for="width">Ширина (м):</label>
+          <select id="width" onchange="onWidthChange()">
+            <option value="" disabled selected>Выберите ширину</option>
+          </select>
+        </div>
+        <div class="parameters">
+          <label for="length">Длина (м):</label>
+          <select id="length" onchange="onLengthChange()">
+            <option value="" disabled selected>Выберите длину</option>
+          </select>
+        </div>
+        <div class="parameters">
+          <label for="frame">Каркас:</label>
+          <select id="frame" onchange="onFrameChange(); updateGiftsBlockPreview()">
+            <option value="" disabled selected>Выберите каркас</option>
+          </select>
+        </div>
+        <div class="parameters parameters-with-icon">
+          <label for="polycarbonate" class="label-with-icon" onclick="event.preventDefault(); showPolycarbonateInfo();" title="Подробнее о поликарбонате">
+            <span>Поликарбонат:</span>
+            <span class="polycarbonate-info-link">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+              </svg>
+            </span>
+          </label>
+          <select id="polycarbonate" onchange="handlePolycarbonateChange(); updateGiftsBlockPreview(); calculateGreenhouseCost()">
+            <option value="" disabled selected>Выберите поликарбонат</option>
+            <!-- Опции добавятся через JavaScript -->
+          </select>
+        </div>
+        <div class="parameters">
+          <label for="arcStep">Шаг между дугами:</label>
+          <select id="arcStep" onchange="updateGiftsBlockPreview(); calculateGreenhouseCost()">
+            <option value="1" selected>1 м</option>
+            <option value="0.65">0.65 м</option>
+          </select>
+        </div>
+        
+        <!-- Горизонтальная группа для чекбоксов "Брус, Сборка, Штыри" -->
+        <div class="additional-services">
+          <div class="checkbox-group-small">
+            <label>
+              <input type="checkbox" id="bracing" onchange="calculateGreenhouseCost()">
+              <span>Брус</span>
+            </label>
+            <label onclick="handleAssemblyLabelClick(event)">
+              <input type="checkbox" id="assembly" onchange="handleAssemblyChange()">
+              <span>Сборка</span>
+            </label>
+            <label>
+              <input type="checkbox" id="ground-hooks" onchange="calculateGreenhouseCost()">
+              <span>Штыри</span>
+            </label>
+          </div>
+        </div>
+        
+        <!-- Здесь перемещаем кнопки для расчёта и сброса стоимости теплицы -->
+        <div class="btn-group">
+          <button class="blue-button" onclick="calculateGreenhouseCost()">Рассчитать стоимость теплицы</button>
+          <button type="button" id="order-add-to-cart-btn" class="blue-button" onclick="addToOrderCart();" title="Добавить текущую комплектацию в заказ">Добавить в заказ</button>
+          <button class="reset-button" onclick="resetAllFilters()">Сбросить все фильтры</button>
+        </div>
+        
+        <!-- Блок "Монтаж на фундамент клиента" -->
+<p class="centered-heading"><strong>Монтаж на фундамент клиента</strong></p>
+<!-- Вертикальная группа для чекбоксов монтажа -->
+<div class="checkbox-group-large">
+  <label>
+    <input type="checkbox" id="on-wood" data-price="1500" onchange="calculateGreenhouseCost()">
+    <span>На брус 1.500&nbsp;рублей</span>
+  </label>
+  <label>
+    <input type="checkbox" id="on-concrete" data-price="2000" onchange="calculateGreenhouseCost()">
+    <span>На бетон 2.000&nbsp;рублей</span>
+  </label>
+</div>
+        
+<div class="additional-products">
+  <h3>Дополнительные товары:</h3>
+
+  <!-- 1) Капельный полив механический -->
+  <div class="product-item">
+    <label class="product-label">
+      <!-- Выпадающий список вместо чекбокса -->
+      <select id="drip-irrigation-mech-qty" data-price="1690" onchange="calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('drip-irrigation-mech');" title="Подробнее о товаре">
+        Капельный полив механический
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">1.690 рублей</span>
+    </label>
+  </div>
+
+  <!-- 2) Капельный полив автоматический -->
+  <div class="product-item">
+    <label class="product-label">
+      <select id="drip-irrigation-auto-qty" data-price="4490" onchange="calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('drip-irrigation-auto');" title="Подробнее о товаре">
+        Капельный полив автоматический
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">4.490 рублей</span>
+    </label>
+  </div>
+
+  <!-- 3) Автомат для форточки -->
+  <div class="product-item">
+    <label class="product-label">
+      <select id="window-automation-qty" data-price="2590" onchange="calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('thermodrive');" title="Подробнее о товаре">
+        Автомат для форточки
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">2.590 рублей</span>
+    </label>
+  </div>
+
+  <!-- 4) Дополнительная форточка -->
+  <div class="product-item">
+    <label class="product-label">
+      <select id="additional-window-qty" data-price="1490" onchange="onAdditionalWindowChange(); calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('doors-windows-window');" title="Подробнее о товаре">
+        Дополнительная форточка
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">1.490 рублей</span>
+    </label>
+  </div>
+
+  <!-- 5) Оцинкованная лента 30 м -->
+  <div class="product-item">
+    <label class="product-label">
+      <select id="galvanized-tape-30m-qty" data-price="1990" onchange="calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('tapes-galvanized');" title="Подробнее о товаре">
+        Оцинкованная лента 30 м
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">1.990 рублей</span>
+    </label>
+  </div>
+
+  <!-- 6) Паропропускная лента 25 м -->
+  <div class="product-item">
+    <label class="product-label">
+      <select id="vapor-permeable-tape-25m-qty" data-price="1590" onchange="calculateGreenhouseCost()">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+      <span class="product-name" onclick="event.preventDefault(); showProductInfo('tapes-vapor-permeable');" title="Подробнее о товаре">
+        Паропропускная лента 25 м
+        <span class="product-info-link">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+            <path d="M8 11V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+          </svg>
+        </span>
+      </span>
+      <span class="price">1.590 рублей</span>
+    </label>
+  </div>
+  
+  <!-- Блок подарков -->
+  <div class="gifts-block" id="gifts-block" style="display: none;">
+    <div class="gifts-header">
+      <h3><img src="icons/gift.png" alt="" class="icon-img"> Подарки</h3>
+      <button class="gifts-info-button" onclick="showGiftsInfoModal()">Как работают подарки?</button>
+    </div>
+    <div class="gifts-info" id="gifts-info"></div>
+    <div class="gifts-selection" id="gifts-selection"></div>
+    <!-- Кнопки управления подарками -->
+    <div class="gifts-actions">
+      <button class="gifts-add-button" onclick="addGiftsToOffer()">Добавить подарок</button>
+      <button class="gifts-remove-button" onclick="removeGifts()">Удалить подарок</button>
+    </div>
+  </div>
+  
+  <!-- Модальное окно с информацией о подарках -->
+  <div class="modal gifts-info-modal hidden" id="gifts-info-modal">
+    <div class="modal-content gifts-info-modal-content">
+      <div class="modal-header">
+        <h2><img src="icons/gift.png" alt="" class="icon-img"> Как работают подарки?</h2>
+        <span class="close" onclick="closeGiftsInfoModal()">&times;</span>
+      </div>
+      <div class="gifts-info-modal-body" id="gifts-info-modal-body">
+        <!-- Содержимое будет добавлено через JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button class="modal-close-button" onclick="closeGiftsInfoModal()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Кнопка для выбора грядок -->
+  <div class="beds-button-container">
+    <button class="beds-button" onclick="showBedsModal()">
+      <span class="beds-icon"><img src="icons/plant.png" alt="" class="icon-img-btn"></span>
+      <span class="beds-button-text">Добавить грядки</span>
+      <span class="beds-count" id="beds-count-badge" style="display: none;">0</span>
+    </button>
+  </div>
+  </div>
+
+      <!-- Блок1 коммерческого предложения -->
+      <div class="block">
+        <h2>Коммерческое предложение</h2>
+        
+        <!-- Вкладки -->
+        <div class="kp-tabs">
+          <div class="kp-tab active" onclick="setOfferTab('short')">Короткое КП</div>
+          <div class="kp-tab" onclick="setOfferTab('long')">Длинное КП</div>
+          <div class="kp-tab" onclick="setOfferTab('client')">Текст заказа</div>
+        </div>
+        
+        <!-- Панель для короткого КП -->
+        <div class="kp-panel" id="kp-panel-short">
+          <textarea id="commercial-offer-short" rows="20" readonly>Здесь будет ваше короткое КП.</textarea>
+          <div class="char-counter-container">
+            <span class="char-counter" id="char-counter-short">Символов: 0 / 800 (для Авито)</span>
+          </div>
+          <div class="avito-warning" id="avito-warning-short" style="display: none;">
+            <div class="avito-warning-content">
+              <strong><img src="icons/warning.png" alt="" class="icon-img-sm"> Это длинное КП не отправится в Авито!</strong>
+              <p>Лимит Авито: 800 символов на сообщение. Если превысить лимит, сообщение не отправится и клиент его не увидит. Используйте кнопки "Скопировать КП 1" и "Скопировать КП 2" ниже.</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Панель для длинного КП (скрыта по умолчанию) -->
+        <div class="kp-panel hidden" id="kp-panel-long">
+          <textarea id="commercial-offer" rows="20" readonly>Здесь будет ваше коммерческое предложение.</textarea>
+          <div class="char-counter-container">
+            <span class="char-counter" id="char-counter-long">Символов: 0 / 800 (для Авито)</span>
+          </div>
+          <div class="avito-warning" id="avito-warning-long" style="display: none;">
+            <div class="avito-warning-content">
+              <strong><img src="icons/warning.png" alt="" class="icon-img-sm"> Это длинное КП не отправится в Авито!</strong>
+              <p>Лимит Авито: 800 символов на сообщение. Если превысить лимит, сообщение не отправится и клиент его не увидит. Используйте кнопки "Скопировать КП 1" и "Скопировать КП 2" ниже.</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Панель «Текст заказа» — тот же текст, что и короткое КП, для отправки клиенту -->
+        <div class="kp-panel hidden" id="kp-panel-client">
+          <textarea id="commercial-offer-client" rows="20" readonly>Здесь будет текст заказа.</textarea>
+          <div class="char-counter-container">
+            <span class="char-counter" id="char-counter-client">Символов: 0 / 800 (для отправки клиенту)</span>
+          </div>
+        </div>
+        
+        <div class="btn-group">
+          <button class="blue-button" id="copy-full-kp-btn" onclick="copyCommercialOffer()">Скопировать КП</button>
+          <button class="blue-button" id="copy-kp1-btn" onclick="copyKP1()" style="display: none;">Скопировать КП 1</button>
+          <button class="blue-button" id="copy-kp2-btn" onclick="copyKP2()" style="display: none;">Скопировать КП 2</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- cache-bust: версия скрипта должна быть синхронизирована с APP_VERSION в scripts.js -->
+    <script src="js/products-data.js?v=231"></script>
+    <script src="js/greenhouses-data.js?v=231"></script>
+    <script src="js/greenhouses-photos-list.js?v=231"></script>
+    <script src="js/instructions-data.js?v=231"></script>
+    <script src="js/scripts.js?v=233"></script>
+  </div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../../Desktop/it/тг бот заказы теплицы"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../delivery-bot-telegram-main"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "greenhouse-calculator-main"
+	}
+}

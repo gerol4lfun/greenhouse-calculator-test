@@ -1,0 +1,38 @@
+.DS_Store
+node_modules/
+.env
+.env.local
+.env.*.local
+*.log
+logs.*.json
+telegram-bot/.env
+e2e/.env
+# Токены и секреты
+*_token.txt
+*_token.md
+TOKEN_*.md
+*.token
+
+# Временные файлы разработки
+fix_*.py
+*_fixed*.js
+*_fixed*.html
+*.backup
+*.backup_*
+scripts_fixed_*.js
+index_fixed.html
+
+# Временные Python скрипты
+add_function.py
+check_balance.py
+clean_end.py
+remove_duplicates.py
+rewrite_function.py
+
+# CSV файлы (исходные данные)
+*.csv
+
+# Большие файлы (если нужно исключить)
+# *.json (раскомментируйте, если kb/greenhouse_kb.v1.json слишком большой)
+
+# Версия проекта: v214
