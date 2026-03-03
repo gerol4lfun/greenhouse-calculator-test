@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v245"; // v245: Фаза B — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v246"; // v246: подсказки адреса в модалке редактирования (общая логика attachTripleAddressSuggestions_) // v245: Фаза B — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -4397,33 +4397,36 @@ whenYmapsReady(() => {
     });
 });
 
-// Подсказки адреса для формы заказа (3 поля) — тот же принцип, что и для поля доставки
-whenYmapsReady(() => {
-    const part1Input = document.getElementById('order-address-part1');
-    const part2Input = document.getElementById('order-address-part2');
-    const part3Input = document.getElementById('order-address-part3');
+// Общая логика подсказок адреса для трёх полей (регион → улица → дом). Используется в форме заказа и в модалке редактирования.
+function parseAddressToParts_(fullAddress) {
+    const parts = fullAddress.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+    if (parts.length >= 3) {
+        return { part1: parts.slice(0, -2).join(', '), part2: parts[parts.length - 2], part3: parts[parts.length - 1] };
+    }
+    if (parts.length === 2) {
+        return { part1: parts[0], part2: parts[1], part3: '' };
+    }
+    if (parts.length === 1) {
+        return { part1: parts[0], part2: '', part3: '' };
+    }
+    return { part1: '', part2: '', part3: '' };
+}
+
+function attachTripleAddressSuggestions_(cfg) {
+    const part1Input = cfg.part1Input;
+    const part2Input = cfg.part2Input;
+    const part3Input = cfg.part3Input;
+    const getSuggestionEl = cfg.getSuggestionEl;
+    const clickOutsideSelector = cfg.clickOutsideSelector;
+    if (!part1Input || !part2Input || !part3Input || typeof getSuggestionEl !== 'function') return;
     const containers = [
-        { input: part1Input, suggestions: document.getElementById('order-suggestions-1'), getQuery: function () { return part1Input.value.trim(); }, getContext: function () { return ''; } },
-        { input: part2Input, suggestions: document.getElementById('order-suggestions-2'), getQuery: function () { return part2Input.value.trim(); }, getContext: function () { return part1Input.value.trim(); } },
-        { input: part3Input, suggestions: document.getElementById('order-suggestions-3'), getQuery: function () { return part3Input.value.trim(); }, getContext: function () { return [part1Input.value.trim(), part2Input.value.trim()].filter(Boolean).join(', '); } }
+        { input: part1Input, suggestions: getSuggestionEl(1), getQuery: function () { return part1Input.value.trim(); }, getContext: function () { return ''; } },
+        { input: part2Input, suggestions: getSuggestionEl(2), getQuery: function () { return part2Input.value.trim(); }, getContext: function () { return part1Input.value.trim(); } },
+        { input: part3Input, suggestions: getSuggestionEl(3), getQuery: function () { return part3Input.value.trim(); }, getContext: function () { return [part1Input.value.trim(), part2Input.value.trim()].filter(Boolean).join(', '); } }
     ];
     const debounceTimers = { 1: null, 2: null, 3: null };
 
-    function parseAddressToParts(fullAddress) {
-        const parts = fullAddress.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
-        if (parts.length >= 3) {
-            return { part1: parts.slice(0, -2).join(', '), part2: parts[parts.length - 2], part3: parts[parts.length - 1] };
-        }
-        if (parts.length === 2) {
-            return { part1: parts[0], part2: parts[1], part3: '' };
-        }
-        if (parts.length === 1) {
-            return { part1: parts[0], part2: '', part3: '' };
-        }
-        return { part1: '', part2: '', part3: '' };
-    }
-
-    function showOrderSuggestions(index, query, context) {
+    function showSuggestions(index, query, context) {
         const c = containers[index];
         if (!c || !c.suggestions) return;
         if (query.length <= 1) {
@@ -4447,12 +4450,12 @@ whenYmapsReady(() => {
                 const regex = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
                 suggestion.innerHTML = address.replace(regex, '<span class="highlight">$1</span>');
                 suggestion.addEventListener('click', function () {
-                    const parsed = parseAddressToParts(address);
+                    const parsed = parseAddressToParts_(address);
                     part1Input.value = parsed.part1;
                     part2Input.value = parsed.part2;
                     part3Input.value = parsed.part3;
                     [1, 2, 3].forEach(function (i) {
-                        const s = document.getElementById('order-suggestions-' + i);
+                        const s = getSuggestionEl(i);
                         if (s) { s.innerHTML = ''; s.style.display = 'none'; }
                     });
                 });
@@ -4470,17 +4473,35 @@ whenYmapsReady(() => {
         c.input.addEventListener('input', function () {
             if (debounceTimers[idx]) clearTimeout(debounceTimers[idx]);
             debounceTimers[idx] = setTimeout(function () {
-                showOrderSuggestions(index, c.getQuery(), c.getContext());
+                showSuggestions(index, c.getQuery(), c.getContext());
             }, 300);
         });
     });
 
     document.addEventListener('click', function (event) {
-        if (event.target.closest('.order-address-container')) return;
+        if (event.target.closest(clickOutsideSelector)) return;
         [1, 2, 3].forEach(function (i) {
-            const s = document.getElementById('order-suggestions-' + i);
+            const s = getSuggestionEl(i);
             if (s) s.style.display = 'none';
         });
+    });
+}
+
+// Подсказки адреса: форма заказа + модалка редактирования (регион → улица → дом)
+whenYmapsReady(() => {
+    attachTripleAddressSuggestions_({
+        part1Input: document.getElementById('order-address-part1'),
+        part2Input: document.getElementById('order-address-part2'),
+        part3Input: document.getElementById('order-address-part3'),
+        getSuggestionEl: function (i) { return document.getElementById('order-suggestions-' + i); },
+        clickOutsideSelector: '.order-address-container'
+    });
+    attachTripleAddressSuggestions_({
+        part1Input: document.getElementById('edit-order-address-part1'),
+        part2Input: document.getElementById('edit-order-address-part2'),
+        part3Input: document.getElementById('edit-order-address-part3'),
+        getSuggestionEl: function (i) { return document.getElementById('edit-order-suggestions-' + i); },
+        clickOutsideSelector: '.edit-order-address-container'
     });
 });
 

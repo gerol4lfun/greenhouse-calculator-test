@@ -20,7 +20,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js"></script>
   
   <!-- cache-bust: Safari иногда держит старые стили, поэтому версия должна меняться при правках -->
-    <link rel="stylesheet" href="css/styles.css?v=231">
+    <link rel="stylesheet" href="css/styles.css?v=246">
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -142,17 +142,26 @@
               </div>
               <div class="edit-order-field" id="eo-addr1">
                 <label for="edit-order-address-part1">Регион, город *</label>
-                <input type="text" id="edit-order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" tabindex="4">
+                <div class="edit-order-address-container">
+                  <input type="text" id="edit-order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" tabindex="4" autocomplete="off">
+                  <div id="edit-order-suggestions-1" class="order-suggestions"></div>
+                </div>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
               <div class="edit-order-field" id="eo-addr2">
                 <label for="edit-order-address-part2">Улица *</label>
-                <input type="text" id="edit-order-address-part2" placeholder="Невский пр." tabindex="5">
+                <div class="edit-order-address-container">
+                  <input type="text" id="edit-order-address-part2" placeholder="Невский пр." tabindex="5" autocomplete="off">
+                  <div id="edit-order-suggestions-2" class="order-suggestions"></div>
+                </div>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
               <div class="edit-order-field" id="eo-addr3">
                 <label for="edit-order-address-part3">Дом, участок *</label>
-                <input type="text" id="edit-order-address-part3" placeholder="д. 5, участок 12" tabindex="6">
+                <div class="edit-order-address-container">
+                  <input type="text" id="edit-order-address-part3" placeholder="д. 5, участок 12" tabindex="6" autocomplete="off">
+                  <div id="edit-order-suggestions-3" class="order-suggestions"></div>
+                </div>
                 <label class="edit-order-checkbox-label"><input type="checkbox" id="edit-order-no-plot"> Без номера участка</label>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
@@ -953,7 +962,7 @@
     <script src="js/greenhouses-data.js?v=231"></script>
     <script src="js/greenhouses-photos-list.js?v=231"></script>
     <script src="js/instructions-data.js?v=231"></script>
-    <script src="js/scripts.js?v=233"></script>
+    <script src="js/scripts.js?v=246"></script>
   </div>
 </body>
 </html>

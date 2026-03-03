@@ -6099,10 +6099,18 @@ input[type="radio"] {
   border-color: #4a90e2;
 }
 
-.order-address-container {
+.order-address-container,
+.edit-order-address-container {
   position: relative;
-  flex: 1;
   min-width: 0;
+}
+
+.order-address-container {
+  flex: 1;
+}
+
+.edit-order-address-container {
+  width: 100%;
 }
 
 .order-suggestions {
