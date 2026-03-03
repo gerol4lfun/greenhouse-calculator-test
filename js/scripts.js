@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v246"; // v246: подсказки адреса в модалке редактирования (общая логика attachTripleAddressSuggestions_) // v245: Фаза B — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v247"; // v247: адрес регион+город (parseAddressFromGeoObject_), дом необязателен; подсказки через бесплатный geocode // v246: подсказки в модалке — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -718,8 +718,10 @@ let currentRoute;
 
 /**
  * Вызов callback только если Яндекс.Карты загружены; при ошибке сети API может быть недоступен.
- * Подсказки адреса — свои (не SuggestView): ymaps.geocode() в поля #address и #order-address-part1/2/3,
- * результаты в #suggestions и #order-suggestions-1/2/3. Логика подсказок внутри callback не менялась.
+ * Подсказки адреса — бесплатный вариант: ymaps.geocode() (не платный Геосаджест/Suggest API).
+ * Своя логика: контекст part1 / part1+part2 для иерархии регион→улица→дом; разбор через
+ * getAdministrativeAreas/getLocalities/getThoroughfare/getPremiseNumber. Поля #address и
+ * #order-address-part1/2/3, контейнеры #suggestions и #order-suggestions-1/2/3, #edit-order-suggestions-1/2/3.
  */
 function whenYmapsReady(callback) {
     if (typeof ymaps === 'undefined') {
@@ -4397,7 +4399,8 @@ whenYmapsReady(() => {
     });
 });
 
-// Общая логика подсказок адреса для трёх полей (регион → улица → дом). Используется в форме заказа и в модалке редактирования.
+// Общая логика подсказок адреса для трёх полей (регион+город → улица → дом). Используется в форме заказа и в модалке редактирования.
+// Разбор по запятым (fallback когда нет структуры от геокодера).
 function parseAddressToParts_(fullAddress) {
     const parts = fullAddress.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
     if (parts.length >= 3) {
@@ -4410,6 +4413,27 @@ function parseAddressToParts_(fullAddress) {
         return { part1: parts[0], part2: '', part3: '' };
     }
     return { part1: '', part2: '', part3: '' };
+}
+
+// Из GeoObject (ymaps) получаем структуру: регион+город, улица, дом. Как в доставке/пицце: сначала регион и город, потом улица, дом — необязателен (СНТ, деревни).
+function parseAddressFromGeoObject_(item) {
+    if (!item || typeof item.getAddressLine !== 'function') return { part1: '', part2: '', part3: '' };
+    var part1 = '', part2 = '', part3 = '';
+    try {
+        var areas = [];
+        if (typeof item.getAdministrativeAreas === 'function') { var a = item.getAdministrativeAreas(); if (a && a.length) areas = a; }
+        if (typeof item.getLocalities === 'function') { var l = item.getLocalities(); if (l && l.length) areas = areas.concat(l); }
+        part1 = areas.filter(Boolean).join(', ');
+        if (typeof item.getThoroughfare === 'function') { var t = item.getThoroughfare(); if (t) part2 = t; }
+        if (typeof item.getPremiseNumber === 'function') { var p = item.getPremiseNumber(); if (p) part3 = p; }
+    } catch (e) { }
+    if (!part1 && !part2 && !part3) {
+        var parsed = parseAddressToParts_(item.getAddressLine());
+        part1 = parsed.part1;
+        part2 = parsed.part2;
+        part3 = parsed.part3;
+    }
+    return { part1: part1, part2: part2, part3: part3 };
 }
 
 function attachTripleAddressSuggestions_(cfg) {
@@ -4446,11 +4470,14 @@ function attachTripleAddressSuggestions_(cfg) {
             items.forEach(function (item) {
                 const suggestion = document.createElement('div');
                 suggestion.classList.add('suggestion');
-                const address = item.getAddressLine();
+                const parsed = parseAddressFromGeoObject_(item);
+                var displayText = item.getAddressLine();
+                if (index === 0 && parsed.part1) displayText = parsed.part1;
+                else if (index === 1 && parsed.part2) displayText = parsed.part2;
+                else if (index === 2 && parsed.part3) displayText = parsed.part3;
                 const regex = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-                suggestion.innerHTML = address.replace(regex, '<span class="highlight">$1</span>');
+                suggestion.innerHTML = displayText.replace(regex, '<span class="highlight">$1</span>');
                 suggestion.addEventListener('click', function () {
-                    const parsed = parseAddressToParts_(address);
                     part1Input.value = parsed.part1;
                     part2Input.value = parsed.part2;
                     part3Input.value = parsed.part3;
