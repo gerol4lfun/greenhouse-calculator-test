@@ -4138,6 +4138,7 @@ window.onload = async function () {
     await loadBedsFromSupabase();
     
     const savedLogin = localStorage.getItem('savedLogin');
+    var didRunCalculator = false;
     
     if (savedLogin) {
         // Убеждаемся, что admin флаг установлен, если это admin (ДО проверки пароля)
@@ -4154,12 +4155,16 @@ window.onload = async function () {
             document.getElementById("calculator-container").classList.remove("hidden");
             
             await initializeCalculator();
+            didRunCalculator = true;
         } else {
             // Версия пароля не совпадает - разлогиниваем
             localStorage.clear();
             document.getElementById("login").value = savedLogin;
         }
-    } else {
+    }
+    if (/[?&]editPhone=/.test(window.location.search)) {
+        var o = document.getElementById('edit-order-loading-overlay');
+        if (o && !didRunCalculator) o.classList.add('hidden');
     }
     
     // Проверка версии пароля при возврате во вкладку (мгновенный выкид при смене пароля)
@@ -4262,47 +4267,50 @@ async function initializeCalculator() {
     // Инициализация счетчиков символов для КП
     initCharCounters();
 
-    // Deep link: ?editPhone=79001234567 — оверлей загрузки, модалка, поиск. Паттерн rAF + setTimeout(0): даём браузеру отрисовать оверлей до открытия модалки (см. yielding main thread).
+    // Deep link: ?editPhone= — оверлей уже показан из HTML; здесь только открываем модалку, поиск, скрываем оверлей в .finally()
     function hideEditOrderLoadingOverlay_() {
         var o = document.getElementById('edit-order-loading-overlay');
         if (o) o.classList.add('hidden');
     }
     var editPhoneParam = new URLSearchParams(window.location.search).get('editPhone');
-    if (editPhoneParam && typeof normalizePhone === 'function' && normalizePhone(editPhoneParam).length === 11) {
-        var phoneForDeepLink = editPhoneParam;
-        requestAnimationFrame(function () {
-            var overlay = document.getElementById('edit-order-loading-overlay');
-            if (overlay) overlay.classList.remove('hidden');
-            setTimeout(function () {
-                if (typeof openEditOrderModal !== 'function') { hideEditOrderLoadingOverlay_(); return; }
-                openEditOrderModal();
-                var phoneInput = document.getElementById('edit-order-phone');
-                var hintEl = document.getElementById('edit-order-search-hint');
-                if (phoneInput && !phoneInput.value) phoneInput.value = phoneForDeepLink;
-                if (hintEl) { hintEl.style.display = ''; hintEl.textContent = 'Поиск...'; hintEl.className = 'edit-order-hint'; }
-                try {
-                    var p = new URLSearchParams(window.location.search);
-                    p.delete('editPhone');
-                    var q = p.toString();
-                    var cleanUrl = window.location.pathname + (q ? '?' + q : '') + (window.location.hash || '');
-                    window.history.replaceState({}, '', cleanUrl);
-                } catch (e) {}
-                if (typeof searchOrdersByPhone !== 'function') { hideEditOrderLoadingOverlay_(); return; }
-                searchOrdersByPhone(phoneForDeepLink).then(function (orders) {
-                    if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
-                    if (orders.length === 0 && typeof clearEditOrderForm === 'function') clearEditOrderForm();
-                    if (hintEl) {
-                        hintEl.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
-                        hintEl.className = 'edit-order-hint';
-                    }
-                }).catch(function (err) {
-                    if (hintEl) { hintEl.textContent = 'Ошибка поиска: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; }
-                    if (typeof renderEditOrderList === 'function') renderEditOrderList([]);
-                }).finally(function () {
-                    requestAnimationFrame(hideEditOrderLoadingOverlay_);
-                });
-            }, 0);
-        });
+    if (editPhoneParam) {
+        var normalized = typeof normalizePhone === 'function' ? normalizePhone(editPhoneParam) : '';
+        if (normalized.length !== 11) {
+            hideEditOrderLoadingOverlay_();
+        } else {
+            var phoneForDeepLink = editPhoneParam;
+            requestAnimationFrame(function () {
+                setTimeout(function () {
+                    if (typeof openEditOrderModal !== 'function') { hideEditOrderLoadingOverlay_(); return; }
+                    openEditOrderModal();
+                    var phoneInput = document.getElementById('edit-order-phone');
+                    var hintEl = document.getElementById('edit-order-search-hint');
+                    if (phoneInput && !phoneInput.value) phoneInput.value = phoneForDeepLink;
+                    if (hintEl) { hintEl.style.display = ''; hintEl.textContent = 'Поиск...'; hintEl.className = 'edit-order-hint'; }
+                    try {
+                        var p = new URLSearchParams(window.location.search);
+                        p.delete('editPhone');
+                        var q = p.toString();
+                        var cleanUrl = window.location.pathname + (q ? '?' + q : '') + (window.location.hash || '');
+                        window.history.replaceState({}, '', cleanUrl);
+                    } catch (e) {}
+                    if (typeof searchOrdersByPhone !== 'function') { hideEditOrderLoadingOverlay_(); return; }
+                    searchOrdersByPhone(phoneForDeepLink).then(function (orders) {
+                        if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
+                        if (orders.length === 0 && typeof clearEditOrderForm === 'function') clearEditOrderForm();
+                        if (hintEl) {
+                            hintEl.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
+                            hintEl.className = 'edit-order-hint';
+                        }
+                    }).catch(function (err) {
+                        if (hintEl) { hintEl.textContent = 'Ошибка поиска: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; }
+                        if (typeof renderEditOrderList === 'function') renderEditOrderList([]);
+                    }).finally(function () {
+                        requestAnimationFrame(hideEditOrderLoadingOverlay_);
+                    });
+                }, 0);
+            });
+        }
     }
 }
 
