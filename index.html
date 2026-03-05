@@ -14,86 +14,43 @@
   <meta http-equiv="Cache-Control" content="public, max-age=31536000">
   <meta http-equiv="Expires" content="31536000">
   
-  <!-- Яндекс.Карты -->
-  <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" type="text/javascript"></script>
-  <!-- Supabase JavaScript SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js"></script>
-  
-  <!-- cache-bust: Safari иногда держит старые стили, поэтому версия должна меняться при правках -->
-    <link rel="stylesheet" href="css/styles.css?v=248">
+  <!-- Критичный путь: инлайн CSS только для модалки ?editPhone= (первая отрисовка без ожидания полного styles.css). Полные стили — preload+onload, не блокируют. -->
+  <style>
+  .hidden{display:none}
+  .edit-order-modal{position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-start;justify-content:center;background:rgba(0,0,0,.5);padding:24px;box-sizing:border-box;visibility:visible;opacity:1;overflow-y:auto}
+  .edit-order-modal.hidden{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
+  .edit-order-modal:not(.hidden){display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}
+  .edit-order-modal-content{background:#fff;border-radius:12px;max-width:600px;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.3);margin:auto}
+  .edit-order-modal-header{display:flex;justify-content:space-between;align-items:center;padding:24px 30px;border-radius:12px 12px 0 0;background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff}
+  .edit-order-modal-header h2{margin:0;font-size:1.25rem;font-weight:600;color:#fff}
+  .edit-order-modal-header .icon-img{width:24px;height:24px;vertical-align:middle;margin-right:8px}
+  .edit-order-modal-body{padding:24px 30px;min-height:120px;background:#fafbfc}
+  .edit-order-step{background:#fff;border-radius:8px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .edit-order-modal-body label{display:block;margin-bottom:4px;font-size:.875rem;font-weight:600;color:#2c3e50}
+  .edit-order-search-row{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+  .edit-order-search-row input{flex:1;min-width:0;padding:6px 10px;min-height:36px;font-size:.9375rem;border:1px solid #ddd;border-radius:6px;box-sizing:border-box}
+  .edit-order-hint{margin:0 0 12px;font-size:.9rem;color:#666}
+  .green-button{padding:14px 24px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer}
+  .green-button:hover{background:#15803d}
+  .edit-order-btn-with-icon{display:inline-flex;align-items:center;justify-content:center;gap:4px}
+  .edit-order-btn-icon{width:1.1em;height:1.1em;flex-shrink:0;vertical-align:middle}
+  .edit-order-btn-icon--light{filter:brightness(0) invert(1)}
+  .edit-order-modal-header .close-modal-button{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:28px;width:36px;height:36px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  </style>
+  <link rel="preload" href="css/styles.css?v=249" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="css/styles.css?v=249"></noscript>
+  <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
+  <script src="js/products-data.js?v=231" defer></script>
+  <script src="js/greenhouses-data.js?v=231" defer></script>
+  <script src="js/greenhouses-photos-list.js?v=231" defer></script>
+  <script src="js/instructions-data.js?v=231" defer></script>
+  <script src="js/scripts.js?v=249" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
     <div id="toast-container" class="toast-container"></div>
-  <!-- Модальное окно FAQ (в начале body для гарантированного отображения) -->
-  <div class="faq-modal hidden" id="faq-modal">
-    <div class="faq-modal-content">
-      <div class="faq-modal-header">
-        <h2><img src="icons/faq.png" alt="" class="icon-img"> FAQ - Часто задаваемые вопросы</h2>
-        <button class="close-modal-button" onclick="closeFAQModal()">×</button>
-      </div>
-      <div class="faq-modal-body">
-        <div class="faq-search-box">
-          <input type="text" id="faq-search-input" placeholder="Поиск по вопросам..." oninput="filterFAQ()">
-        </div>
-        <div id="faq-content">
-          <!-- FAQ будет добавлен через JavaScript -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Модальное окно с датами доставки (в начале body для гарантированного отображения) -->
-  <div class="delivery-dates-modal hidden" id="delivery-dates-modal">
-    <div class="delivery-dates-modal-content">
-      <div class="delivery-dates-modal-header">
-        <h2><img src="icons/calendar.png" alt="" class="icon-img"> Актуальные даты доставки по городам</h2>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <button class="close-modal-button" onclick="closeDeliveryDatesModal()">×</button>
-        </div>
-      </div>
-      <div class="delivery-dates-modal-body">
-        <div id="delivery-dates-loading" style="text-align: center; padding: 20px;">
-          Загрузка данных...
-        </div>
-        <div id="delivery-dates-content" style="display: none;">
-          <input type="text" id="delivery-dates-search" placeholder="Поиск по городу..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
-          <div id="delivery-dates-table-container" style="max-height: 500px; overflow-y: auto;">
-            <!-- Таблица будет добавлена через JavaScript -->
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Модальное окно выбора грядок (в начале body для гарантированного отображения) -->
-  <div class="beds-modal hidden" id="beds-modal">
-    <div class="beds-modal-content">
-      <div class="beds-modal-header">
-        <h2><img src="icons/plant.png" alt="" class="icon-img"> Выбор грядок</h2>
-        <button class="close-modal-button" onclick="closeBedsModal()">×</button>
-      </div>
-      <div class="beds-modal-body">
-        <div id="beds-selection">
-          <!-- Грядки будут добавлены через JavaScript -->
-        </div>
-        <div class="beds-assembly-option" style="padding: 15px; border-top: 1px solid #e0e0e0; margin-top: 20px;">
-          <label style="display: flex; align-items: center; cursor: pointer; gap: 10px;">
-            <input type="checkbox" id="beds-assembly-checkbox" style="width: 20px; height: 20px; cursor: pointer;">
-            <span style="font-size: 16px; font-weight: 500;">Добавить сборку грядок</span>
-          </label>
-          <div id="beds-assembly-price" style="margin-top: 8px; margin-left: 30px; color: #666; font-size: 14px;">
-            <!-- Цена будет показана динамически -->
-          </div>
-        </div>
-        <div class="beds-modal-footer">
-          <button class="beds-apply-btn" onclick="applyBedsSelection()">Применить</button>
-          <button class="beds-cancel-btn" onclick="closeBedsModal()">Отмена</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
+  <!-- Критичный путь ?editPhone=: модалка и скрипт сразу после тоста, разбираются первыми; остальное (FAQ, даты, грядки) — ниже. -->
   <!-- Модальное окно «Редактирование заказа» (заготовка) -->
   <div class="edit-order-modal hidden" id="edit-order-modal" role="dialog" aria-modal="true" aria-labelledby="edit-order-modal-title">
     <div class="edit-order-modal-content">
@@ -316,6 +273,91 @@
     </div>
   </div>
 </div>
+  <script>
+  (function(){
+    var p = typeof URLSearchParams !== 'undefined' && new URLSearchParams(window.location.search).get('editPhone');
+    if (!p) return;
+    var m = document.getElementById('edit-order-modal');
+    var inp = document.getElementById('edit-order-phone');
+    if (m && inp) {
+      inp.value = p;
+      m.classList.remove('hidden');
+      m.style.display = 'flex';
+      m.style.visibility = 'visible';
+      m.style.opacity = '1';
+      document.body.style.overflow = 'hidden';
+    }
+  })();
+  </script>
+  <!-- Модальное окно FAQ (в начале body для гарантированного отображения) -->
+  <div class="faq-modal hidden" id="faq-modal">
+    <div class="faq-modal-content">
+      <div class="faq-modal-header">
+        <h2><img src="icons/faq.png" alt="" class="icon-img"> FAQ - Часто задаваемые вопросы</h2>
+        <button class="close-modal-button" onclick="closeFAQModal()">×</button>
+      </div>
+      <div class="faq-modal-body">
+        <div class="faq-search-box">
+          <input type="text" id="faq-search-input" placeholder="Поиск по вопросам..." oninput="filterFAQ()">
+        </div>
+        <div id="faq-content">
+          <!-- FAQ будет добавлен через JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно с датами доставки (в начале body для гарантированного отображения) -->
+  <div class="delivery-dates-modal hidden" id="delivery-dates-modal">
+    <div class="delivery-dates-modal-content">
+      <div class="delivery-dates-modal-header">
+        <h2><img src="icons/calendar.png" alt="" class="icon-img"> Актуальные даты доставки по городам</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="close-modal-button" onclick="closeDeliveryDatesModal()">×</button>
+        </div>
+      </div>
+      <div class="delivery-dates-modal-body">
+        <div id="delivery-dates-loading" style="text-align: center; padding: 20px;">
+          Загрузка данных...
+        </div>
+        <div id="delivery-dates-content" style="display: none;">
+          <input type="text" id="delivery-dates-search" placeholder="Поиск по городу..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
+          <div id="delivery-dates-table-container" style="max-height: 500px; overflow-y: auto;">
+            <!-- Таблица будет добавлена через JavaScript -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно выбора грядок (в начале body для гарантированного отображения) -->
+  <div class="beds-modal hidden" id="beds-modal">
+    <div class="beds-modal-content">
+      <div class="beds-modal-header">
+        <h2><img src="icons/plant.png" alt="" class="icon-img"> Выбор грядок</h2>
+        <button class="close-modal-button" onclick="closeBedsModal()">×</button>
+      </div>
+      <div class="beds-modal-body">
+        <div id="beds-selection">
+          <!-- Грядки будут добавлены через JavaScript -->
+        </div>
+        <div class="beds-assembly-option" style="padding: 15px; border-top: 1px solid #e0e0e0; margin-top: 20px;">
+          <label style="display: flex; align-items: center; cursor: pointer; gap: 10px;">
+            <input type="checkbox" id="beds-assembly-checkbox" style="width: 20px; height: 20px; cursor: pointer;">
+            <span style="font-size: 16px; font-weight: 500;">Добавить сборку грядок</span>
+          </label>
+          <div id="beds-assembly-price" style="margin-top: 8px; margin-left: 30px; color: #666; font-size: 14px;">
+            <!-- Цена будет показана динамически -->
+          </div>
+        </div>
+        <div class="beds-modal-footer">
+          <button class="beds-apply-btn" onclick="applyBedsSelection()">Применить</button>
+          <button class="beds-cancel-btn" onclick="closeBedsModal()">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 
   <!-- Диалог подтверждения закрытия редактирования заказа (несохранённые данные) -->
   <div class="edit-order-close-confirm hidden" id="edit-order-close-confirm" role="alertdialog" aria-modal="true" aria-labelledby="edit-order-close-confirm-title" aria-describedby="edit-order-close-confirm-text">
@@ -957,12 +999,7 @@
       </div>
     </div>
 
-    <!-- cache-bust: версия скрипта должна быть синхронизирована с APP_VERSION в scripts.js -->
-    <script src="js/products-data.js?v=231"></script>
-    <script src="js/greenhouses-data.js?v=231"></script>
-    <script src="js/greenhouses-photos-list.js?v=231"></script>
-    <script src="js/instructions-data.js?v=231"></script>
-    <script src="js/scripts.js?v=248"></script>
+    <!-- Скрипты перенесены в <head> с defer: разбор не блокируется, модалка ?editPhone= открывается при разборе body. -->
   </div>
 </body>
 </html>
