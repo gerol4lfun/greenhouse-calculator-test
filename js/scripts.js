@@ -4263,13 +4263,17 @@ async function initializeCalculator() {
     initCharCounters();
 
     // Deep link: ?editPhone=79001234567 — оверлей загрузки, затем модалка и поиск; при одном заказе — карточка + «Редактировать»
+    function hideEditOrderLoadingOverlay_() {
+        var o = document.getElementById('edit-order-loading-overlay');
+        if (o) o.classList.add('hidden');
+    }
     var editPhoneParam = new URLSearchParams(window.location.search).get('editPhone');
     if (editPhoneParam && typeof normalizePhone === 'function' && normalizePhone(editPhoneParam).length === 11) {
         var phoneForDeepLink = editPhoneParam;
+        var loadingOverlayEl = document.getElementById('edit-order-loading-overlay');
+        if (loadingOverlayEl) loadingOverlayEl.classList.remove('hidden');
         var runEditPhoneDeepLink = function () {
-            var loadingOverlay = document.getElementById('edit-order-loading-overlay');
-            if (loadingOverlay) { loadingOverlay.classList.remove('hidden'); }
-            if (typeof openEditOrderModal !== 'function') { if (loadingOverlay) loadingOverlay.classList.add('hidden'); return; }
+            if (typeof openEditOrderModal !== 'function') { hideEditOrderLoadingOverlay_(); return; }
             openEditOrderModal();
             var phoneInput = document.getElementById('edit-order-phone');
             var hintEl = document.getElementById('edit-order-search-hint');
@@ -4282,9 +4286,8 @@ async function initializeCalculator() {
                 var cleanUrl = window.location.pathname + (q ? '?' + q : '') + (window.location.hash || '');
                 window.history.replaceState({}, '', cleanUrl);
             } catch (e) {}
-            if (typeof searchOrdersByPhone !== 'function') { if (loadingOverlay) loadingOverlay.classList.add('hidden'); return; }
+            if (typeof searchOrdersByPhone !== 'function') { hideEditOrderLoadingOverlay_(); return; }
             searchOrdersByPhone(phoneForDeepLink).then(function (orders) {
-                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
                 if (orders.length === 0 && typeof clearEditOrderForm === 'function') clearEditOrderForm();
                 if (hintEl) {
@@ -4292,10 +4295,9 @@ async function initializeCalculator() {
                     hintEl.className = 'edit-order-hint';
                 }
             }).catch(function (err) {
-                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 if (hintEl) { hintEl.textContent = 'Ошибка поиска: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; }
                 if (typeof renderEditOrderList === 'function') renderEditOrderList([]);
-            });
+            }).finally(hideEditOrderLoadingOverlay_);
         };
         requestAnimationFrame(function () { requestAnimationFrame(runEditPhoneDeepLink); });
     }

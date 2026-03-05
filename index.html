@@ -63,7 +63,7 @@
       <span class="edit-order-loading-overlay__text">Открываем заказ…</span>
     </div>
   </div>
-  <script>if (/[?&]editPhone=/.test(window.location.search)) { var o = document.getElementById('edit-order-loading-overlay'); if (o) o.classList.remove('hidden'); }</script>
+  <!-- Показ оверлея только из scripts.js (runEditPhoneDeepLink), скрытие в .finally() после searchOrdersByPhone -->
   <!-- Критичный путь ?editPhone=: модалка и скрипт сразу после тоста, разбираются первыми; остальное (FAQ, даты, грядки) — ниже. -->
   <!-- Модальное окно «Редактирование заказа» (заготовка) -->
   <div class="edit-order-modal hidden" id="edit-order-modal" role="dialog" aria-modal="true" aria-labelledby="edit-order-modal-title">
