@@ -579,6 +579,10 @@ let clearingFormAfterSubmit = false; // true = очищаем форму пос�
 let lastCalculation = null; // Данные последнего расчёта для формы заказа
 /** Корзина заказа: массив позиций (разные теплицы). Каждая — копия lastCalculation + itemTotal без доставки + снимок опций для «Изменить». */
 let orderCart = [];
+/** Хранилище выбранных грядок (объявление выше блока инициализации при загрузке, чтобы не было TDZ). */
+let selectedBeds = JSON.parse(localStorage.getItem('selectedBeds') || '{}');
+/** Флаг сборки грядок (объявление выше блока инициализации при загрузке). */
+let bedsAssemblyEnabled = localStorage.getItem('bedsAssemblyEnabled') === 'true';
 /** Индекс позиции в orderCart, которую пользователь редактирует через «Изменить»; при следующем «Добавить в заказ» — замена этой позиции. */
 let orderCartEditingIndex = null;
 /** id заказа в Supabase при редактировании; при заданном — submitOrder делает update вместо insert */
@@ -588,6 +592,8 @@ let currentOrderIdForEdit = null;
 let editOrderComposition = [];
 /** Стоимость доставки по заказу (один раз на заказ); для total = sum(item_total) + editOrderDeliveryCost. */
 let editOrderDeliveryCost = 0;
+/** Итого по заказу при последней загрузке (для отображения цены теплицы как остаток, если base_price/item_total нет). */
+let lastLoadedOrderTotalForDisplay = null;
 /** Индекс позиции при редактировании (null = добавление новой). */
 let editOrderEditingIndex = null;
 /** Данные цен по городу для подформы добавления позиции в модалке (не трогаем currentCityData). */
@@ -5222,12 +5228,22 @@ async function searchOrdersByPhone(phone) {
     if (!normalized || normalized.length !== 11) return [];
     var list = await supabaseClient
         .from('orders')
-        .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly')
+        .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly, delivery_cost')
         .eq('client_phone', normalized)
         .order('created_at', { ascending: false })
         .limit(30);
     if (list.error) throw list.error;
     return list.data || [];
+}
+
+/** Число из total/delivery_cost/item_total: поддерживает "24.040" (точка — разделитель тысяч). */
+function parseOrderPrice_(val) {
+    if (val == null || val === '') return 0;
+    var s = String(val).replace(/\s/g, '').trim();
+    if (!s) return 0;
+    if (/^\d{1,3}(\.\d{3})*$/.test(s)) return parseInt(s.replace(/\./g, ''), 10);
+    var n = parseInt(s, 10);
+    return isNaN(n) ? 0 : n;
 }
 
 /**
@@ -5239,24 +5255,45 @@ async function searchOrdersByPhone(phone) {
 function getOrderCompositionLines(order) {
     var out = [];
     if (!order) return out;
-    var orderTotal = order.total != null ? parseInt(order.total, 10) : 0;
+    var orderTotal = parseOrderPrice_(order.total);
+    var deliveryCost = parseOrderPrice_(order.delivery_cost);
     var hasLineItems = order.line_items && typeof order.line_items === 'string';
     if (hasLineItems) {
         try {
             var items = JSON.parse(order.line_items);
             if (Array.isArray(items) && items.length > 0) {
+                var totalExtrasSum = 0;
+                items.forEach(function (item) { totalExtrasSum += parseExtrasAssemblySum(item.extras, item.assembly); });
+                var remainder = Math.max(0, orderTotal - deliveryCost - totalExtrasSum);
+                items.forEach(function (item) {
+                    if (item.base_price != null && !isNaN(Number(item.base_price))) remainder -= Number(item.base_price);
+                    else if (parseOrderPrice_(item.item_total) > 0) {
+                        var es = parseExtrasAssemblySum(item.extras, item.assembly);
+                        remainder -= Math.max(0, parseOrderPrice_(item.item_total) - es);
+                    }
+                });
+                remainder = Math.max(0, remainder);
+                if (remainder === 0 && orderTotal > 0) remainder = Math.max(0, orderTotal - deliveryCost - totalExtrasSum);
+                var noPriceCount = 0;
+                items.forEach(function (item) {
+                    var hasPrice = (item.base_price != null && !isNaN(Number(item.base_price))) || parseOrderPrice_(item.item_total) > 0;
+                    if (!hasPrice) noPriceCount++;
+                });
                 items.forEach(function (item) {
                     var m = (item.model || '').toString().trim() || 'Теплица';
                     var w = item.width != null ? item.width : '';
                     var l = item.length != null ? item.length : '';
-                    var itemTotal = item.item_total != null ? parseInt(item.item_total, 10) : 0;
+                    var itemTotal = parseOrderPrice_(item.item_total);
                     var displayPrice;
                     if (item.base_price != null && !isNaN(Number(item.base_price))) {
                         displayPrice = Number(item.base_price);
-                    } else {
+                    } else if (itemTotal > 0) {
                         var extrasSum = parseExtrasAssemblySum(item.extras, item.assembly);
                         displayPrice = (extrasSum > 0 && itemTotal >= extrasSum) ? Math.max(0, itemTotal - extrasSum) : itemTotal;
+                    } else {
+                        displayPrice = noPriceCount === 1 ? remainder : (noPriceCount > 0 ? Math.round(remainder / noPriceCount) : 0);
                     }
+                    if (displayPrice === 0 && orderTotal > 0 && items.length === 1) displayPrice = Math.max(0, orderTotal - deliveryCost);
                     out.push({ type: 'header', text: greenhouseTitle_(m, w, l), price: displayPrice });
                     var extrasStr = (item.extras || '').trim();
                     var assemblyStr = (item.assembly || '').trim();
@@ -5276,7 +5313,7 @@ function getOrderCompositionLines(order) {
     var model = (order.model || '').toString().trim();
     var width = order.width != null ? String(order.width) : '';
     var length = order.length != null ? String(order.length) : '';
-    var tot = order.total != null ? parseInt(order.total, 10) : 0;
+    var tot = parseOrderPrice_(order.total);
     if (!model && !width && !length && !tot) return out;
     var displayPriceOne;
     var baseOrUnit = order.base_price != null ? order.base_price : order.unit_price;
@@ -5284,7 +5321,7 @@ function getOrderCompositionLines(order) {
         displayPriceOne = Number(baseOrUnit);
     } else {
         var sumExtras = parseExtrasAssemblySum(order.extras, order.assembly);
-        displayPriceOne = (sumExtras > 0 && tot >= sumExtras) ? Math.max(0, tot - sumExtras) : tot;
+        displayPriceOne = Math.max(0, tot - deliveryCost - sumExtras);
     }
     out.push({ type: 'header', text: greenhouseTitle_(model, width, length), price: displayPriceOne });
     var extrasStr = (order.extras || '').trim();
@@ -5327,7 +5364,7 @@ function getOrderCompositionSummary(order) {
     var lines = getOrderCompositionLines(order);
     if (lines.length === 0) return '';
     return lines.map(function (ln) {
-        if (ln.type === 'header') return ln.text + ' — ' + (typeof formatPrice === 'function' ? formatPrice(ln.price) : ln.price) + ' ₽';
+        if (ln.type === 'header') return ln.text + (ln.price != null && ln.price > 0 ? ' — ' + (typeof formatPrice === 'function' ? formatPrice(ln.price) : ln.price) + ' ₽' : '');
         if (ln.type === 'total') return 'Итого: ' + (typeof formatPrice === 'function' ? formatPrice(ln.price) : ln.price) + ' ₽';
         return ln.text;
     }).join('\n');
@@ -5400,8 +5437,8 @@ function renderEditOrderList(orders) {
                     if (inPosition) html += '</div>';
                     html += '<div class="edit-order-card-position">';
                     inPosition = true;
-                    // Цены показываем только для заказов с 2025 года
-                    var priceStr = (!isPreHistory && ln.price != null) ? (typeof formatPrice === 'function' ? formatPrice(ln.price) : ln.price) + ' ₽' : '';
+                    // Цены показываем только для заказов с 2025 года; 0 не показываем — только итог
+                    var priceStr = (!isPreHistory && ln.price != null && ln.price > 0) ? (typeof formatPrice === 'function' ? formatPrice(ln.price) : ln.price) + ' ₽' : '';
                     html += '<div class="edit-order-item-composition-header">';
                     html += '<span class="edit-order-item-composition-header__text">' + escapeHtml(ln.text) + '</span>';
                     if (priceStr) html += '<span class="edit-order-item-composition-header__price">' + escapeHtml(priceStr) + '</span>';
@@ -5450,7 +5487,8 @@ function renderEditOrderList(orders) {
             html += '<button type="button" class="edit-order-item-btn edit-order-item-btn--new-order" onclick="startNewOrderForPhone(\'' + phoneSafe + '\')">';
             html += '＋ Новый заказ для этого клиента</button>';
         } else {
-            html += '<button type="button" class="green-button edit-order-item-btn edit-order-btn-with-icon" data-order-id="' + id + '"><img src="icons/edit-order-icon-edit.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Редактировать</button>';
+            var idEscaped = (id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            html += '<button type="button" class="green-button edit-order-item-btn edit-order-btn-with-icon" data-order-id="' + id + '" onclick="if(typeof startEditOrder===\'function\')startEditOrder(\'' + idEscaped + '\')"><img src="icons/edit-order-icon-edit.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Редактировать</button>';
         }
 
         html += '</div>';
@@ -5529,8 +5567,9 @@ function fillEditOrderForm(order) {
     setEditOrderFieldValue('edit-order-comment', order.comment || '');
 
     var orderCity = (order.city || '').trim() || (parsedAddr.part1 || '').trim();
+    lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
-    editOrderDeliveryCost = typeof order.delivery_cost === 'number' ? order.delivery_cost : (parseInt(order.delivery_cost, 10) || 0);
+    editOrderDeliveryCost = parseOrderPrice_(order.delivery_cost);
     if (order.line_items && typeof order.line_items === 'string') {
         try {
             var items = JSON.parse(order.line_items);
@@ -5547,7 +5586,7 @@ function fillEditOrderForm(order) {
                         frame: (item.frame || '').toString().trim() || '',
                         arc_step: item.arc_step != null ? item.arc_step : '',
                         polycarbonate: (item.polycarbonate || '').toString().trim() || '',
-                        item_total: item.item_total != null ? parseInt(item.item_total, 10) : 0,
+                        item_total: parseOrderPrice_(item.item_total),
                         base_price: item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : undefined,
                         form: (item.form || '').toString().trim() || getFormCategory(item.model || ''),
                         city: orderCity,
@@ -5557,12 +5596,12 @@ function fillEditOrderForm(order) {
                     });
                 });
                 var sumItems = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
-                if (editOrderDeliveryCost === 0 && order.total != null) editOrderDeliveryCost = Math.max(0, parseInt(order.total, 10) - sumItems);
+                if (editOrderDeliveryCost === 0 && order.total != null) editOrderDeliveryCost = Math.max(0, parseOrderPrice_(order.total) - sumItems);
             }
         } catch (e) { /* ignore */ }
     }
     if (editOrderComposition.length === 0 && order.model) {
-        var tot = order.total != null ? parseInt(order.total, 10) : 0;
+        var tot = parseOrderPrice_(order.total);
         var flatBasePrice = order.base_price != null && !isNaN(Number(order.base_price)) ? Number(order.base_price) : (order.unit_price != null && !isNaN(Number(order.unit_price)) ? Number(order.unit_price) : undefined);
         editOrderComposition.push({
             model: (order.model || '').toString().trim() || 'Теплица',
@@ -5832,14 +5871,14 @@ function deriveOptionsFromExtrasAssembly(extras, assembly) {
  */
 function buildOrderCompositionItemHtml(opts) {
     var text = opts.text || 'Теплица';
-    var priceFormatted = opts.priceFormatted != null ? String(opts.priceFormatted) : '0';
+    var priceFormatted = opts.priceFormatted != null ? String(opts.priceFormatted) : '';
     var extrasHtml = opts.extrasHtml || '';
     var idx = opts.index != null ? opts.index : 0;
     var showEdit = opts.showEditButton !== false;
     var showDel = opts.showDeleteButton !== false;
     var html = '<div class="edit-order-composition-item" data-index="' + idx + '">';
     html += '<span class="edit-order-composition-item__text">' + escapeHtml(text) + '</span>';
-    html += '<span class="edit-order-composition-item__price">' + escapeHtml(priceFormatted) + ' ₽</span>';
+    if (priceFormatted !== '') html += '<span class="edit-order-composition-item__price">' + escapeHtml(priceFormatted) + ' ₽</span>';
     if (extrasHtml) html += '<div class="edit-order-composition-item__extras">' + extrasHtml + '</div>';
     html += '<span class="edit-order-composition-item__actions">';
     if (showEdit) html += '<button type="button" class="edit-order-composition-item__btn edit-order-composition-item__btn--edit">Изменить</button>';
@@ -5859,6 +5898,24 @@ function renderEditOrderCompositionList() {
         resetEditOrderAddPanelOptions();
     }
     var total = getEditOrderCompositionTotal();
+    var orderTotal = lastLoadedOrderTotalForDisplay != null ? lastLoadedOrderTotalForDisplay : total;
+    var totalExtrasSum = 0;
+    editOrderComposition.forEach(function (item) { totalExtrasSum += parseExtrasAssemblySum(item.extras, item.assembly); });
+    var remainder = Math.max(0, orderTotal - (editOrderDeliveryCost || 0) - totalExtrasSum);
+    editOrderComposition.forEach(function (item) {
+        if (item.base_price != null && !isNaN(Number(item.base_price))) remainder -= Number(item.base_price);
+        else if (item.item_total != null && Number(item.item_total) > 0) {
+            var es = parseExtrasAssemblySum(item.extras, item.assembly);
+            remainder -= Math.max(0, Number(item.item_total) - es);
+        }
+    });
+    remainder = Math.max(0, remainder);
+    if (remainder === 0 && orderTotal > 0) remainder = Math.max(0, orderTotal - (editOrderDeliveryCost || 0) - totalExtrasSum);
+    var noPriceCount = 0;
+    editOrderComposition.forEach(function (item) {
+        var hasPrice = (item.base_price != null && !isNaN(Number(item.base_price))) || (item.item_total != null && Number(item.item_total) > 0);
+        if (!hasPrice) noPriceCount++;
+    });
     var html = '';
     editOrderComposition.forEach(function (item, idx) {
         var text = greenhouseTitle_(item.model, item.width, item.length);
@@ -5868,9 +5925,14 @@ function renderEditOrderCompositionList() {
         } else {
             var extrasSum = parseExtrasAssemblySum(item.extras, item.assembly);
             var itemTotal = item.item_total != null ? Number(item.item_total) : 0;
-            displayPrice = (extrasSum > 0 && itemTotal >= extrasSum) ? Math.max(0, itemTotal - extrasSum) : itemTotal;
+            if (itemTotal > 0) {
+                displayPrice = (extrasSum > 0 && itemTotal >= extrasSum) ? Math.max(0, itemTotal - extrasSum) : itemTotal;
+            } else {
+                displayPrice = noPriceCount === 1 ? remainder : (noPriceCount > 0 ? Math.round(remainder / noPriceCount) : 0);
+            }
         }
-        var priceFormatted = typeof formatPrice === 'function' ? formatPrice(displayPrice) : displayPrice;
+        if (displayPrice === 0 && orderTotal > 0 && editOrderComposition.length === 1) displayPrice = Math.max(0, orderTotal - (editOrderDeliveryCost || 0));
+        var priceFormatted = (displayPrice > 0 && typeof formatPrice === 'function') ? formatPrice(displayPrice) : (displayPrice > 0 ? displayPrice : '');
         var extrasStr = (item.extras || '').trim();
         var assemblyStr = (item.assembly || '').trim();
         var extrasHtml = '';
@@ -6281,6 +6343,7 @@ function clearEditOrderForm() {
     setEditOrderFieldValue('edit-order-comment', '');
     setEditOrderFieldValue('edit-order-gift', '');
     editOrderComposition = [];
+    lastLoadedOrderTotalForDisplay = null;
     if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
@@ -6874,7 +6937,7 @@ function initEditOrderModal() {
 
     var searchBtn = document.getElementById('edit-order-search-btn');
     var phoneInput = document.getElementById('edit-order-phone');
-    hintEl = document.getElementById('edit-order-search-hint');
+    var hintEl = document.getElementById('edit-order-search-hint');
     if (searchBtn && phoneInput) {
         searchBtn.addEventListener('click', function () {
             var phone = (phoneInput.value || '').trim();
@@ -8389,12 +8452,7 @@ function filterFAQ() {
 }
 
 // ==================== ФУНКЦИИ ДЛЯ РАБОТЫ С ГРЯДКАМИ ====================
-
-// Хранилище выбранных грядок (в localStorage)
-let selectedBeds = JSON.parse(localStorage.getItem('selectedBeds') || '{}');
-
-// Флаг сборки грядок (в localStorage)
-let bedsAssemblyEnabled = localStorage.getItem('bedsAssemblyEnabled') === 'true';
+// selectedBeds и bedsAssemblyEnabled объявлены выше (рядом с orderCart)
 
 // Цены на сборку грядок в зависимости от длины грядки (за 1 грядку)
 const BEDS_ASSEMBLY_PRICES = {
