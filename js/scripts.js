@@ -5290,21 +5290,27 @@ function getOrderCompositionLines(order) {
                     var hasPrice = (item.base_price != null && !isNaN(Number(item.base_price))) || parseOrderPrice_(item.item_total) > 0;
                     if (!hasPrice) noPriceCount++;
                 });
+                // Цена теплицы в заказе = Итого − доставка − сумма всех допов/сборки (одна цена, может быть ниже текущей — клиент забронировал раньше).
+                var priceInOrderOne = Math.max(0, orderTotal - deliveryCost - totalExtrasSum);
                 items.forEach(function (item) {
                     var m = (item.model || '').toString().trim() || 'Теплица';
                     var w = item.width != null ? item.width : '';
                     var l = item.length != null ? item.length : '';
-                    var itemTotal = parseOrderPrice_(item.item_total);
                     var displayPrice;
-                    if (item.base_price != null && !isNaN(Number(item.base_price))) {
-                        displayPrice = Number(item.base_price);
-                    } else if (itemTotal > 0) {
-                        var extrasSum = parseExtrasAssemblySum(item.extras, item.assembly);
-                        displayPrice = (extrasSum > 0 && itemTotal >= extrasSum) ? Math.max(0, itemTotal - extrasSum) : itemTotal;
+                    if (items.length === 1) {
+                        displayPrice = priceInOrderOne;
                     } else {
-                        displayPrice = noPriceCount === 1 ? remainder : (noPriceCount > 0 ? Math.round(remainder / noPriceCount) : 0);
+                        var itemTotal = parseOrderPrice_(item.item_total);
+                        if (item.base_price != null && !isNaN(Number(item.base_price))) {
+                            displayPrice = Number(item.base_price);
+                        } else if (itemTotal > 0) {
+                            var extrasSum = parseExtrasAssemblySum(item.extras, item.assembly);
+                            displayPrice = (extrasSum > 0 && itemTotal >= extrasSum) ? Math.max(0, itemTotal - extrasSum) : itemTotal;
+                        } else {
+                            displayPrice = noPriceCount === 1 ? remainder : (noPriceCount > 0 ? Math.round(remainder / noPriceCount) : 0);
+                        }
+                        if (displayPrice === 0 && orderTotal > 0) displayPrice = Math.max(0, orderTotal - deliveryCost - totalExtrasSum);
                     }
-                    if (displayPrice === 0 && orderTotal > 0 && items.length === 1) displayPrice = Math.max(0, orderTotal - deliveryCost);
                     out.push({ type: 'header', text: greenhouseTitle_(m, w, l), price: displayPrice });
                     var extrasStr = (item.extras || '').trim();
                     var assemblyStr = (item.assembly || '').trim();
@@ -5312,10 +5318,14 @@ function getOrderCompositionLines(order) {
                         var combined = [extrasStr, assemblyStr].filter(Boolean).join('\n');
                         combined.split('\n').forEach(function (subLine) {
                             var t = (subLine || '').trim();
-                            if (t) out.push({ type: 'extra', text: t });
+                            if (t && !isOrphanUnitLine_(t)) out.push({ type: 'extra', text: t });
                         });
                     }
                 });
+                if (out.length) {
+                    if (deliveryCost > 0) out.push({ type: 'extra', text: 'Доставка - ' + (typeof formatPrice === 'function' ? formatPrice(deliveryCost) : deliveryCost) + ' ₽' });
+                    else if ((order.delivery_address || order.delivery_date || '').toString().trim()) out.push({ type: 'extra', text: 'Доставка — не указана' });
+                }
                 if (orderTotal && out.length) out.push({ type: 'total', text: 'Итого', price: orderTotal });
                 return out;
             }
@@ -5326,14 +5336,8 @@ function getOrderCompositionLines(order) {
     var length = order.length != null ? String(order.length) : '';
     var tot = parseOrderPrice_(order.total);
     if (!model && !width && !length && !tot) return out;
-    var displayPriceOne;
-    var baseOrUnit = order.base_price != null ? order.base_price : order.unit_price;
-    if (baseOrUnit != null && !isNaN(Number(baseOrUnit))) {
-        displayPriceOne = Number(baseOrUnit);
-    } else {
-        var sumExtras = parseExtrasAssemblySum(order.extras, order.assembly);
-        displayPriceOne = Math.max(0, tot - deliveryCost - sumExtras);
-    }
+    var sumExtras = parseExtrasAssemblySum(order.extras, order.assembly);
+    var displayPriceOne = Math.max(0, tot - deliveryCost - sumExtras);
     out.push({ type: 'header', text: greenhouseTitle_(model, width, length), price: displayPriceOne });
     var extrasStr = (order.extras || '').trim();
     var assemblyStr = (order.assembly || '').trim();
@@ -5341,11 +5345,22 @@ function getOrderCompositionLines(order) {
         var combined = [extrasStr, assemblyStr].filter(Boolean).join('\n');
         combined.split('\n').forEach(function (subLine) {
             var t = (subLine || '').trim();
-            if (t) out.push({ type: 'extra', text: t });
+            if (t && !isOrphanUnitLine_(t)) out.push({ type: 'extra', text: t });
         });
+    }
+    if (out.length) {
+        if (deliveryCost > 0) out.push({ type: 'extra', text: 'Доставка - ' + (typeof formatPrice === 'function' ? formatPrice(deliveryCost) : deliveryCost) + ' ₽' });
+        else if ((order.delivery_address || order.delivery_date || '').toString().trim()) out.push({ type: 'extra', text: 'Доставка — не указана' });
     }
     if (tot) out.push({ type: 'total', text: 'Итого', price: tot });
     return out;
+}
+
+/** Строка из допов/сборки — одиночная буква «м»/«М» (от размеров 3.0x4.0 м), не показывать отдельной строкой. */
+function isOrphanUnitLine_(s) {
+    if (!s || s.length > 2) return false;
+    var t = s.trim();
+    return t.length === 1 && /[мМmM]/.test(t) || (t.length === 2 && /[мМmM]\.?/.test(t));
 }
 
 /**
@@ -5962,13 +5977,16 @@ function renderEditOrderCompositionList() {
         var extrasHtml = '';
         if (extrasStr || assemblyStr) {
             var combined = [extrasStr, assemblyStr].filter(Boolean).join('\n');
-            var lines = combined.split(/\r?\n/).map(function (s) { return (s || '').trim(); }).filter(Boolean);
+            var lines = combined.split(/\r?\n/).map(function (s) { return (s || '').trim(); }).filter(Boolean).filter(function (line) { return !isOrphanUnitLine_(line); });
             lines.forEach(function (line) {
                 extrasHtml += '<div class="edit-order-composition-item__extras-line">' + escapeHtml(line) + '</div>';
             });
         }
         html += buildOrderCompositionItemHtml({ text: text, priceFormatted: priceFormatted, extrasHtml: extrasHtml, index: idx, showEditButton: true, showDeleteButton: true });
     });
+    if (editOrderDeliveryCost > 0) {
+        html += '<div class="edit-order-composition-item"><span class="edit-order-composition-item__text">Доставка</span><span class="edit-order-composition-item__price">' + escapeHtml(typeof formatPrice === 'function' ? formatPrice(editOrderDeliveryCost) : editOrderDeliveryCost) + ' ₽</span></div>';
+    }
     listEl.innerHTML = html;
     var totalEl = document.getElementById('edit-order-composition-total');
     if (totalEl) {
@@ -13444,7 +13462,7 @@ function renderOrderCart() {
   }
   block.style.display = '';
   var html = '';
-  orderCart.forEach(function (item, i) {
+    orderCart.forEach(function (item, i) {
     var text = greenhouseTitle_(item.model, item.width, item.length);
     var basePrice = item.basePrice != null && !isNaN(Number(item.basePrice)) ? Number(item.basePrice) : 0;
     var priceFormatted = typeof formatPrice === 'function' ? formatPrice(basePrice) : basePrice;
@@ -13466,6 +13484,10 @@ function renderOrderCart() {
     });
     html += buildOrderCompositionItemHtml({ text: text, priceFormatted: priceFormatted, extrasHtml: extrasHtml, index: i, showEditButton: true, showDeleteButton: true });
   });
+  var cartDelivery = (orderCart[0] && orderCart[0].deliveryPrice != null) ? orderCart[0].deliveryPrice : (lastCalculation && lastCalculation.deliveryPrice != null ? lastCalculation.deliveryPrice : deliveryCost);
+  if (cartDelivery > 0) {
+    html += '<div class="edit-order-composition-item"><span class="edit-order-composition-item__text">Доставка</span><span class="edit-order-composition-item__price">' + escapeHtml(typeof formatPrice === 'function' ? formatPrice(cartDelivery) : cartDelivery) + ' ₽</span></div>';
+  }
   list.innerHTML = html;
   list.querySelectorAll('.edit-order-composition-item__btn--edit').forEach(function (btn) {
     btn.addEventListener('click', function (e) {
