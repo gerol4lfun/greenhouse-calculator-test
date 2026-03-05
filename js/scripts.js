@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v249"; // v249: быстрый путь ?editPhone= — критичный CSS инлайн, preload styles.css, модалка в начале body, скрипты defer // v248: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v250"; // v250: ?editPhone= — сначала страница калькулятора, потом модалка + поиск; при одном заказе сразу форма редактирования // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -4281,16 +4281,32 @@ async function initializeCalculator() {
     // Инициализация счетчиков символов для КП
     initCharCounters();
 
-    // Deep link: ?editPhone=79001234567 → модалку уже открыл inline в HTML; здесь только запуск поиска
+    // Deep link: ?editPhone=79001234567 — сначала даём отрисоваться странице калькулятора, затем открываем модалку, поиск; при одном заказе сразу открываем форму
     var editPhoneParam = new URLSearchParams(window.location.search).get('editPhone');
-    if (editPhoneParam) {
-        var modal = document.getElementById('edit-order-modal');
-        var alreadyOpen = modal && !modal.classList.contains('hidden');
-        if (!alreadyOpen && typeof openEditOrderModal === 'function') openEditOrderModal();
-        var phoneInput = document.getElementById('edit-order-phone');
-        if (phoneInput && !phoneInput.value) phoneInput.value = editPhoneParam;
-        var searchBtn = document.getElementById('edit-order-search-btn');
-        if (searchBtn && typeof normalizePhone === 'function' && normalizePhone(editPhoneParam).length === 11) setTimeout(function () { searchBtn.click(); }, 0);
+    if (editPhoneParam && typeof normalizePhone === 'function' && normalizePhone(editPhoneParam).length === 11) {
+        var phoneForDeepLink = editPhoneParam;
+        var runEditPhoneDeepLink = function () {
+            if (typeof openEditOrderModal !== 'function') return;
+            openEditOrderModal();
+            var phoneInput = document.getElementById('edit-order-phone');
+            var hintEl = document.getElementById('edit-order-search-hint');
+            if (phoneInput && !phoneInput.value) phoneInput.value = phoneForDeepLink;
+            if (hintEl) { hintEl.style.display = ''; hintEl.textContent = 'Поиск...'; hintEl.className = 'edit-order-hint'; }
+            if (typeof searchOrdersByPhone !== 'function') return;
+            searchOrdersByPhone(phoneForDeepLink).then(function (orders) {
+                if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
+                if (orders.length === 0 && typeof clearEditOrderForm === 'function') clearEditOrderForm();
+                if (hintEl) {
+                    hintEl.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
+                    hintEl.className = 'edit-order-hint';
+                }
+                if (orders.length === 1 && typeof startEditOrder === 'function') startEditOrder(orders[0].id);
+            }).catch(function (err) {
+                if (hintEl) { hintEl.textContent = 'Ошибка поиска: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; }
+                if (typeof renderEditOrderList === 'function') renderEditOrderList([]);
+            });
+        };
+        requestAnimationFrame(function () { requestAnimationFrame(runEditPhoneDeepLink); });
     }
 }
 
