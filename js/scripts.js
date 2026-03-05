@@ -5172,10 +5172,21 @@ function hasEditOrderUnsavedChanges() {
     return compositionChanged || formChanged;
 }
 
+/** Сохранённое состояние дат доставки оформления заказа (восстанавливаем при закрытии модалки редактирования после loadDeliveryDate по адресу заказа). */
+var _savedDeliveryDateState = null;
+
 /** Закрыть модальное окно «Редактирование заказа» (без проверки несохранённых). */
 function closeEditOrderModal() {
     var modal = document.getElementById('edit-order-modal');
     if (!modal) return;
+    if (_savedDeliveryDateState) {
+        currentDeliveryDate = _savedDeliveryDateState.date;
+        currentDeliveryAssemblyDate = _savedDeliveryDateState.assembly;
+        currentDeliveryRestrictions = _savedDeliveryDateState.restrictions;
+        _savedDeliveryDateState = null;
+        if (typeof populateOrderDeliveryDate === 'function') populateOrderDeliveryDate();
+    }
+    closeEditOrderCalendar();
     lastPersistedEditOrderState = null;
     lastPersistedEditOrderFormState = null;
     modal.classList.add('hidden');
@@ -5548,12 +5559,25 @@ function fillEditOrderForm(order) {
     setEditOrderFieldValue('edit-order-client-phone', order.client_phone || '');
     var deliveryStr = (order.delivery_date || '').trim();
     var displayDate = '';
+    var isoForDate = '';
     if (deliveryStr.indexOf('-') !== -1 && deliveryStr.length >= 10) {
-        displayDate = formatDateRu(deliveryStr.split('T')[0] || deliveryStr);
+        var dateOnly = deliveryStr.split('T')[0] || deliveryStr;
+        displayDate = formatDateRu(dateOnly);
+        isoForDate = dateOnly;
     } else {
         displayDate = deliveryStr;
+        isoForDate = deliveryDateDdMmToISO(deliveryStr) || '';
     }
-    setEditOrderFieldValue('edit-order-delivery-date', displayDate);
+    setEditOrderFieldValue('edit-order-delivery-date', isoForDate);
+    setEditOrderFieldValue('edit-order-delivery-date-display', displayDate);
+    _editOrderCalSelected = isoForDate;
+    if (isoForDate) {
+        var p = isoForDate.split('-');
+        if (p.length === 3) _editOrderCalMonth = { year: +p[0], month: +p[1] - 1 };
+        else _editOrderCalMonth = null;
+    } else {
+        _editOrderCalMonth = null;
+    }
 
     var addr = (order.delivery_address || '').trim();
     var parsedAddr = addr ? parseAddressToParts_(addr) : { part1: '', part2: '', part3: '' };
@@ -6334,6 +6358,10 @@ function clearEditOrderForm() {
     setEditOrderFieldValue('edit-order-client-name', '');
     setEditOrderFieldValue('edit-order-client-phone', '');
     setEditOrderFieldValue('edit-order-delivery-date', '');
+    setEditOrderFieldValue('edit-order-delivery-date-display', '');
+    _editOrderCalSelected = '';
+    _editOrderCalMonth = null;
+    closeEditOrderCalendar();
     setEditOrderFieldValue('edit-order-address-part1', '');
     setEditOrderFieldValue('edit-order-address-part2', '');
     setEditOrderFieldValue('edit-order-address-part3', '');
@@ -12875,7 +12903,167 @@ document.addEventListener('click', function(e) {
     if (wrapper && !wrapper.contains(e.target)) {
         closeOrderCalendar();
     }
+    var editWrapper = document.querySelector('.edit-order-calendar-wrapper');
+    if (editWrapper && !editWrapper.contains(e.target)) {
+        closeEditOrderCalendar();
+    }
 });
+
+// --- Календарь даты доставки в модалке «Редактирование заказа» (привязка к датам доставки по городу, как в оформлении) ---
+var _editOrderCalMonth = null;
+var _editOrderCalSelected = '';
+var _editOrderCalSlots = [];   // зелёные зоны: слоты из delivery_dates по городу (или fallback)
+var EDIT_ORDER_CAL_DAYS_AHEAD = 90;
+
+/** Fallback: 90 дней от сегодня или от выбранной даты (если заказ старый — его дата всё равно доступна). */
+function buildEditOrderCalSlotsFallback() {
+    var base = new Date();
+    if (_editOrderCalSelected) {
+        var p = _editOrderCalSelected.split('-');
+        if (p.length === 3) {
+            var sel = new Date(+p[0], +p[1] - 1, +p[2]);
+            if (sel.getTime() < base.getTime()) base = sel;
+        }
+    }
+    var slots = [];
+    for (var i = 0; i < EDIT_ORDER_CAL_DAYS_AHEAD; i++) {
+        var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+        slots.push(formatISOLocal(d));
+    }
+    return slots;
+}
+
+function selectEditOrderCalDate(iso) {
+    _editOrderCalSelected = iso;
+    var display = document.getElementById('edit-order-delivery-date-display');
+    var hidden = document.getElementById('edit-order-delivery-date');
+    if (display && hidden) {
+        hidden.value = iso;
+        if (iso) {
+            var p = iso.split('-');
+            display.value = p[2] + '.' + p[1] + '.' + p[0];
+            display.placeholder = '';
+        } else {
+            display.value = '';
+        }
+    }
+    var dateField = document.getElementById('eo-date');
+    if (dateField) {
+        dateField.classList.remove('order-field-error');
+        var msg = dateField.querySelector('.edit-order-validation-msg');
+        if (msg) msg.textContent = '';
+    }
+}
+
+function toggleEditOrderCalendar() {
+    var cal = document.getElementById('edit-order-calendar');
+    if (!cal) return;
+    var isOpen = cal.classList.contains('open');
+    if (isOpen) {
+        closeEditOrderCalendar();
+        return;
+    }
+    var display = document.getElementById('edit-order-delivery-date-display');
+    if (display) display.classList.add('active');
+    if (!_editOrderCalMonth) {
+        if (_editOrderCalSelected) {
+            var sp = _editOrderCalSelected.split('-');
+            _editOrderCalMonth = { year: +sp[0], month: +sp[1] - 1 };
+        } else {
+            var now = new Date();
+            _editOrderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+        }
+    }
+    var part1 = document.getElementById('edit-order-address-part1');
+    var cityOrRegion = (part1 && part1.value) ? part1.value.trim() : '';
+    if (cityOrRegion && typeof loadDeliveryDate === 'function' && typeof buildDeliverySlots === 'function') {
+        if (_savedDeliveryDateState === null) {
+            _savedDeliveryDateState = {
+                date: currentDeliveryDate,
+                assembly: typeof currentDeliveryAssemblyDate !== 'undefined' ? currentDeliveryAssemblyDate : null,
+                restrictions: typeof currentDeliveryRestrictions !== 'undefined' ? currentDeliveryRestrictions : null
+            };
+        }
+        loadDeliveryDate(cityOrRegion).then(function () {
+            _editOrderCalSlots = currentDeliveryDate ? buildDeliverySlots(currentDeliveryDate) : [];
+            if (!_editOrderCalSlots.length) _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+            renderEditOrderCalendar();
+            cal.classList.add('open');
+        }).catch(function () {
+            _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+            renderEditOrderCalendar();
+            cal.classList.add('open');
+        });
+    } else {
+        _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+        renderEditOrderCalendar();
+        cal.classList.add('open');
+    }
+}
+
+function closeEditOrderCalendar() {
+    var cal = document.getElementById('edit-order-calendar');
+    if (cal) cal.classList.remove('open');
+    var display = document.getElementById('edit-order-delivery-date-display');
+    if (display) display.classList.remove('active');
+}
+
+function editOrderCalNav(dir) {
+    if (!_editOrderCalMonth) return;
+    _editOrderCalMonth.month += dir;
+    if (_editOrderCalMonth.month > 11) { _editOrderCalMonth.month = 0; _editOrderCalMonth.year++; }
+    if (_editOrderCalMonth.month < 0) { _editOrderCalMonth.month = 11; _editOrderCalMonth.year--; }
+    renderEditOrderCalendar();
+}
+
+function renderEditOrderCalendar() {
+    var grid = document.getElementById('edit-order-cal-grid');
+    var titleEl = document.getElementById('edit-order-cal-title');
+    if (!grid || !titleEl || !_editOrderCalMonth) return;
+    var slots = _editOrderCalSlots && _editOrderCalSlots.length ? _editOrderCalSlots : buildEditOrderCalSlotsFallback();
+    var slotsSet = {};
+    for (var i = 0; i < slots.length; i++) slotsSet[slots[i]] = true;
+    if (_editOrderCalSelected) slotsSet[_editOrderCalSelected] = true;
+
+    var y = _editOrderCalMonth.year;
+    var m = _editOrderCalMonth.month;
+    var monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    titleEl.textContent = monthNames[m] + ' ' + y;
+
+    var firstDay = new Date(y, m, 1);
+    var startDow = (firstDay.getDay() + 6) % 7;
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var todayISO = formatISOLocal(new Date());
+
+    grid.innerHTML = '';
+    for (var blank = 0; blank < startDow; blank++) {
+        var emptyCell = document.createElement('span');
+        emptyCell.className = 'order-cal-day other-month';
+        grid.appendChild(emptyCell);
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+        var cellDate = new Date(y, m, day);
+        var cellISO = formatISOLocal(cellDate);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = day;
+        btn.className = 'order-cal-day';
+        if (slotsSet[cellISO]) {
+            btn.classList.add('available');
+            btn.setAttribute('data-date', cellISO);
+            btn.onclick = (function(iso) {
+                return function() {
+                    selectEditOrderCalDate(iso);
+                    renderEditOrderCalendar();
+                    closeEditOrderCalendar();
+                };
+            })(cellISO);
+        }
+        if (cellISO === _editOrderCalSelected) btn.classList.add('selected');
+        if (cellISO === todayISO) btn.classList.add('today');
+        grid.appendChild(btn);
+    }
+}
 
 /** Подставить адрес доставки из поля калькулятора в 3 поля формы (можно потом править вручную) */
 /** Копирует адрес из поля «Введите адрес доставки» в три поля оформления. Та же логика разбора, что и везде: два фрагмента → регион+город (part1). */

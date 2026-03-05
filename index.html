@@ -108,8 +108,22 @@
             <section class="edit-order-form-section" aria-labelledby="edit-order-section-delivery">
               <h3 id="edit-order-section-delivery" class="edit-order-form-section-title">Доставка</h3>
               <div class="edit-order-field" id="eo-date">
-                <label for="edit-order-delivery-date">Дата доставки *</label>
-                <input type="text" id="edit-order-delivery-date" placeholder="ДД.ММ.ГГГГ" tabindex="3">
+                <label for="edit-order-delivery-date-display">Дата доставки *</label>
+                <div class="order-calendar-wrapper edit-order-calendar-wrapper">
+                  <input type="text" id="edit-order-delivery-date-display" class="order-cal-input" readonly placeholder="ДД.ММ.ГГГГ" onclick="toggleEditOrderCalendar()" tabindex="3">
+                  <input type="hidden" id="edit-order-delivery-date" value="">
+                  <div class="order-calendar" id="edit-order-calendar">
+                    <div class="order-cal-header">
+                      <button type="button" class="order-cal-nav" onclick="editOrderCalNav(-1)">&#8249;</button>
+                      <span class="order-cal-title" id="edit-order-cal-title"></span>
+                      <button type="button" class="order-cal-nav" onclick="editOrderCalNav(1)">&#8250;</button>
+                    </div>
+                    <div class="order-cal-weekdays">
+                      <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                    </div>
+                    <div class="order-cal-grid" id="edit-order-cal-grid"></div>
+                  </div>
+                </div>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
               <div class="edit-order-field" id="eo-addr1">
