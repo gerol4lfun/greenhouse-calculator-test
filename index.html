@@ -45,7 +45,7 @@
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=250" defer></script>
+  <script src="js/scripts.js?v=251" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -420,17 +420,6 @@
         <div class="address-container">
           <input type="text" id="address" placeholder="Например, Санкт-Петербург, Невский пр." required autocomplete="off">
           <div id="suggestions"></div>
-        </div>
-        
-        <div class="delivery-options">
-          <label>
-            <input type="radio" name="deliveryType" value="withoutAssembly" checked onchange="updateDeliveryResultDate()">
-            <span>Без сборки</span>
-          </label>
-          <label>
-            <input type="radio" name="deliveryType" value="withAssembly" onchange="updateDeliveryResultDate()">
-            <span>Со сборкой</span>
-          </label>
         </div>
         
         <div class="btn-group">

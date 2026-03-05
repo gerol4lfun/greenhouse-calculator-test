@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v250"; // v250: ?editPhone= — сначала страница калькулятора, потом модалка + поиск; при одном заказе сразу форма редактирования // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v251"; // v251: один тариф доставки — убраны кнопки «Без сборки»/«Со сборкой», везде считаем как со сборкой // v250: ?editPhone= — сначала страница калькулятора, потом модалка + поиск; при одном заказе сразу форма редактирования // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -1142,14 +1142,13 @@ function updateDeliveryDateDisplay() {
 }
 
 /**
- * Обновляет дату в блоке результата доставки при смене "Без сборки" / "Со сборкой".
+ * Обновляет дату в блоке результата доставки (дата доставки и сборки).
  * Показывает всю релевантную инфу для озвучивания менеджером.
  */
 function updateDeliveryResultDate() {
     const resultDiv = document.getElementById('result');
     if (!resultDiv || !resultDiv.innerText.trim() || !currentDeliveryDate) return;
-    const withAssembly = document.querySelector('input[name="deliveryType"]:checked')?.value === 'withAssembly';
-    const dateBlock = getDeliveryDateTextForBlock(withAssembly);
+    const dateBlock = getDeliveryDateTextForBlock(true);
     if (!dateBlock) return;
     const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
     const lines = resultDiv.innerText.split('\n');
@@ -2152,7 +2151,6 @@ async function calculateDelivery() {
 
     const addressInput = document.getElementById("address");
     const address = addressInput.value.trim().toLowerCase();
-    const deliveryType = document.querySelector('input[name="deliveryType"]:checked').value;
 
     if (!address) {
         document.getElementById('result').innerText = "Введите адрес!";
@@ -2283,14 +2281,8 @@ if (!nearestCity) {
 
             const distanceInKm = route.getLength() / 1000;
             const distanceFromBoundary = Math.max(distanceInKm - nearestCity.boundaryDistance, 0);
-            const rate = nearestCity.pricePerKm ?? 50; // тариф руб/км от склада
-
-            let cost;
-            if (deliveryType === "withoutAssembly") {
-                cost = Math.max(1000, 500 + rate * distanceFromBoundary);
-            } else {
-                cost = Math.max(1000, rate * distanceFromBoundary);
-            }
+            const rate = nearestCity.pricePerKm ?? 50; // тариф руб/км от склада (один тариф — всегда как со сборкой)
+            const cost = Math.max(1000, rate * distanceFromBoundary);
 
             const roundedCost = Math.ceil(cost / 50) * 50;
 
@@ -2299,7 +2291,7 @@ if (!nearestCity) {
             const deliveryDate = await loadDeliveryDate(nearestCity.name);
             
             let resultText = `Стоимость доставки: ${formatPrice(roundedCost)} рублей (${nearestCity.name})`;
-            const dateBlock = getDeliveryDateTextForBlock(deliveryType === 'withAssembly');
+            const dateBlock = getDeliveryDateTextForBlock(true);
             if (dateBlock) {
                 const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
                 resultText += '\n' + dateLines.join('\n');
@@ -2436,8 +2428,6 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
         commercialOffer += `\nДоставка - ${formatPrice(deliveryPrice)} рублей\n`;
     }
     
-    const deliveryTypeForOffer = document.querySelector('input[name="deliveryType"]:checked')?.value;
-    const withAssemblyForOffer = deliveryTypeForOffer === 'withAssembly';
     if (SHOW_DELIVERY_DATE_IN_OFFER) {
         if (!currentDeliveryDate) {
             const selectedCity = document.getElementById("city").value;
@@ -2445,12 +2435,12 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
                 await loadDeliveryDate(selectedCity);
             }
         }
-        const dateText = getDeliveryDateTextForKP(withAssemblyForOffer);
+        const dateText = getDeliveryDateTextForKP(true);
         if (dateText) {
             commercialOffer += `📅 ${dateText.includes('Доставка:') ? dateText : 'Доставка: с ' + dateText}\n`;
         }
     }
-    const dateTextForOffer = getDeliveryDateTextForKP(withAssemblyForOffer);
+    const dateTextForOffer = getDeliveryDateTextForKP(true);
     const deliveryDateText = dateTextForOffer ? `📅 Ближайшая дата доставки: ${dateTextForOffer}.` : '';
     
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
@@ -2784,8 +2774,7 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
             variant2Text += `\nДоставка - ${formatPrice(deliveryPriceValue)} рублей\n`;
         }
         
-        const deliveryTypeV2 = document.querySelector('input[name="deliveryType"]:checked')?.value;
-        const dateTextV2 = getDeliveryDateTextForKP(deliveryTypeV2 === 'withAssembly');
+        const dateTextV2 = getDeliveryDateTextForKP(true);
         const deliveryDateText = dateTextV2 ? `📅 Ближайшая дата доставки: ${dateTextV2}.` : '';
         
         // Добавляем итоговую сумму
@@ -3534,9 +3523,7 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry) {
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
     // Это предотвращает дублирование подарков в КП
     
-    const deliveryType = document.querySelector('input[name="deliveryType"]:checked')?.value;
-    const withAssembly = deliveryType === 'withAssembly';
-    const dateText = getDeliveryDateTextForKP(withAssembly);
+    const dateText = getDeliveryDateTextForKP(true);
     shortOffer += `\nБлижайшая дата доставки — ${dateText || '17 февраля'}.`;
     
     const shortOfferTextarea = document.getElementById("commercial-offer-short");
@@ -4090,12 +4077,6 @@ async function resetAllFilters() {
     const addressInput = document.getElementById("address");
     if (addressInput) {
         addressInput.value = "";
-    }
-    
-    // Сбрасываем радиокнопки доставки (без сборки)
-    const deliveryTypeRadios = document.querySelectorAll('input[name="deliveryType"]');
-    if (deliveryTypeRadios.length > 0) {
-        deliveryTypeRadios[0].checked = true; // Первая радиокнопка (без сборки)
     }
     
     // Очищаем результат доставки
@@ -7161,7 +7142,7 @@ const faqData = {
         {
             category: "delivery",
             question: "Как рассчитывается стоимость доставки?",
-            answer: "💰 Формула стоимости доставки:\n• Тариф зависит от склада: 45 руб/км (Москва, Питер, Тула, Калуга, Рязань, Тверь, Великий Новгород) или 50 руб/км (остальные города). Минимум 1000 руб.\n• Без сборки: 500 руб + тариф × км. Со сборкой: тариф × км."
+            answer: "💰 Формула стоимости доставки:\n• Тариф зависит от склада: 45 руб/км (Москва, Питер, Тула, Калуга, Рязань, Тверь, Великий Новгород) или 50 руб/км (остальные города). Минимум 1000 руб.\n• Стоимость: тариф × км (расстояние от границы города)."
         },
         {
             category: "delivery",
@@ -10238,8 +10219,7 @@ function rebuildShortOfferWithGifts(overrideSelectedGifts = null) {
             datePart = '\n' + deliveryMatch[0].trim();
             if (!datePart.endsWith('.')) datePart += '.';
         } else {
-            const dt = document.querySelector('input[name="deliveryType"]:checked')?.value;
-            const dtShort = getDeliveryDateTextForKP(dt === 'withAssembly');
+            const dtShort = getDeliveryDateTextForKP(true);
             datePart = '\nБлижайшая дата доставки — ' + (dtShort || '17 февраля') + '.';
         }
         
@@ -10277,8 +10257,7 @@ function rebuildShortOfferWithGifts(overrideSelectedGifts = null) {
         datePart = '\n' + deliveryMatch[0].trim();
         if (!datePart.endsWith('.')) datePart += '.';
         } else {
-        const deliveryTypeShort = document.querySelector('input[name="deliveryType"]:checked')?.value;
-        const dateTextShort = getDeliveryDateTextForKP(deliveryTypeShort === 'withAssembly');
+        const dateTextShort = getDeliveryDateTextForKP(true);
         datePart = '\nБлижайшая дата доставки — ' + (dateTextShort || '17 февраля') + '.';
     }
     
