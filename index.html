@@ -36,6 +36,12 @@
   .edit-order-btn-icon{width:1.1em;height:1.1em;flex-shrink:0;vertical-align:middle}
   .edit-order-btn-icon--light{filter:brightness(0) invert(1)}
   .edit-order-modal-header .close-modal-button{background:rgba(255,255,255,.2);border:none;color:#fff;font-size:28px;width:36px;height:36px;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  /* Оверлей загрузки для ?editPhone=: поверх всего до появления модалки с данными */
+  .edit-order-loading-overlay{position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);box-sizing:border-box}
+  .edit-order-loading-overlay.hidden{display:none!important;pointer-events:none!important}
+  .edit-order-loading-overlay__box{display:flex;flex-direction:column;align-items:center;gap:16px;color:#fff;font-size:1rem}
+  .edit-order-loading-overlay__spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:edit-order-loading-spin .85s linear infinite}
+  @keyframes edit-order-loading-spin{to{transform:rotate(360deg)}}
   </style>
   <link rel="preload" href="css/styles.css?v=250" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="css/styles.css?v=250"></noscript>
@@ -50,6 +56,14 @@
   <body>
     <!-- Контейнер для уведомлений -->
     <div id="toast-container" class="toast-container"></div>
+  <!-- Оверлей загрузки при переходе по ссылке ?editPhone= (скрыт по умолчанию) -->
+  <div class="edit-order-loading-overlay hidden" id="edit-order-loading-overlay" aria-live="polite" aria-busy="true" aria-label="Загрузка заказа">
+    <div class="edit-order-loading-overlay__box">
+      <div class="edit-order-loading-overlay__spinner" aria-hidden="true"></div>
+      <span class="edit-order-loading-overlay__text">Открываем заказ…</span>
+    </div>
+  </div>
+  <script>if (/[?&]editPhone=/.test(window.location.search)) { var o = document.getElementById('edit-order-loading-overlay'); if (o) o.classList.remove('hidden'); }</script>
   <!-- Критичный путь ?editPhone=: модалка и скрипт сразу после тоста, разбираются первыми; остальное (FAQ, даты, грядки) — ниже. -->
   <!-- Модальное окно «Редактирование заказа» (заготовка) -->
   <div class="edit-order-modal hidden" id="edit-order-modal" role="dialog" aria-modal="true" aria-labelledby="edit-order-modal-title">

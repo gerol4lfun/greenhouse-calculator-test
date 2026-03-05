@@ -4262,18 +4262,19 @@ async function initializeCalculator() {
     // Инициализация счетчиков символов для КП
     initCharCounters();
 
-    // Deep link: ?editPhone=79001234567 — сначала даём отрисоваться странице калькулятора, затем открываем модалку, поиск; при одном заказе сразу открываем форму
+    // Deep link: ?editPhone=79001234567 — оверлей загрузки, затем модалка и поиск; при одном заказе — карточка + «Редактировать»
     var editPhoneParam = new URLSearchParams(window.location.search).get('editPhone');
     if (editPhoneParam && typeof normalizePhone === 'function' && normalizePhone(editPhoneParam).length === 11) {
         var phoneForDeepLink = editPhoneParam;
         var runEditPhoneDeepLink = function () {
-            if (typeof openEditOrderModal !== 'function') return;
+            var loadingOverlay = document.getElementById('edit-order-loading-overlay');
+            if (loadingOverlay) { loadingOverlay.classList.remove('hidden'); }
+            if (typeof openEditOrderModal !== 'function') { if (loadingOverlay) loadingOverlay.classList.add('hidden'); return; }
             openEditOrderModal();
             var phoneInput = document.getElementById('edit-order-phone');
             var hintEl = document.getElementById('edit-order-search-hint');
             if (phoneInput && !phoneInput.value) phoneInput.value = phoneForDeepLink;
             if (hintEl) { hintEl.style.display = ''; hintEl.textContent = 'Поиск...'; hintEl.className = 'edit-order-hint'; }
-            // Сразу убираем editPhone из URL, чтобы при обновлении страницы модалка не открывалась снова
             try {
                 var p = new URLSearchParams(window.location.search);
                 p.delete('editPhone');
@@ -4281,16 +4282,17 @@ async function initializeCalculator() {
                 var cleanUrl = window.location.pathname + (q ? '?' + q : '') + (window.location.hash || '');
                 window.history.replaceState({}, '', cleanUrl);
             } catch (e) {}
-            if (typeof searchOrdersByPhone !== 'function') return;
+            if (typeof searchOrdersByPhone !== 'function') { if (loadingOverlay) loadingOverlay.classList.add('hidden'); return; }
             searchOrdersByPhone(phoneForDeepLink).then(function (orders) {
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
                 if (orders.length === 0 && typeof clearEditOrderForm === 'function') clearEditOrderForm();
                 if (hintEl) {
                     hintEl.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
                     hintEl.className = 'edit-order-hint';
                 }
-                // При одном заказе показываем быстрый просмотр (карточка + «Редактировать»), форму не открываем сразу
             }).catch(function (err) {
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
                 if (hintEl) { hintEl.textContent = 'Ошибка поиска: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; }
                 if (typeof renderEditOrderList === 'function') renderEditOrderList([]);
             });
