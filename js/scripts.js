@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v253"; // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v254"; // v254: проверка региона доставки при оформлении и в модалке (isAddressInDeliveryRegionByLocality, checkAddressInDeliveryRegion) // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -376,6 +376,35 @@ const deliveryRegions = [
     { keywords: ["черкесск", "cherkessk", "карачай-черкесия", "карачаево-черкесская республика"] },
     { keywords: ["ярославль", "yaroslavl", "ярославская область"] }
 ];
+
+/** Проверка по массивам localities и administrativeAreas (нижний регистр): входит ли адрес в зону доставки. Один источник правды для расчёта доставки и форм заказа. */
+function isAddressInDeliveryRegionByLocality(localities, administrativeAreas) {
+    if (!Array.isArray(localities)) localities = [];
+    if (!Array.isArray(administrativeAreas)) administrativeAreas = [];
+    return deliveryRegions.some(function (regionEntry) {
+        return regionEntry.keywords.some(function (keyword) {
+            return localities.some(function (loc) { return loc.indexOf(keyword) !== -1; }) ||
+                administrativeAreas.some(function (area) { return area.indexOf(keyword) !== -1; });
+        });
+    });
+}
+
+/** Асинхронная проверка строки адреса через геокодер: доставляем ли в этот регион. Возвращает Promise<{ inRegion: boolean, errorMessage?: string }>. */
+function checkAddressInDeliveryRegion(addressString) {
+    var trimmed = (addressString && typeof addressString === 'string') ? addressString.trim() : '';
+    if (!trimmed) return Promise.resolve({ inRegion: true });
+    if (typeof ymaps === 'undefined') return Promise.resolve({ inRegion: false, errorMessage: 'Яндекс.Карты недоступны. Проверьте интернет.' });
+    return ymaps.geocode(trimmed, { results: 1 }).then(function (res) {
+        var geoObject = res.geoObjects.get(0);
+        if (!geoObject) return { inRegion: false, errorMessage: 'Адрес не найден.' };
+        var localities = geoObject.getLocalities().map(function (loc) { return loc.toLowerCase(); });
+        var administrativeAreas = geoObject.getAdministrativeAreas().map(function (area) { return area.toLowerCase(); });
+        var inRegion = isAddressInDeliveryRegionByLocality(localities, administrativeAreas);
+        return { inRegion: inRegion, errorMessage: inRegion ? undefined : 'Доставка в этот регион не осуществляется.' };
+    }).catch(function () {
+        return { inRegion: false, errorMessage: 'Не удалось проверить регион.' };
+    });
+}
 
 // Города для карты. pricePerKm — тариф руб/км от склада (зависит от города).
 const citiesForMap = [
@@ -2181,22 +2210,11 @@ async function calculateDelivery() {
             return;
         }
 
-        // Извлекаем населённые пункты и административные области,
-        // приводим их к нижнему регистру для упрощённого сравнения.
+        // Извлекаем населённые пункты и административные области (нижний регистр)
         let localities = geoObject.getLocalities().map(loc => loc.toLowerCase());
         let administrativeAreas = geoObject.getAdministrativeAreas().map(area => area.toLowerCase());
 
-
-        // Проверяем, содержит ли хотя бы одно ключевое слово из массива deliveryRegions
-        // любое слово из localities или administrativeAreas
-        const isInDeliveryRegion = deliveryRegions.some(regionEntry => {
-            return regionEntry.keywords.some(keyword =>
-                localities.some(loc => loc.includes(keyword)) ||
-                administrativeAreas.some(area => area.includes(keyword))
-            );
-        });
-
-        if (!isInDeliveryRegion) {
+        if (!isAddressInDeliveryRegionByLocality(localities, administrativeAreas)) {
             document.getElementById('result').innerText = "Доставка в этот регион не осуществляется.";
             return;
         }
@@ -6753,7 +6771,7 @@ function initEditOrderModal() {
 
     var saveBtn = document.getElementById('edit-order-save-btn');
     if (saveBtn) {
-        saveBtn.addEventListener('click', function () {
+        saveBtn.addEventListener('click', async function () {
             var hintEl = document.getElementById('edit-order-form-hint');
             if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; hintEl.className = 'edit-order-hint'; }
             clearEditOrderFieldErrors_();
@@ -6767,6 +6785,20 @@ function initEditOrderModal() {
                 }
                 if (typeof showToast === 'function') showToast('Заполните все обязательные поля', 'error');
                 return;
+            }
+            var editAddr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
+            if (editAddr1 && typeof checkAddressInDeliveryRegion === 'function') {
+                var regionCheck = await checkAddressInDeliveryRegion(editAddr1);
+                if (!regionCheck.inRegion) {
+                    setEditOrderFieldError_('eo-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
+                    if (hintEl) {
+                        hintEl.textContent = regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.';
+                        hintEl.className = 'edit-order-hint edit-order-hint--error';
+                        hintEl.style.display = '';
+                    }
+                    if (typeof showToast === 'function') showToast(regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.', 'error');
+                    return;
+                }
             }
             if (!currentOrderIdForEdit) {
                 if (typeof showToast === 'function') showToast('Ошибка: заказ не выбран', 'error');
@@ -12835,8 +12867,17 @@ function toggleOrderCalendar() {
     }
     var display = document.getElementById('order-delivery-date-display');
     if (display) display.classList.add('active');
-    if (_orderCalSlots.length === 0 && currentDeliveryDate) {
-        _initCalendarWithDate(currentDeliveryDate);
+    if (_orderCalSlots.length === 0) {
+        var baseDateStr = currentDeliveryDate || '';
+        if (!baseDateStr && display && display.value) {
+            var v = display.value.trim();
+            if (v && typeof deliveryDateDdMmToISO === 'function' && deliveryDateDdMmToISO(v)) baseDateStr = v;
+        }
+        if (!baseDateStr) {
+            var now = new Date();
+            baseDateStr = String(now.getDate()).padStart(2, '0') + '.' + String(now.getMonth() + 1).padStart(2, '0') + '.' + now.getFullYear();
+        }
+        _initCalendarWithDate(baseDateStr);
     }
     if (!_orderCalMonth) {
         var now = new Date();
@@ -12915,10 +12956,11 @@ function renderOrderCalendar() {
     }
 }
 
-// Close calendar on outside click
+// Close calendar on outside click (обёртка основной формы — по id календаря, т.к. первый .order-calendar-wrapper в DOM у модалки)
 document.addEventListener('click', function(e) {
-    var wrapper = document.querySelector('.order-calendar-wrapper');
-    if (wrapper && !wrapper.contains(e.target)) {
+    var mainCal = document.getElementById('order-calendar');
+    var mainWrapper = mainCal && mainCal.closest ? mainCal.closest('.order-calendar-wrapper') : null;
+    if (mainWrapper && !mainWrapper.contains(e.target)) {
         closeOrderCalendar();
     }
     var editWrapper = document.querySelector('.edit-order-calendar-wrapper');
@@ -13127,14 +13169,9 @@ function toggleOrderHouseField() {
     }
 }
 
-/** На localhost адрес доставки не требуем (Яндекс не работает). После выкладки онлайн — обязателен. */
+/** Доставка обязательна всегда: дата + адрес (регион, улица, дом) нужны и при оформлении, и при редактировании. Исключений нет. */
 function isOrderFormAddressRequired() {
-    try {
-        var host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
-        return host !== 'localhost' && host !== '127.0.0.1';
-    } catch (e) {
-        return true;
-    }
+    return true;
 }
 
 /** Проверить по Supabase, есть ли заказы с этим телефоном за последние 90 дней. Показать неблокирующее предупреждение под полем телефона. */
@@ -13732,6 +13769,19 @@ async function submitOrder() {
         const firstErr = document.querySelector('.order-field-error');
         if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
+    }
+
+    if (addr1 && typeof checkAddressInDeliveryRegion === 'function') {
+        var regionCheck = await checkAddressInDeliveryRegion(addr1);
+        if (!regionCheck.inRegion) {
+            setOrderFieldError_('of-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
+            resultDiv.textContent = '❌ ' + (regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
+            resultDiv.className = 'error';
+            resultDiv.style.display = '';
+            var firstErrEl = document.querySelector('.order-field-error');
+            if (firstErrEl) firstErrEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+        }
     }
 
     const btn = document.getElementById('order-submit-btn');
