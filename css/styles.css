@@ -5769,6 +5769,11 @@ input[type="radio"] {
   transform: rotate(180deg);
 }
 
+/* Форма «Оформление заказа» в сетке — на всю ширину, сразу под карточкой */
+.materials-grid .order-collapse {
+  grid-column: 1 / -1;
+}
+
 .order-collapse {
   max-height: 0;
   overflow: hidden;

@@ -51,7 +51,7 @@
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=253" defer></script>
+  <script src="js/scripts.js?v=258" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -479,6 +479,121 @@
               <div class="material-arrow" id="order-card-arrow">▼</div>
             </div>
 
+            <!-- Разворачивающаяся форма заказа (сразу под карточкой «Оформление заказа») -->
+            <div class="order-collapse" id="order-collapse">
+              <div class="order-form">
+                <div class="order-calc-warning" id="order-calc-warning">
+                  Сначала выполните расчёт в блоке «Стоимость теплицы» ниже и нажмите «Добавить в заказ».
+                </div>
+
+                <section class="order-form-section">
+                  <h4 class="order-form-section-title">Контакты</h4>
+                  <div class="order-field" id="of-name">
+                    <label for="order-client-name">Имя клиента *</label>
+                    <input type="text" id="order-client-name" placeholder="Иван" tabindex="1">
+                    <span class="order-validation-msg" aria-live="polite"></span>
+                  </div>
+                  <div class="order-field" id="of-phone">
+                    <label for="order-client-phone">Телефон клиента *</label>
+                    <input type="tel" id="order-client-phone" placeholder="79211234567" inputmode="tel" maxlength="18" title="11 цифр, начинается с 7 (79211234567)" tabindex="2">
+                    <span class="order-validation-msg" aria-live="polite"></span>
+                  </div>
+                  <div id="order-similar-order-warning" class="order-similar-order-warning hidden" role="status" aria-live="polite"></div>
+                </section>
+
+                <section class="order-form-section">
+                  <h4 class="order-form-section-title">Доставка</h4>
+                  <div class="order-field" id="of-date">
+                  <label>Дата доставки *</label>
+                  <div class="order-calendar-wrapper">
+                    <input type="text" id="order-delivery-date-display" class="order-cal-input" readonly placeholder="— Выберите город —" onclick="toggleOrderCalendar()" tabindex="3">
+                    <input type="hidden" id="order-delivery-date" value="">
+                    <div class="order-calendar" id="order-calendar">
+                      <div class="order-cal-header">
+                        <button type="button" class="order-cal-nav" onclick="orderCalNav(-1)">&#8249;</button>
+                        <span class="order-cal-title" id="order-cal-title"></span>
+                        <button type="button" class="order-cal-nav" onclick="orderCalNav(1)">&#8250;</button>
+                      </div>
+                      <div class="order-cal-weekdays">
+                        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                      </div>
+                      <div class="order-cal-grid" id="order-cal-grid"></div>
+                    </div>
+                  </div>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field" id="of-addr1">
+                  <label for="order-address-part1">Регион, город, населённый пункт *</label>
+                  <div class="order-address-row">
+                    <div class="order-address-container">
+                      <input type="text" id="order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" required autocomplete="off" tabindex="4">
+                      <div id="order-suggestions-1" class="order-suggestions"></div>
+                    </div>
+                    <button type="button" class="order-sync-address-btn" onclick="syncOrderFormAddressFromCalculator()" title="Подставить из поля «Введите адрес доставки»">Из доставки</button>
+                  </div>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field" id="of-addr2">
+                  <label for="order-address-part2">Улица *</label>
+                  <div class="order-address-container">
+                    <input type="text" id="order-address-part2" placeholder="Невский пр." required autocomplete="off" tabindex="5">
+                    <div id="order-suggestions-2" class="order-suggestions"></div>
+                  </div>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                <div class="order-field" id="of-addr3">
+                  <label for="order-address-part3">Дом, корпус, участок *</label>
+                  <div class="order-address-container">
+                    <input type="text" id="order-address-part3" placeholder="д. 5, корп. 2 или участок 12" required autocomplete="off" tabindex="6">
+                    <div id="order-suggestions-3" class="order-suggestions"></div>
+                  </div>
+                  <label class="order-checkbox-label">
+                    <input type="checkbox" id="order-no-plot" onchange="toggleOrderHouseField()">
+                    Нет номера участка / дома
+                  </label>
+                  <span class="order-validation-msg" aria-live="polite"></span>
+                </div>
+                </section>
+
+                <section class="order-form-section">
+                  <h4 class="order-form-section-title">Контекст заказа</h4>
+                  <div class="order-field" id="of-source">
+                    <label for="order-source">Название магазина на Авито *</label>
+                    <select id="order-source" tabindex="7">
+                      <option value="">— Выберите —</option>
+                      <option value="Строй Мир">Строй Мир</option>
+                      <option value="Дачные решения">Дачные решения</option>
+                      <option value="Конструктивные решения">Конструктивные решения</option>
+                    </select>
+                    <span class="order-validation-msg" aria-live="polite"></span>
+                  </div>
+                  <div class="order-field" id="of-manager">
+                    <label for="order-manager">Менеджер *</label>
+                    <select id="order-manager" tabindex="8">
+                      <option value="">— Выберите —</option>
+                      <option value="Юлия">Юлия</option>
+                      <option value="Ольга">Ольга</option>
+                      <option value="Ирина">Ирина</option>
+                    </select>
+                    <span class="order-validation-msg" aria-live="polite"></span>
+                  </div>
+                  <div class="order-field">
+                    <label for="order-comment">Комментарий (необязательно)</label>
+                    <textarea id="order-comment" rows="3" placeholder="Дополнительная информация к заказу..." tabindex="9"></textarea>
+                  </div>
+                </section>
+
+                <div id="order-cart-block" class="order-cart-block edit-order-composition-block" style="display:none;">
+                  <div class="edit-order-composition-block__title order-cart-block__title">Состав заказа</div>
+                  <div id="order-cart-list" class="edit-order-composition-list" aria-live="polite"></div>
+                </div>
+                <p id="order-gifts-display" class="order-gifts-display" style="margin: 0.35em 0; font-size: 0.95em; color: #555; display: none;"></p>
+                <p id="order-total-display" class="order-total-display edit-order-composition-total-row" style="margin: 0.5em 0; font-weight: 600;">Итого к оплате: —</p>
+                <button type="button" id="order-submit-btn" class="green-button" onclick="event.stopPropagation(); submitOrder();" tabindex="10">Оформить заказ</button>
+                <div id="order-result" style="display: none;"></div>
+              </div>
+            </div>
+
             <!-- 2. Редактирование заказа -->
             <div class="material-card material-card--edit-order" id="edit-orders-card" onclick="openEditOrderModal()" style="cursor: pointer;">
               <div class="material-icon material-icon--edit-order">
@@ -536,121 +651,6 @@
               </div>
               <div class="material-arrow">→</div>
             </a>
-          </div>
-
-          <!-- Разворачивающаяся форма заказа -->
-          <div class="order-collapse" id="order-collapse">
-            <div class="order-form">
-              <div class="order-calc-warning" id="order-calc-warning">
-                Сначала выполните расчёт в блоке «Стоимость теплицы» ниже и нажмите «Добавить в заказ».
-              </div>
-
-              <section class="order-form-section">
-                <h4 class="order-form-section-title">Контакты</h4>
-                <div class="order-field" id="of-name">
-                  <label for="order-client-name">Имя клиента *</label>
-                  <input type="text" id="order-client-name" placeholder="Иван" tabindex="1">
-                  <span class="order-validation-msg" aria-live="polite"></span>
-                </div>
-                <div class="order-field" id="of-phone">
-                  <label for="order-client-phone">Телефон клиента *</label>
-                  <input type="tel" id="order-client-phone" placeholder="79211234567" inputmode="tel" maxlength="18" title="11 цифр, начинается с 7 (79211234567)" tabindex="2">
-                  <span class="order-validation-msg" aria-live="polite"></span>
-                </div>
-                <div id="order-similar-order-warning" class="order-similar-order-warning hidden" role="status" aria-live="polite"></div>
-              </section>
-
-              <section class="order-form-section">
-                <h4 class="order-form-section-title">Доставка</h4>
-                <div class="order-field" id="of-date">
-                <label>Дата доставки *</label>
-                <div class="order-calendar-wrapper">
-                  <input type="text" id="order-delivery-date-display" class="order-cal-input" readonly placeholder="— Выберите город —" onclick="toggleOrderCalendar()" tabindex="3">
-                  <input type="hidden" id="order-delivery-date" value="">
-                  <div class="order-calendar" id="order-calendar">
-                    <div class="order-cal-header">
-                      <button type="button" class="order-cal-nav" onclick="orderCalNav(-1)">&#8249;</button>
-                      <span class="order-cal-title" id="order-cal-title"></span>
-                      <button type="button" class="order-cal-nav" onclick="orderCalNav(1)">&#8250;</button>
-                    </div>
-                    <div class="order-cal-weekdays">
-                      <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
-                    </div>
-                    <div class="order-cal-grid" id="order-cal-grid"></div>
-                  </div>
-                </div>
-                <span class="order-validation-msg" aria-live="polite"></span>
-              </div>
-              <div class="order-field" id="of-addr1">
-                <label for="order-address-part1">Регион, город, населённый пункт *</label>
-                <div class="order-address-row">
-                  <div class="order-address-container">
-                    <input type="text" id="order-address-part1" placeholder="Ленинградская обл., г. Санкт-Петербург" required autocomplete="off" tabindex="4">
-                    <div id="order-suggestions-1" class="order-suggestions"></div>
-                  </div>
-                  <button type="button" class="order-sync-address-btn" onclick="syncOrderFormAddressFromCalculator()" title="Подставить из поля «Введите адрес доставки»">Из доставки</button>
-                </div>
-                <span class="order-validation-msg" aria-live="polite"></span>
-              </div>
-              <div class="order-field" id="of-addr2">
-                <label for="order-address-part2">Улица *</label>
-                <div class="order-address-container">
-                  <input type="text" id="order-address-part2" placeholder="Невский пр." required autocomplete="off" tabindex="5">
-                  <div id="order-suggestions-2" class="order-suggestions"></div>
-                </div>
-                <span class="order-validation-msg" aria-live="polite"></span>
-              </div>
-              <div class="order-field" id="of-addr3">
-                <label for="order-address-part3">Дом, корпус, участок *</label>
-                <div class="order-address-container">
-                  <input type="text" id="order-address-part3" placeholder="д. 5, корп. 2 или участок 12" required autocomplete="off" tabindex="6">
-                  <div id="order-suggestions-3" class="order-suggestions"></div>
-                </div>
-                <label class="order-checkbox-label">
-                  <input type="checkbox" id="order-no-plot" onchange="toggleOrderHouseField()">
-                  Нет номера участка / дома
-                </label>
-                <span class="order-validation-msg" aria-live="polite"></span>
-              </div>
-              </section>
-
-              <section class="order-form-section">
-                <h4 class="order-form-section-title">Контекст заказа</h4>
-                <div class="order-field" id="of-source">
-                  <label for="order-source">Название магазина на Авито *</label>
-                  <select id="order-source" tabindex="7">
-                    <option value="">— Выберите —</option>
-                    <option value="Строй Мир">Строй Мир</option>
-                    <option value="Дачные решения">Дачные решения</option>
-                    <option value="Конструктивные решения">Конструктивные решения</option>
-                  </select>
-                  <span class="order-validation-msg" aria-live="polite"></span>
-                </div>
-                <div class="order-field" id="of-manager">
-                  <label for="order-manager">Менеджер *</label>
-                  <select id="order-manager" tabindex="8">
-                    <option value="">— Выберите —</option>
-                    <option value="Юлия">Юлия</option>
-                    <option value="Ольга">Ольга</option>
-                    <option value="Ирина">Ирина</option>
-                  </select>
-                  <span class="order-validation-msg" aria-live="polite"></span>
-                </div>
-                <div class="order-field">
-                  <label for="order-comment">Комментарий (необязательно)</label>
-                  <textarea id="order-comment" rows="3" placeholder="Дополнительная информация к заказу..." tabindex="9"></textarea>
-                </div>
-              </section>
-
-              <div id="order-cart-block" class="order-cart-block edit-order-composition-block" style="display:none;">
-                <div class="edit-order-composition-block__title order-cart-block__title">Состав заказа</div>
-                <div id="order-cart-list" class="edit-order-composition-list" aria-live="polite"></div>
-              </div>
-              <p id="order-gifts-display" class="order-gifts-display" style="margin: 0.35em 0; font-size: 0.95em; color: #555; display: none;"></p>
-              <p id="order-total-display" class="order-total-display edit-order-composition-total-row" style="margin: 0.5em 0; font-weight: 600;">Итого к оплате: —</p>
-              <button type="button" id="order-submit-btn" class="green-button" onclick="event.stopPropagation(); submitOrder();" tabindex="10">Оформить заказ</button>
-              <div id="order-result" style="display: none;"></div>
-            </div>
           </div>
         </div>
       </div>

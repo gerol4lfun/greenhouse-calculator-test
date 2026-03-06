@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v255"; // v255: при открытии модалки подарки из initialSelected в giftEl (не из DOM), чтобы не терять второй подарок когда «автофорточка» занимает слот 2 // v254: проверка региона доставки при оформлении и в модалке (isAddressInDeliveryRegionByLocality, checkAddressInDeliveryRegion) // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v258"; // v258: при закрытии модалки «Редактирование заказа» сброс шага 1 (поле поиска, список, подсказка) // v257: при открытии блока «Оформление заказа» и при фокусе в поле формы — сброс currentOrderIdForEdit (защита от state leakage для всего сценария create vs edit) // v256: при закрытии модалки сброс id; в шапке модалки телефон // v255: при открытии модалки подарки из initialSelected в giftEl // v254: проверка региона доставки при оформлении и в модалке (isAddressInDeliveryRegionByLocality, checkAddressInDeliveryRegion) // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -5207,6 +5207,18 @@ function closeEditOrderModal() {
     closeEditOrderCalendar();
     lastPersistedEditOrderState = null;
     lastPersistedEditOrderFormState = null;
+    // При любом закрытии модалки сбрасываем id редактируемого заказа, иначе форма «Оформить заказ»
+    // при следующей отправке сделает update этого заказа вместо insert (обратная связь: «оформляла на Дмитрия — изменился заказ Надежды»).
+    if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
+    var titleEl = document.getElementById('edit-order-modal-title');
+    if (titleEl) titleEl.textContent = typeof EDIT_ORDER_MODAL_TITLE_BASE !== 'undefined' ? EDIT_ORDER_MODAL_TITLE_BASE : 'Редактирование заказа';
+    // Сброс шага 1: поле поиска и список, чтобы при следующем открытии не оставался старый номер (защита от дурака и случайности).
+    setEditOrderFieldValue('edit-order-phone', '');
+    if (typeof showEditOrderStep === 'function') showEditOrderStep(1);
+    var listContainer = document.getElementById('edit-order-list');
+    if (listContainer) listContainer.innerHTML = '<p class="edit-order-list-placeholder">Введите телефон и нажмите «Найти».</p>';
+    var searchHint = document.getElementById('edit-order-search-hint');
+    if (searchHint) { searchHint.style.display = 'none'; searchHint.textContent = ''; }
     modal.classList.add('hidden');
     modal.style.display = 'none';
     document.body.style.overflow = '';
@@ -5572,12 +5584,18 @@ async function fetchOrderById(orderId) {
     return res.data;
 }
 
+var EDIT_ORDER_MODAL_TITLE_BASE = 'Редактирование заказа';
+
 /** Показать шаг 1 (поиск/список) или 2 (форма редактирования) в модалке. Блок «Параметры теплицы» скрыт, пока не нажали «Добавить теплицу» или «Изменить». */
 function showEditOrderStep(step) {
     var body = document.getElementById('edit-order-modal-body');
     if (!body) return;
     body.setAttribute('data-step', String(step));
     body.scrollTop = 0;
+    if (String(step) === '1') {
+        var titleEl = document.getElementById('edit-order-modal-title');
+        if (titleEl) titleEl.textContent = EDIT_ORDER_MODAL_TITLE_BASE;
+    }
     if (String(step) === '2') {
         closeEditOrderAddPanel();
         var first = document.getElementById('edit-order-client-name');
@@ -6598,6 +6616,8 @@ function startEditOrder(orderId) {
         clearEditOrderFieldErrors_();
         fillEditOrderForm(order);
         showEditOrderStep(2);
+        var titleEl = document.getElementById('edit-order-modal-title');
+        if (titleEl) titleEl.textContent = EDIT_ORDER_MODAL_TITLE_BASE + ' · ' + (order.client_phone || '').trim();
         var first = document.getElementById('edit-order-client-name');
         if (first) setTimeout(function () { first.focus(); }, 80);
     }).catch(function (err) {
@@ -12700,6 +12720,9 @@ function toggleOrderForm() {
     } else {
         collapse.classList.add('open');
         card.classList.add('open');
+        // Защита от state leakage: при входе в «Оформление заказа» сбрасываем id редактирования,
+        // чтобы отправка формы всегда создавала новый заказ, а не обновляла чужой.
+        if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
         syncOrderFormDeliveryDate();
         if (typeof applyOrderFormDefaults === 'function') applyOrderFormDefaults();
         if (typeof updateOrderCartUI === 'function') updateOrderCartUI();
@@ -13283,6 +13306,15 @@ function markOrderFieldError_(fieldId) {
                 }
             }
         });
+        // Защита от state leakage: при фокусе в любом поле формы «Оформление заказа» сбрасываем id редактирования.
+        var orderCollapseEl = document.getElementById('order-collapse');
+        if (orderCollapseEl) {
+            orderCollapseEl.addEventListener('focusin', function (e) {
+                if (e.target && (e.target.matches('input, select, textarea'))) {
+                    if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
+                }
+            });
+        }
     });
 })();
 
