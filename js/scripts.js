@@ -12994,6 +12994,10 @@ function toggleEditOrderCalendar() {
     }
     var part1 = document.getElementById('edit-order-address-part1');
     var cityOrRegion = (part1 && part1.value) ? part1.value.trim() : '';
+    // Всегда открываем календарь сразу (fallback-слоты), чтобы по клику «Изменить дату» сразу что-то открывалось
+    _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+    renderEditOrderCalendar();
+    cal.classList.add('open');
     if (cityOrRegion && typeof loadDeliveryDate === 'function' && typeof buildDeliverySlots === 'function') {
         if (_savedDeliveryDateState === null) {
             _savedDeliveryDateState = {
@@ -13006,16 +13010,10 @@ function toggleEditOrderCalendar() {
             _editOrderCalSlots = currentDeliveryDate ? buildDeliverySlots(currentDeliveryDate) : [];
             if (!_editOrderCalSlots.length) _editOrderCalSlots = buildEditOrderCalSlotsFallback();
             renderEditOrderCalendar();
-            cal.classList.add('open');
         }).catch(function () {
             _editOrderCalSlots = buildEditOrderCalSlotsFallback();
             renderEditOrderCalendar();
-            cal.classList.add('open');
         });
-    } else {
-        _editOrderCalSlots = buildEditOrderCalSlotsFallback();
-        renderEditOrderCalendar();
-        cal.classList.add('open');
     }
 }
 
