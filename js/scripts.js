@@ -3756,7 +3756,7 @@ function updateCharCounter(textareaId) {
 }
 
 /**
- * Копирует первую часть длинного КП (до 800 символов, граница по строке). Вся КП от названия теплицы до цены — без пометок «2-е КП».
+ * Копирует первую часть длинного КП. Если есть блок «ВАРИАНТ 2» — копирует только первый вариант (всё до «ВАРИАНТ 2»). Иначе при длине > 800 символов — до 800 по границе строки.
  */
 function copyKP1() {
     const offerText = document.getElementById('commercial-offer');
@@ -3765,6 +3765,12 @@ function copyKP1() {
     const fullText = offerText.value;
     if (!fullText || fullText === "Здесь будет ваше коммерческое предложение.") {
         showWarning("Сначала рассчитайте стоимость теплицы, чтобы сформировать коммерческое предложение.");
+        return;
+    }
+    
+    const variant2Idx = fullText.indexOf('ВАРИАНТ 2:');
+    if (variant2Idx !== -1) {
+        copyTextToClipboard(fullText.substring(0, variant2Idx).trim(), "КП 1 скопировано!");
         return;
     }
     
