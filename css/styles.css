@@ -4242,6 +4242,25 @@ input[type="radio"] {
   cursor: not-allowed;
 }
 
+.edit-order-cancel-order-btn {
+  padding: var(--eo-space-xs) var(--eo-space-md);
+  min-height: 40px;
+  font-size: var(--eo-font-body);
+  font-weight: 500;
+  border-radius: var(--eo-radius);
+  border: 1px solid #c5221f;
+  background: transparent;
+  color: #c5221f;
+}
+.edit-order-cancel-order-btn:hover:not(:disabled) {
+  background: rgba(197, 34, 31, 0.08);
+  color: #a91b18;
+}
+.edit-order-cancel-order-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Вернуть / Вперёд — лёгкие иконки-кнопки, не конкурируют с «Сохранить» */
 .edit-order-step2-actions #edit-order-undo-btn,
 .edit-order-step2-actions #edit-order-redo-btn {

@@ -43,15 +43,15 @@
   .edit-order-loading-overlay__spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:edit-order-loading-spin .85s linear infinite}
   @keyframes edit-order-loading-spin{to{transform:rotate(360deg)}}
   </style>
-  <link rel="preload" href="css/styles.css?v=262" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link rel="stylesheet" href="css/styles.css?v=262"></noscript>
+  <link rel="preload" href="css/styles.css?v=263" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="css/styles.css?v=263"></noscript>
   <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
   <script src="js/products-data.js?v=231" defer></script>
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=262" defer></script>
+  <script src="js/scripts.js?v=263" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -297,6 +297,7 @@
               <button type="button" id="edit-order-redo-btn" class="edit-order-btn-secondary edit-order-btn-with-icon" title="Вернуть отменённое действие вперёд"><span class="edit-order-redo-icon" aria-hidden="true">↪</span>Вперёд</button>
             </div>
             <div class="edit-order-step2-actions__right">
+              <button type="button" id="edit-order-cancel-order-btn" class="edit-order-btn-secondary edit-order-cancel-order-btn" title="Отменить заказ (будет запрошено подтверждение и причина)">Отменить заказ</button>
               <button type="button" id="edit-order-complete-btn" class="edit-order-btn-secondary edit-order-complete-btn" title="Отметить заказ как выполненный (редактирование будет недоступно)">Заказ выполнен</button>
               <button type="button" id="edit-order-save-btn" class="green-button edit-order-btn-with-icon" tabindex="10"><img src="icons/edit-order-icon-save.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Сохранить изменения</button>
             </div>
