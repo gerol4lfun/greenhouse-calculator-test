@@ -4223,25 +4223,6 @@ input[type="radio"] {
   gap: var(--eo-space-sm);
 }
 
-.edit-order-complete-btn {
-  padding: var(--eo-space-xs) var(--eo-space-md);
-  min-height: 40px;
-  font-size: var(--eo-font-body);
-  font-weight: 500;
-  border-radius: var(--eo-radius);
-  border: 1px solid var(--eo-color-muted, #888);
-  background: transparent;
-  color: var(--eo-color-muted, #555);
-}
-.edit-order-complete-btn:hover:not(:disabled) {
-  background: rgba(0,0,0,0.04);
-  color: var(--eo-color-text);
-}
-.edit-order-complete-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .edit-order-cancel-order-btn {
   padding: var(--eo-space-xs) var(--eo-space-md);
   min-height: 40px;
