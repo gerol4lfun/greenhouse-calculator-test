@@ -3270,6 +3270,11 @@ input[type="radio"] {
   color: #1a7f37;
 }
 
+.edit-order-item-status-badge--done {
+  background: #e8e8e8;
+  color: #505050;
+}
+
 .edit-order-item-meta {
   margin-left: var(--eo-space-md);
   font-size: var(--eo-font-label);
@@ -4210,6 +4215,31 @@ input[type="radio"] {
   display: flex;
   align-items: center;
   gap: var(--eo-space-xs);
+}
+
+.edit-order-step2-actions__right {
+  display: flex;
+  align-items: center;
+  gap: var(--eo-space-sm);
+}
+
+.edit-order-complete-btn {
+  padding: var(--eo-space-xs) var(--eo-space-md);
+  min-height: 40px;
+  font-size: var(--eo-font-body);
+  font-weight: 500;
+  border-radius: var(--eo-radius);
+  border: 1px solid var(--eo-color-muted, #888);
+  background: transparent;
+  color: var(--eo-color-muted, #555);
+}
+.edit-order-complete-btn:hover:not(:disabled) {
+  background: rgba(0,0,0,0.04);
+  color: var(--eo-color-text);
+}
+.edit-order-complete-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Вернуть / Вперёд — лёгкие иконки-кнопки, не конкурируют с «Сохранить» */
