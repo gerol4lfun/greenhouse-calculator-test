@@ -363,6 +363,42 @@ label {
   box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
 }
 
+/* Поле с опцией в одной строке (напр. Длина + «Нестандарт») — опция справа от контрола */
+.parameters--with-inline-option .parameters__field-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 60%;
+  min-width: 0;
+}
+.parameters--with-inline-option .parameters__field-group select {
+  flex: 1 1 0%;
+  min-width: 0;
+  width: auto;
+}
+.parameters__inline-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  width: auto;
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5a6c7d;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.parameters__inline-option input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #4a90e2;
+  flex-shrink: 0;
+}
+
 /* Label с иконкой внутри */
 .label-with-icon {
   display: flex;
@@ -2837,10 +2873,10 @@ input[type="radio"] {
   /* Фон */
   --eo-bg-subtle: #fafbfc;
   --eo-bg-disabled: #f5f5f5;
-  /* Шрифты */
-  --eo-font-label: 0.875rem;
-  --eo-font-body: 0.9rem;
-  --eo-font-input: 0.9375rem;
+  /* Шрифты (целые px — без дробных rem, чтобы текст в модалке не размывался) */
+  --eo-font-label: 14px;
+  --eo-font-body: 14px;
+  --eo-font-input: 15px;
   /* Поля ввода: единые размеры */
   --eo-input-padding-y: 6px;
   --eo-input-padding-x: 10px;
@@ -2899,7 +2935,7 @@ input[type="radio"] {
   --eo-primary-hover: #15803d;
   --eo-color-text: #2c3e50;
   --eo-color-muted: #555;
-  --eo-font-body: 0.9rem;
+  --eo-font-body: 14px;
   --eo-bg-subtle: #fafbfc;
   --eo-border-color: #e8ecf0;
 
@@ -3003,6 +3039,9 @@ input[type="radio"] {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
   overflow: visible;
   margin: auto;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: geometricPrecision;
 }
 
 .edit-order-modal-header {
@@ -3477,6 +3516,46 @@ input[type="radio"] {
   border: var(--eo-border-input);
   border-radius: var(--eo-radius);
   box-sizing: border-box;
+}
+
+.edit-order-add-params-grid .edit-order-add-item-row.edit-order-add-checkbox-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  accent-color: var(--eo-primary);
+}
+
+/* Строка «Длина» с опцией в одной линии (селект + «Нестандарт» справа) */
+.edit-order-add-params-grid .edit-order-add-item-row--with-inline-option .edit-order-add-field-group {
+  display: flex;
+  align-items: center;
+  gap: var(--eo-space-md);
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.edit-order-add-params-grid .edit-order-add-item-row--with-inline-option .edit-order-add-field-group select {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.edit-order-add-inline-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: var(--eo-font-label);
+  color: var(--eo-color-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.edit-order-add-inline-option input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--eo-primary);
+  flex-shrink: 0;
 }
 
 .edit-order-form .edit-order-field textarea {
@@ -5111,6 +5190,10 @@ input[type="radio"] {
     width: 100% !important;
   }
 
+  .parameters--with-inline-option .parameters__field-group {
+    width: 100%;
+  }
+
   /* Кнопка информации о поликарбонате на мобильных */
   .parameters-with-icon {
     flex-wrap: wrap;
@@ -5628,6 +5711,10 @@ input[type="radio"] {
   .parameters select {
     width: 100% !important;
     padding: 12px 40px 12px 16px !important;
+  }
+
+  .parameters--with-inline-option .parameters__field-group {
+    width: 100% !important;
   }
 
   /* Дополнительные товары - адаптация */

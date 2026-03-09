@@ -1664,8 +1664,25 @@ function onWidthChange() {
     resetDropdown('frame', 'Сначала выберите длину');
     resetDropdown('arcStep', 'Выберите шаг');
 
+    // Сброс нестандартной длины
+    var oddCb = document.getElementById('odd-length');
+    if (oddCb) { oddCb.checked = false; oddCb.disabled = true; }
+
     // Сброс дополнительных опций
     resetAdditionalOptions();
+}
+
+// Минимальная длина, с которой доступна нестандартная (на 1 м короче): 4→3, 6→5, 12→11 и т.д.
+var ODD_LENGTH_MIN_BILLING = 4;
+
+/** С главной панели: фактическая длина для КП/заказа и длина для расчёта цены. */
+function getEffectiveLengthFromMainPanel() {
+    var lengthEl = document.getElementById('length');
+    var oddEl = document.getElementById('odd-length');
+    var billing = lengthEl && lengthEl.value ? parseFloat(lengthEl.value) : NaN;
+    if (isNaN(billing)) return { effective: NaN, billing: NaN };
+    var useOdd = oddEl && oddEl.checked && billing >= ODD_LENGTH_MIN_BILLING;
+    return { effective: useOdd ? billing - 1 : billing, billing: billing };
 }
 
 // Функция обработки изменения длины
@@ -1676,6 +1693,16 @@ function onLengthChange() {
 
     const frameSelect = document.getElementById("frame");
     frameSelect.innerHTML = '<option value="" disabled selected>Выберите каркас</option>';
+
+    var oddCheckbox = document.getElementById('odd-length');
+    if (oddCheckbox) {
+        if (!isNaN(length) && length >= ODD_LENGTH_MIN_BILLING) {
+            oddCheckbox.disabled = false;
+        } else {
+            oddCheckbox.checked = false;
+            oddCheckbox.disabled = true;
+        }
+    }
 
     if (isNaN(length)) {
         return;
@@ -2058,14 +2085,17 @@ async function calculateGreenhouseCost(event = null) {
     const city = document.getElementById("city").value.trim();
     const form = document.getElementById("form").value.trim();
     const width = parseFloat(document.getElementById("width").value);
-    const length = parseFloat(document.getElementById("length").value);
+    const lengthFromSelect = parseFloat(document.getElementById("length").value);
     const frame = document.getElementById("frame").value.trim();
     const polycarbonate = document.getElementById("polycarbonate").value.trim();
     const arcStep = parseFloat(document.getElementById("arcStep").value);
+    var lenPair = getEffectiveLengthFromMainPanel();
+    var billingLength = isNaN(lengthFromSelect) ? lengthFromSelect : lenPair.billing;
+    var effectiveLength = isNaN(lenPair.effective) ? lengthFromSelect : lenPair.effective;
 
     // Проверка на заполнение всех обязательных полей
     const isFormComplete =
-        city && form && !isNaN(width) && !isNaN(length) && frame && polycarbonate && !isNaN(arcStep);
+        city && form && !isNaN(width) && !isNaN(billingLength) && frame && polycarbonate && !isNaN(arcStep);
 
     // Если поля не заполнены, проверяем изменение поликарбоната
     const isPolycarbonateChange =
@@ -2091,12 +2121,13 @@ async function calculateGreenhouseCost(event = null) {
     const delay = (event && event.type === 'click') ? 0 : 300;
     
     calculateDebounceTimer = setTimeout(async () => {
-        await performCalculation(city, form, width, length, frame, polycarbonate, arcStep);
+        await performCalculation(city, form, width, billingLength, frame, polycarbonate, arcStep, effectiveLength);
     }, delay);
 }
 
 // Вынесена логика расчета в отдельную функцию для переиспользования. Единая точка входа — calculateGreenhousePrice (без привязки к DOM главной).
-async function performCalculation(city, form, width, length, frame, polycarbonate, arcStep) {
+// length — для расчёта цены (чётная); effectiveLength — для КП и заказа (может быть 3,5,7,9).
+async function performCalculation(city, form, width, length, frame, polycarbonate, arcStep, effectiveLength) {
     var bracingCheckbox = document.getElementById('bracing');
     var groundHooksCheckbox = document.getElementById('ground-hooks');
     var assemblyCheckbox = document.getElementById('assembly');
@@ -2154,6 +2185,9 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
     if (out.cityData) currentCityData = out.cityData;
 
     var data = out.data;
+    if (effectiveLength != null && !isNaN(effectiveLength) && effectiveLength !== length) {
+        data.length = effectiveLength;
+    }
     var selectedEntry = currentCityData.find(function (item) {
         return getFormCategory(item.form_name) === form && parseFloat(item.width) === width &&
             parseFloat(item.length) === length && normalizeString((item.frame_description || '').replace(/двойная\s*/gi, '')).includes(normalizeString(frame)) &&
@@ -2163,8 +2197,9 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
     lastCalculatedPrice = data.finalTotalPrice;
     lastCalculation = data;
 
-    await generateCommercialOffer(data.basePrice, data.assemblyCost, data.foundationCost, additionalProducts, data.additionalProductsCost, data.deliveryPrice, data.finalTotalPrice, selectedEntry || {}, 'Стоимость с учетом скидки - ' + formatPrice(data.basePrice) + ' рублей', data.assemblyText, data.foundationText, data.bedsAssemblyText, data.additionalProductsText, data.snowLoad || '');
-    await generateShortOffer(data.finalTotalPrice, selectedEntry || {});
+    var displayLength = (effectiveLength != null && !isNaN(effectiveLength)) ? effectiveLength : length;
+    await generateCommercialOffer(data.basePrice, data.assemblyCost, data.foundationCost, additionalProducts, data.additionalProductsCost, data.deliveryPrice, data.finalTotalPrice, selectedEntry || {}, 'Стоимость с учетом скидки - ' + formatPrice(data.basePrice) + ' рублей', data.assemblyText, data.foundationText, data.bedsAssemblyText, data.additionalProductsText, data.snowLoad || '', displayLength);
+    await generateShortOffer(data.finalTotalPrice, selectedEntry || {}, displayLength);
     var giftTotal = (typeof orderCart !== 'undefined' && orderCart.length > 0 && typeof getOrderCartTotal === 'function') ? getOrderCartTotal() : data.finalTotalPrice;
     updateGiftsBlock(giftTotal);
     var savedGifts = {};
@@ -2347,7 +2382,7 @@ function calculateDeliveryDebounced() {
 }
 
 // Функция формирования коммерческого предложения
-async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, additionalProducts, additionalProductsCost, deliveryPrice, finalTotalPrice, selectedEntry, basePriceText, assemblyText, foundationText, bedsAssemblyText, additionalProductsText, snowLoadFinalText) {
+async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, additionalProducts, additionalProductsCost, deliveryPrice, finalTotalPrice, selectedEntry, basePriceText, assemblyText, foundationText, bedsAssemblyText, additionalProductsText, snowLoadFinalText, displayLength) {
     // Извлечение дополнительных характеристик
     const height = selectedEntry.height ? selectedEntry.height : "Не указано";
     const horizontalTies = selectedEntry.horizontal_ties ? selectedEntry.horizontal_ties : "Не указано";
@@ -2392,7 +2427,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
 
     const frameValue = document.getElementById("frame").value.trim();
     const widthValue = document.getElementById("width").value.trim();
-    const lengthValue = document.getElementById("length").value.trim();
+    const lengthValue = (displayLength != null && displayLength !== '') ? String(displayLength) : (document.getElementById("length") ? document.getElementById("length").value.trim() : '');
     const arcStepValue = document.getElementById("arcStep").value.trim();
     const polycarbonateValue = document.getElementById("polycarbonate").value.trim();
     
@@ -2529,7 +2564,9 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         const form = document.getElementById("form").value.trim();
         const width = parseFloat(document.getElementById("width").value);
         const length = parseFloat(document.getElementById("length").value);
-        
+        const lenPair = getEffectiveLengthFromMainPanel();
+        const displayLength = (!isNaN(lenPair.effective)) ? lenPair.effective : length;
+
         // Находим entry для альтернативного варианта
         const altEntry = currentCityData.find(item => {
             return (
@@ -2736,7 +2773,7 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         variant2Text += `${cleanName}\n\n`;
         variant2Text += `${frameLine}\n`;
         variant2Text += `Ширина: ${width} м\n`;
-        variant2Text += `Длина: ${length} м\n`;
+        variant2Text += `Длина: ${displayLength} м\n`;
         variant2Text += `Высота: ${height}\n`;
         variant2Text += `Шаг дуги: ${altArcStep} м\n`;
         variant2Text += `${polycarbonateLine}\n`;
@@ -3128,10 +3165,10 @@ function computeFinalTotalPriceForVariant(overrideParams) {
 }
 
 // Функция генерации короткого КП
-async function generateShortOffer(finalTotalPrice1, selectedEntry) {
+async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength) {
     const form = document.getElementById("form").value.trim();
     const width = document.getElementById("width").value.trim();
-    const length = document.getElementById("length").value.trim();
+    const length = (displayLength != null && displayLength !== '') ? String(displayLength) : (document.getElementById("length") ? document.getElementById("length").value.trim() : '');
     
     // Получаем адрес доставки и формируем заголовок
     const addressInput = document.getElementById("address");
@@ -6248,14 +6285,21 @@ function openEditOrderAddPanel(index) {
                 setEditOrderSelectValue('edit-order-add-width', item.width);
                 onModalAddWidthChange();
                 var lengthSel = document.getElementById('edit-order-add-length');
-                var lengthVal = item.length != null ? String(item.length) : '';
+                var itemLen = item.length != null ? parseFloat(item.length) : NaN;
+                var isOddLength = !isNaN(itemLen) && itemLen >= 3 && itemLen % 2 === 1;
+                var lengthVal = isOddLength ? String(itemLen + 1) : (item.length != null ? String(item.length) : '');
                 if (lengthVal && lengthSel && !Array.prototype.find.call(lengthSel.options, function (o) { return o.value === lengthVal; })) {
                     var lengthOpt = document.createElement('option');
                     lengthOpt.value = lengthVal;
                     lengthOpt.textContent = lengthVal + ' м';
                     lengthSel.appendChild(lengthOpt);
                 }
-                setEditOrderSelectValue('edit-order-add-length', item.length);
+                setEditOrderSelectValue('edit-order-add-length', lengthVal || item.length);
+                var oddLenCb = document.getElementById('edit-order-add-odd-length');
+                if (oddLenCb) {
+                    oddLenCb.checked = isOddLength;
+                    oddLenCb.disabled = !lengthVal || parseFloat(lengthVal) < ODD_LENGTH_MIN_BILLING;
+                }
                 onModalAddLengthChange();
                 setEditOrderSelectValue('edit-order-add-frame', item.frame);
                 setEditOrderSelectValue('edit-order-add-arcStep', String(item.arc_step || '1'));
@@ -6332,6 +6376,8 @@ function resetModalAddDropdowns() {
     if (f) f.innerHTML = '<option value="">— Сначала длину —</option>';
     var p = document.getElementById('edit-order-add-polycarbonate');
     if (p) p.innerHTML = '<option value="">— Выберите поликарбонат —</option>';
+    var oddCb = document.getElementById('edit-order-add-odd-length');
+    if (oddCb) { oddCb.checked = false; oddCb.disabled = true; }
     modalCityData = [];
 }
 
@@ -6417,7 +6463,19 @@ function onModalAddWidthChange() {
     });
     var f = document.getElementById('edit-order-add-frame');
     if (f) f.innerHTML = '<option value="">— Сначала длину —</option>';
+    var oddCb = document.getElementById('edit-order-add-odd-length');
+    if (oddCb) { oddCb.checked = false; oddCb.disabled = true; }
     clearEditOrderAddPanelCalculation();
+}
+
+/** С панели «Параметры теплицы» в модалке редактирования: фактическая длина и длина для расчёта цены. */
+function getEffectiveLengthFromEditPanel() {
+    var lengthEl = document.getElementById('edit-order-add-length');
+    var oddEl = document.getElementById('edit-order-add-odd-length');
+    var billing = lengthEl && lengthEl.value ? parseFloat(lengthEl.value) : NaN;
+    if (isNaN(billing)) return { effective: NaN, billing: NaN };
+    var useOdd = oddEl && oddEl.checked && billing >= ODD_LENGTH_MIN_BILLING;
+    return { effective: useOdd ? billing - 1 : billing, billing: billing };
 }
 
 function onModalAddLengthChange() {
@@ -6425,6 +6483,15 @@ function onModalAddLengthChange() {
     var width = parseFloat(document.getElementById('edit-order-add-width') ? document.getElementById('edit-order-add-width').value : NaN);
     var length = parseFloat(document.getElementById('edit-order-add-length') ? document.getElementById('edit-order-add-length').value : NaN);
     var frameSel = document.getElementById('edit-order-add-frame');
+    var oddCb = document.getElementById('edit-order-add-odd-length');
+    if (oddCb) {
+        if (!isNaN(length) && length >= ODD_LENGTH_MIN_BILLING) {
+            oddCb.disabled = false;
+        } else {
+            oddCb.checked = false;
+            oddCb.disabled = true;
+        }
+    }
     if (!frameSel || !modalCityData.length || isNaN(length)) return;
     frameSel.innerHTML = '<option value="">— Каркас —</option>';
     var filtered = modalCityData.filter(function (item) {
@@ -7029,6 +7096,8 @@ function initEditOrderModal() {
     if (addWidthSel) addWidthSel.addEventListener('change', onModalAddWidthChange);
     var addLengthSel = document.getElementById('edit-order-add-length');
     if (addLengthSel) addLengthSel.addEventListener('change', onModalAddLengthChange);
+    var addOddLengthCb = document.getElementById('edit-order-add-odd-length');
+    if (addOddLengthCb) addOddLengthCb.addEventListener('change', clearEditOrderAddPanelCalculation);
     var addFrameSel = document.getElementById('edit-order-add-frame');
     if (addFrameSel) addFrameSel.addEventListener('change', clearEditOrderAddPanelCalculation);
     var addArcStepSel = document.getElementById('edit-order-add-arcStep');
@@ -7045,16 +7114,18 @@ function initEditOrderModal() {
             var city = getEditOrderAddCity();
             var form = addFormSel ? addFormSel.value.trim() : '';
             var width = parseFloat(addWidthSel ? addWidthSel.value : NaN);
-            var length = parseFloat(addLengthSel ? addLengthSel.value : NaN);
+            var lenPair = getEffectiveLengthFromEditPanel();
+            var billingLength = lenPair.billing;
+            var effectiveLength = lenPair.effective;
             var frame = document.getElementById('edit-order-add-frame') ? document.getElementById('edit-order-add-frame').value.trim() : '';
             var arcStep = parseFloat(document.getElementById('edit-order-add-arcStep') ? document.getElementById('edit-order-add-arcStep').value : NaN);
             var poly = document.getElementById('edit-order-add-polycarbonate') ? document.getElementById('edit-order-add-polycarbonate').value.trim() : '';
-            if (!form || isNaN(width) || isNaN(length) || !frame || !poly) {
+            if (!form || isNaN(width) || isNaN(billingLength) || !frame || !poly) {
                 if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
                 return;
             }
             var options = getEditOrderAddPanelOptions(poly);
-            var out = await calculateGreenhousePrice(city, form, width, length, frame, poly, isNaN(arcStep) ? 1 : arcStep, options);
+            var out = await calculateGreenhousePrice(city, form, width, billingLength, frame, poly, isNaN(arcStep) ? 1 : arcStep, options);
             if (!out.ok) {
                 if (typeof showToast === 'function') showToast(out.error || 'Ошибка расчёта', 'error');
                 if (priceEl) priceEl.textContent = '';
@@ -7063,6 +7134,7 @@ function initEditOrderModal() {
                 return;
             }
             var data = out.data;
+            if (!isNaN(effectiveLength) && effectiveLength !== billingLength) data.length = effectiveLength;
             var itemTotal = (data.basePrice || 0) + (data.assemblyCost || 0) + (data.foundationCost || 0) + (data.additionalProductsCost || 0);
             itemTotal = Math.ceil(itemTotal / 10) * 10;
             var extrasText = [(data.foundationText || ''), (data.additionalProductsText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';

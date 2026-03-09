@@ -188,9 +188,15 @@
                     <label for="edit-order-add-width">Ширина, м</label>
                     <select id="edit-order-add-width"><option value="">— Сначала модель —</option></select>
                   </div>
-                  <div class="edit-order-add-item-row">
+                  <div class="edit-order-add-item-row edit-order-add-item-row--with-inline-option">
                     <label for="edit-order-add-length">Длина, м</label>
-                    <select id="edit-order-add-length"><option value="">— Сначала ширину —</option></select>
+                    <div class="edit-order-add-field-group">
+                      <select id="edit-order-add-length"><option value="">— Сначала ширину —</option></select>
+                      <label class="edit-order-add-inline-option" for="edit-order-add-odd-length">
+                        <input type="checkbox" id="edit-order-add-odd-length" disabled>
+                        <span>Нестандарт</span>
+                      </label>
+                    </div>
                   </div>
                   <div class="edit-order-add-item-row">
                     <label for="edit-order-add-frame">Каркас</label>
@@ -680,11 +686,17 @@
             <option value="" disabled selected>Выберите ширину</option>
           </select>
         </div>
-        <div class="parameters">
+        <div class="parameters parameters--with-inline-option">
           <label for="length">Длина (м):</label>
-          <select id="length" onchange="onLengthChange()">
-            <option value="" disabled selected>Выберите длину</option>
-          </select>
+          <div class="parameters__field-group">
+            <select id="length" onchange="onLengthChange()">
+              <option value="" disabled selected>Выберите длину</option>
+            </select>
+            <label class="parameters__inline-option" for="odd-length">
+              <input type="checkbox" id="odd-length" disabled onchange="calculateGreenhouseCost()">
+              <span>Нестандарт</span>
+            </label>
+          </div>
         </div>
         <div class="parameters">
           <label for="frame">Каркас:</label>
