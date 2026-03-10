@@ -13028,6 +13028,8 @@ function populateOrderDeliveryDate() {
             _orderCalSelected = '';
             return;
         }
+        // Не перезаписывать дату, если пользователь уже выбрал её в календаре формы (избегаем сброса 23.04 → первый слот при добавлении в корзину/раскрытии блока).
+        if (hidden.value && hidden.value.trim()) return;
         loadDeliveryDate(city).then(function (loaded) {
             if (loaded) {
                 _initCalendarWithDate(loaded);
@@ -14080,6 +14082,10 @@ async function submitOrder() {
         document.getElementById('order-client-phone').value = '';
         var similarWarn = document.getElementById('order-similar-order-warning');
         if (similarWarn) { similarWarn.classList.add('hidden'); similarWarn.textContent = ''; }
+        var dateHidden = document.getElementById('order-delivery-date');
+        var dateDisplay = document.getElementById('order-delivery-date-display');
+        if (dateHidden) dateHidden.value = '';
+        if (dateDisplay) { dateDisplay.value = ''; dateDisplay.placeholder = ''; }
         populateOrderDeliveryDate();
         const part3 = document.getElementById('order-address-part3');
         const noPlotCb = document.getElementById('order-no-plot');
@@ -14097,7 +14103,12 @@ async function submitOrder() {
 
     } catch (err) {
         console.error('Order submit error:', err);
-        resultDiv.textContent = '❌ Не удалось отправить заказ. Проверьте подключение к интернету и нажмите «Оформить заказ» снова.';
+        // Не приписываем вину «интернету»: таймаут, ошибка Supabase или сеть — ответ мог просто не дойти, заказ при этом мог сохраниться.
+        var msg = '❌ Не удалось получить ответ от сервера. Заказ мог сохраниться — проверьте в «Редактирование заказа» по телефону. Если заказа нет, нажмите «Оформить заказ» снова.';
+        if (err && err.code && typeof err.message === 'string' && err.message.length > 0 && err.message.length < 200) {
+            msg = '❌ Ошибка сервера: ' + err.message + '. Проверьте в «Редактирование заказа» по телефону.';
+        }
+        resultDiv.textContent = msg;
         resultDiv.className = 'error';
         if (btn) { btn.textContent = 'Оформить заказ'; btn.disabled = false; }
     }
