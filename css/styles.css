@@ -4220,26 +4220,46 @@ input[type="radio"] {
   min-width: 10em;
 }
 
+.edit-order-add-item-row--actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--eo-space-sm);
+  width: 100%;
+}
+.edit-order-add-calc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--eo-space-lg);
+  width: 100%;
+}
 .edit-order-add-calc-btn {
-  padding: var(--eo-btn-padding-y) var(--eo-space-lg);
+  flex: 0 0 auto;
+  min-width: 10em;
+  padding: var(--eo-btn-padding-y) var(--eo-btn-padding-x);
   font-size: var(--eo-btn-font);
   font-weight: 600;
-  border: none;
+  border: 1px solid #9ca3af;
   border-radius: var(--eo-btn-radius);
-  background: var(--eo-primary);
-  color: #fff;
+  background: #f3f4f6;
+  color: var(--eo-color-text);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .edit-order-add-calc-btn:hover {
-  background: var(--eo-primary-hover);
+  background: #e5e7eb;
+  border-color: #6b7280;
+}
+.edit-order-add-calc-btn:active {
+  background: #d1d5db;
 }
 .edit-order-add-calc-btn:focus-visible {
   outline: 2px solid var(--eo-primary);
   outline-offset: 2px;
 }
-
 .edit-order-add-price {
+  flex: 0 0 auto;
+  margin-left: auto;
   font-weight: 700;
   font-size: var(--eo-font-body);
   color: var(--eo-color-text);

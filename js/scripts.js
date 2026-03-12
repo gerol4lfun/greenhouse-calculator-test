@@ -1,7 +1,27 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v266"; // v266: проверка региона по ключевым словам в строке (Ставропольский край и т.д.); для заказов до 9.03.2026 при редактировании проверку региона не показываем // v265: статус «На проверке» (в обработке) в бейдже // v264: только кнопка «Отменить заказ» (без «Заказ выполнен»); статусы бейджа: Оформлен, Выполнен, Дубль, Отменён // v263: кнопка «Отменить заказ» — подтверждение, причина, сохранение; обновление списка по телефону из формы при отмене (в т.ч. по ?id=) // v262: статусы Оформлен/На проверке/Отмена/Дубль/Заказ выполнен; кнопка «Заказ выполнен» // v261: deep link ?id= — по ссылке открывается модалка «Редактирование заказа» с загрузкой заказа по id // v260: анимация появления блока успеха + «Ура, готово! 🎉» (универсально) // v259: после «Заказ оформлен!» кнопка «Изменить заказ» → openEditOrderModalWithPhone; одна точка входа с deep link ?editPhone= // v258: при закрытии модалки «Редактирование заказа» сброс шага 1 (поле поиска, список, подсказка) // v257: при открытии блока «Оформление заказа» и при фокусе в поле формы — сброс currentOrderIdForEdit (защита от state leakage для всего сценария create vs edit) // v256: при закрытии модалки сброс id; в шапке модалки телефон // v255: при открытии модалки подарки из initialSelected в giftEl // v254: проверка региона доставки при оформлении и в модалке (isAddressInDeliveryRegionByLocality, checkAddressInDeliveryRegion) // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
+const APP_VERSION = "v269"; // v269: gift slots в edit — превью после «Рассчитать», восстановление при отмене панели
+
+/** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
+const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
+
+/** Количество слотов подарков по сумме заказа. 0, 1, 2 или 3. */
+function getGiftSlotsByTotal(total) {
+    if (total >= GIFT_THRESHOLDS.slot3) return 3;
+    if (total >= GIFT_THRESHOLDS.slot2) return 2;
+    if (total >= GIFT_THRESHOLDS.slot1) return 1;
+    return 0;
+}
+
+/** Справочник id подарка → человекочитаемое название. */
+const GIFT_NAMES = {
+    'window': 'дополнительная форточка',
+    'drip-mech': 'капельный полив механический',
+    'window-automation': 'автомат для форточки',
+    'window-auto': 'автоматическая форточка (форточка + автомат)',
+    'stakes-4': '4 грунтозацепа'
+}; // v266: проверка региона по ключевым словам в строке (Ставропольский край и т.д.); для заказов до 9.03.2026 при редактировании проверку региона не показываем // v265: статус «На проверке» (в обработке) в бейдже // v264: только кнопка «Отменить заказ» (без «Заказ выполнен»); статусы бейджа: Оформлен, Выполнен, Дубль, Отменён // v263: кнопка «Отменить заказ» — подтверждение, причина, сохранение; обновление списка по телефону из формы при отмене (в т.ч. по ?id=) // v262: статусы Оформлен/На проверке/Отмена/Дубль/Заказ выполнен; кнопка «Заказ выполнен» // v261: deep link ?id= — по ссылке открывается модалка «Редактирование заказа» с загрузкой заказа по id // v260: анимация появления блока успеха + «Ура, готово! 🎉» (универсально) // v259: после «Заказ оформлен!» кнопка «Изменить заказ» → openEditOrderModalWithPhone; одна точка входа с deep link ?editPhone= // v258: при закрытии модалки «Редактирование заказа» сброс шага 1 (поле поиска, список, подсказка) // v257: при открытии блока «Оформление заказа» и при фокусе в поле формы — сброс currentOrderIdForEdit (защита от state leakage для всего сценария create vs edit) // v256: при закрытии модалки сброс id; в шапке модалки телефон // v255: при открытии модалки подарки из initialSelected в giftEl // v254: проверка региона доставки при оформлении и в модалке (isAddressInDeliveryRegionByLocality, checkAddressInDeliveryRegion) // v253: ?editPhone= убираем из URL после открытия модалки — обновление страницы не открывает её снова // v252: ?editPhone= при одном заказе — быстрый просмотр (карточка + «Редактировать»), форма только по клику // v251: один тариф доставки // v249: «Из доставки» и загрузка в модалке — два фрагмента в part1 (регион+город), не в улицу; parseAddressToParts_(2 части) // v247: адрес регион+город — убраны verbose Logger.log (11 шт), addAdditionalProductsEventListeners, безусловный console.log // v244: gift сохраняется в DOM при total<35k (не очищаем), enforce только при save; CSS: input hidden, нет !important // v232: Фаза 1 — подсказка «Данные по заказу изменены», статус на русском, адрес на localhost не обязателен, сообщение при ошибке отправки, подарки один раз в тексте для клиента и от итога корзины, предупреждение «похожий заказ» 90 дней, сворачивание карточки после редактирования // v231: текст заказа — 2+ одинаковых (одна позиция х2/х3, одна итоговая стоимость), 2+ разных (блоки «1 теплица»/«2 теплица» + доставка + общий итог), превью из корзины до «Оформить заказ», displayName в приветствии/имени // v230: текст заказа — блок «О сборке» только при выбранной опции сборки (ORDER_FOOTER_BASE / ORDER_FOOTER_ASSEMBLY, hasAssembly) // v221: дата по выбранному городу без расчёта, подсказки адреса в 3 полях (Yandex), телефон по центру // v216: замена эмодзи на flat-иконки // v215: форма оформления заказа + отправка в Supabase, цены бруса +500₽ // v214: единая версия, кеш как обычно, обновление цен — «перезайдите в калькулятор» // v212: Цены сборки по документу СБОРКА, удаление навесов // v211: Усиленный каркас в КП для арочной 20×20 // v210: Админ-панель — RPC update_user_password, выкид при смене пароля (visibilitychange + 30 сек), кнопка только у admin // v209: Тарифы 45/50, даты, КП // v208: Даты, парсер, подарки, КП // v204: Интеграция галереи фотографий теплиц и инструкций по сборке - добавлена внутренняя галерея фотографий теплиц с навигацией по типам/вариантам, добавлен раздел инструкций по сборке с поиском и фильтрацией, улучшен дизайн модальных окон, оптимизирована мобильная верстка, исправлены проблемы с копированием изображений в буфер обмена на macOS, обновлен favicon - добавлена профессиональная иконка калькулятора // v203: Добавлен favicon.ico для устранения ошибки 404, настроено кеширование статических ресурсов (изображения, видео, CSS, JS) через meta-теги и .htaccess, добавлено предупреждение в раздел "Автомат для форточки" о том, что он устанавливается только на дополнительную форточку, сделаны кнопки "скачать" менее заметными (только иконка, меньший размер, приглушенный цвет), добавлена полная надпись "Скачать" в полноэкранном режиме просмотра фото, добавлены мобильные стили для product-info-modal и polycarbonate-info-modal, улучшена адаптивность всех элементов // v202: Сделана вся область названия товара кликабельной (не только иконка), кнопка информации для поликарбоната переделана в стиле product-info-link (прозрачный фон, синий цвет, интегрирована в label), улучшена интерактивность с hover-эффектами
 
 // ==================== СИСТЕМА УВЕДОМЛЕНИЙ (TOAST) ====================
 
@@ -668,6 +688,8 @@ let editOrderCloseConfirmCallback = null;
 let editOrderRestoringState = false;
 /** Флаг: пересборка блока подарков из-за смены выбора (чтобы скрыть занятый слот window-auto), не пушить undo во вложенном onEditOrderGiftSelectChange. */
 let editOrderGiftBlockRebuilding = false;
+/** Предыдущее кол-во gift slots (для уведомления о смене tier). -1 = ещё не инициализировано. */
+let editOrderGiftSlotsPrev = -1;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -2524,8 +2546,8 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
     // Это предотвращает дублирование подарков в КП
     
-    // Если сумма больше 35000 рублей - используем расширенный формат
-    if (finalTotalPrice > 35000) {
+    // Если сумма больше порога подарков - используем расширенный формат
+    if (finalTotalPrice > GIFT_THRESHOLDS.slot1) {
         commercialOffer += `\nИтого: ${formatPrice(finalTotalPrice)} рублей\n\n`;
         commercialOffer += `💳 Без предоплаты — оплата по факту.\n` +
             `🌱 Бесплатное хранение до весны с сохранением цены.\n`;
@@ -2533,7 +2555,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
             commercialOffer += `${deliveryDateText}\n`;
         }
     } else {
-        // Если сумма 35000 и меньше - стандартный формат
+        // Если сумма ниже порога подарков - стандартный формат
         commercialOffer += `\nИтоговая стоимость - ${formatPrice(finalTotalPrice)} рублей\n`;
         commercialOffer += `💳 Без предоплаты — оплата по факту\n` +
             `🌱 Бесплатное хранение до весны с сохранением цены.\n`;
@@ -2858,7 +2880,7 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         const deliveryDateText = dateTextV2 ? `📅 Ближайшая дата доставки: ${dateTextV2}.` : '';
         
         // Добавляем итоговую сумму
-        if (finalTotalPrice2 > 35000) {
+        if (finalTotalPrice2 > GIFT_THRESHOLDS.slot1) {
             variant2Text += `\nИтого: ${formatPrice(finalTotalPrice2)} рублей\n\n`;
         } else {
             variant2Text += `\nИтоговая стоимость - ${formatPrice(finalTotalPrice2)} рублей\n`;
@@ -2868,7 +2890,7 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         // Это предотвращает дублирование подарков в КП
         
         // Добавляем условия оплаты (те же, что в основном КП)
-        if (finalTotalPrice2 > 35000) {
+        if (finalTotalPrice2 > GIFT_THRESHOLDS.slot1) {
             variant2Text += `💳 Без предоплаты — оплата по факту.\n` +
                 `🌱 Бесплатное хранение до весны с сохранением цены.\n`;
             if (deliveryDateText) {
@@ -5812,6 +5834,7 @@ function fillEditOrderForm(order) {
         var st = (order.status || '').toLowerCase();
         cancelOrderBtnEl.style.display = (st === 'cancelled' || st === 'completed') ? 'none' : '';
     }
+    editOrderGiftSlotsPrev = -1;
     renderEditOrderCompositionList(); // вызывает updateEditOrderGiftFromTotal → threshold → показ/скрытие блока
     // Принудительный enforce видимости: renderEditOrderCompositionList может не успеть при асинхронных изменениях DOM
     if (typeof updateEditOrderGiftsBlock === 'function' && typeof getEditOrderCompositionTotal === 'function') {
@@ -5827,6 +5850,20 @@ function fillEditOrderForm(order) {
 function getEditOrderCompositionTotal() {
     var sum = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
     return sum + (editOrderDeliveryCost || 0);
+}
+
+/** Итог с учётом превью из панели «Параметры теплицы»: если есть lastModalCalculationResult, подставляем его item_total вместо текущей позиции (edit) или добавляем к сумме (add). */
+function getEditOrderCompositionTotalWithPreview() {
+    if (!lastModalCalculationResult) return getEditOrderCompositionTotal();
+    var recalcTotal = lastModalCalculationResult.item_total || 0;
+    if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
+        var sum = 0;
+        editOrderComposition.forEach(function (item, idx) {
+            sum += (idx === editOrderEditingIndex ? recalcTotal : (item.item_total || 0));
+        });
+        return sum + (editOrderDeliveryCost || 0);
+    }
+    return getEditOrderCompositionTotal() + recalcTotal;
 }
 
 /** По тексту подарков (из заказа) восстановить объект { 'gift-1': id, ... } для предзаполнения селектов в модалке. */
@@ -5889,14 +5926,15 @@ function onEditOrderGiftSelectChange() {
         updateEditOrderUndoRedoButtons();
     }
     editOrderGiftBlockRebuilding = true;
-    if (typeof updateEditOrderGiftsBlock === 'function' && typeof getEditOrderCompositionTotal === 'function') {
-        updateEditOrderGiftsBlock(getEditOrderCompositionTotal());
+    if (typeof updateEditOrderGiftsBlock === 'function' && typeof getEditOrderCompositionTotalWithPreview === 'function') {
+        updateEditOrderGiftsBlock(getEditOrderCompositionTotalWithPreview(), false, true);
     }
     editOrderGiftBlockRebuilding = false;
 }
 
-/** Обновить блок селектов подарков в модалке (как на главной): по итогу заказа показывать 1–3 выпадающих списка, логика getGiftOptions. */
-function updateEditOrderGiftsBlock(totalPrice) {
+/** Обновить блок селектов подарков в модалке (как на главной): по итогу заказа показывать 1–3 выпадающих списка, логика getGiftOptions. @param {boolean} [previewOnly] — true: только отобразить слоты, не писать в giftEl (превью до сохранения позиции). @param {boolean} [skipNotice] — true: не трогать notice (вызов из смены выбора подарка — total не менялся). */
+function updateEditOrderGiftsBlock(totalPrice, previewOnly, skipNotice) {
+    editOrderGiftBlockRebuilding = true;
     var block = document.getElementById('edit-order-gifts-block');
     var infoEl = document.getElementById('edit-order-gifts-info');
     var selectionEl = document.getElementById('edit-order-gifts-selection');
@@ -5904,11 +5942,16 @@ function updateEditOrderGiftsBlock(totalPrice) {
     // Ищем wrapper по id (новый HTML) или по классу (старый HTML — .closest надёжнее getId)
     var fieldWrapper = document.getElementById('edit-order-gifts-field') ||
                        (block && block.closest ? block.closest('.edit-order-gifts-field') : null);
-    if (!block || !infoEl || !selectionEl) return;
-    var availableGifts = totalPrice >= 75000 ? 3 : totalPrice >= 55000 ? 2 : totalPrice >= 35000 ? 1 : 0;
+    if (!block || !infoEl || !selectionEl) { editOrderGiftBlockRebuilding = false; return; }
+    var availableGifts = getGiftSlotsByTotal(totalPrice);
     if (availableGifts === 0) {
+        if (!skipNotice && editOrderGiftSlotsPrev > 0 && typeof showToast === 'function') {
+            showToast('Сумма заказа стала ниже порога — подарки недоступны', 'info', null, 4000);
+        }
         block.style.display = 'none';
         if (fieldWrapper) fieldWrapper.style.display = 'none';
+        editOrderGiftSlotsPrev = 0;
+        editOrderGiftBlockRebuilding = false;
         return;
     }
     if (fieldWrapper) fieldWrapper.style.display = '';
@@ -5922,6 +5965,20 @@ function updateEditOrderGiftsBlock(totalPrice) {
         var num = (sel.id || '').replace('edit-order-gift-', '');
         if (num && sel.value && sel.value.trim()) savedFromDom['gift-' + num] = sel.value.trim();
     });
+    if (!skipNotice && editOrderGiftSlotsPrev >= 0 && editOrderGiftSlotsPrev !== availableGifts) {
+        var msg;
+        if (availableGifts > editOrderGiftSlotsPrev) {
+            msg = 'Сумма заказа увеличилась — теперь доступно ' + availableGifts + (availableGifts === 1 ? ' подарок' : availableGifts === 2 ? ' подарка' : ' подарков');
+        } else {
+            var hadGiftsRemoved = false;
+            for (var x = availableGifts + 1; x <= editOrderGiftSlotsPrev; x++) {
+                if (savedFromDom['gift-' + x]) { hadGiftsRemoved = true; break; }
+            }
+            msg = hadGiftsRemoved ? 'Сумма заказа уменьшилась — лишние подарки убраны' : 'Сумма заказа уменьшилась — теперь доступно ' + availableGifts + (availableGifts === 1 ? ' подарок' : availableGifts === 2 ? ' подарка' : ' подарков');
+        }
+        if (typeof showToast === 'function') showToast(msg, 'info', null, 4000);
+    }
+    editOrderGiftSlotsPrev = availableGifts;
     var initialSelected = (editOrderRestoringState || !(savedFromDom && Object.keys(savedFromDom).length > 0))
         ? (currentText && typeof parseGiftTextToSelected === 'function' ? parseGiftTextToSelected(currentText) : {})
         : savedFromDom;
@@ -5969,11 +6026,14 @@ function updateEditOrderGiftsBlock(totalPrice) {
     }
     // Не перезаписывать giftEl из DOM: при window-auto второй слот скрыт — в DOM один селект,
     // onEditOrderGiftSelectChange дал бы только первый подарок и удалил бы второй (капельный полив и т.д.).
-    if (Object.keys(initialSelected).length > 0 && typeof getGiftsTextFromObject === 'function') {
-        var fullGiftText = getGiftsTextFromObject(initialSelected);
-        if (fullGiftText) giftEl.value = String(fullGiftText).replace(/^\s+/, '').trim();
-    } else {
-        onEditOrderGiftSelectChange();
+    // В режиме previewOnly не трогаем giftEl — при отмене восстановим из updateEditOrderGiftFromTotal.
+    if (!previewOnly && giftEl) {
+        if (Object.keys(initialSelected).length > 0 && typeof getGiftsTextFromObject === 'function') {
+            var fullGiftText = getGiftsTextFromObject(initialSelected);
+            if (fullGiftText) giftEl.value = String(fullGiftText).replace(/^\s+/, '').trim();
+        } else {
+            onEditOrderGiftSelectChange();
+        }
     }
     var hintEl = document.getElementById('edit-order-gift-hint');
     if (hintEl) {
@@ -5985,14 +6045,15 @@ function updateEditOrderGiftsBlock(totalPrice) {
             hintEl.textContent = 'Выберите подарки в списках выше или оставьте как есть.';
         }
     }
+    editOrderGiftBlockRebuilding = false;
 }
 
 /** Обновить подарки в модалке от итога заказа (19.2/19.3): подсказка, при пустом поле — подстановка по умолчанию, блок селектов как в калькуляторе. */
 function updateEditOrderGiftFromTotal() {
     var giftEl = document.getElementById('edit-order-gift');
     var hintEl = document.getElementById('edit-order-gift-hint');
-    var total = getEditOrderCompositionTotal();
-    var availableGifts = total >= 75000 ? 3 : total >= 55000 ? 2 : total >= 35000 ? 1 : 0;
+    var total = getEditOrderCompositionTotalWithPreview();
+    var availableGifts = getGiftSlotsByTotal(total);
     if (hintEl) {
         if (availableGifts <= 0) {
             hintEl.textContent = '';
@@ -6380,6 +6441,7 @@ function openEditOrderAddPanel(index) {
 
 function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
+    lastModalCalculationResult = null;
     clearEditOrderAddBreakdown();
     var panel = document.getElementById('edit-order-add-item-panel');
     if (panel) panel.classList.add('hidden');
@@ -6389,6 +6451,7 @@ function closeEditOrderAddPanel() {
     var savePosBtn = document.getElementById('edit-order-save-position-btn');
     if (confirmBtn) confirmBtn.classList.add('hidden');
     if (savePosBtn) savePosBtn.classList.add('hidden');
+    if (typeof updateEditOrderGiftFromTotal === 'function') updateEditOrderGiftFromTotal();
 }
 
 function resetModalAddDropdowns() {
@@ -6578,6 +6641,7 @@ function clearEditOrderForm() {
     lastLoadedOrderCommercialOffer = '';
     if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
     if (typeof currentOrderCreatedAtForEdit !== 'undefined') currentOrderCreatedAtForEdit = null;
+    editOrderGiftSlotsPrev = -1;
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
     showEditOrderStep(1);
@@ -6675,7 +6739,7 @@ function buildOrderPayloadFromEditModal() {
     var giftValue = giftEl ? (giftEl.value || '').trim() : '';
     // Финальная граница: если сумма ниже порога — не сохраняем подарок
     var giftTotal = getEditOrderCompositionTotal ? getEditOrderCompositionTotal() : 0;
-    if (giftTotal < 35000) giftValue = '';
+    if (giftTotal < GIFT_THRESHOLDS.slot1) giftValue = '';
     payload.gift = giftValue;
 
     var total = getEditOrderCompositionTotal();
@@ -7229,25 +7293,27 @@ function initEditOrderModal() {
     var addPolySel = document.getElementById('edit-order-add-polycarbonate');
     if (addPolySel) addPolySel.addEventListener('change', clearEditOrderAddPanelCalculation);
 
-    var calcBtn = document.getElementById('edit-order-add-calc-btn');
-    var priceEl = document.getElementById('edit-order-add-price');
-    var confirmAddBtn = document.getElementById('edit-order-add-confirm-btn');
-    var savePosBtn = document.getElementById('edit-order-save-position-btn');
-    if (calcBtn) {
-        calcBtn.addEventListener('click', async function () {
-            var city = getEditOrderAddCity();
-            var form = addFormSel ? addFormSel.value.trim() : '';
-            var width = parseFloat(addWidthSel ? addWidthSel.value : NaN);
-            var lenPair = getEffectiveLengthFromEditPanel();
-            var billingLength = lenPair.billing;
-            var effectiveLength = lenPair.effective;
-            var frame = document.getElementById('edit-order-add-frame') ? document.getElementById('edit-order-add-frame').value.trim() : '';
-            var arcStep = parseFloat(document.getElementById('edit-order-add-arcStep') ? document.getElementById('edit-order-add-arcStep').value : NaN);
-            var poly = document.getElementById('edit-order-add-polycarbonate') ? document.getElementById('edit-order-add-polycarbonate').value.trim() : '';
-            if (!form || isNaN(width) || isNaN(billingLength) || !frame || !poly) {
-                if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
-                return;
-            }
+    var editOrderAddPanelRecalcTimer = null;
+    function scheduleEditOrderAddPanelRecalc() {
+        if (editOrderAddPanelRecalcTimer) clearTimeout(editOrderAddPanelRecalcTimer);
+        editOrderAddPanelRecalcTimer = setTimeout(function () {
+            editOrderAddPanelRecalcTimer = null;
+            var panel = document.getElementById('edit-order-add-item-panel');
+            if (panel && !panel.classList.contains('hidden')) runEditOrderAddPanelCalculation();
+        }, 250);
+    }
+    function runEditOrderAddPanelCalculation() {
+        var city = getEditOrderAddCity();
+        var form = addFormSel ? addFormSel.value.trim() : '';
+        var width = parseFloat(addWidthSel ? addWidthSel.value : NaN);
+        var lenPair = getEffectiveLengthFromEditPanel();
+        var billingLength = lenPair.billing;
+        var effectiveLength = lenPair.effective;
+        var frame = document.getElementById('edit-order-add-frame') ? document.getElementById('edit-order-add-frame').value.trim() : '';
+        var arcStep = parseFloat(document.getElementById('edit-order-add-arcStep') ? document.getElementById('edit-order-add-arcStep').value : NaN);
+        var poly = document.getElementById('edit-order-add-polycarbonate') ? document.getElementById('edit-order-add-polycarbonate').value.trim() : '';
+        if (!form || isNaN(width) || isNaN(billingLength) || !frame || !poly) return null;
+        return (async function () {
             var options = getEditOrderAddPanelOptions(poly);
             var out = await calculateGreenhousePrice(city, form, width, billingLength, frame, poly, isNaN(arcStep) ? 1 : arcStep, options);
             if (!out.ok) {
@@ -7255,6 +7321,7 @@ function initEditOrderModal() {
                 if (priceEl) priceEl.textContent = '';
                 clearEditOrderAddBreakdown();
                 lastModalCalculationResult = null;
+                if (typeof updateEditOrderGiftsBlock === 'function') updateEditOrderGiftsBlock(getEditOrderCompositionTotalWithPreview(), true);
                 return;
             }
             var data = out.data;
@@ -7267,16 +7334,47 @@ function initEditOrderModal() {
             lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText, height: data.height, snowLoad: data.snowLoad, horizontalTies: data.horizontalTies, equipment: data.equipment };
             if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(itemTotal) : itemTotal) + ' ₽';
             renderEditOrderAddBreakdown(data);
-            if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
+            if (typeof updateEditOrderGiftsBlock === 'function') updateEditOrderGiftsBlock(getEditOrderCompositionTotalWithPreview(), true);
+            if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length) {
                 if (savePosBtn) savePosBtn.classList.remove('hidden');
                 if (confirmAddBtn) confirmAddBtn.classList.add('hidden');
             } else {
                 if (confirmAddBtn) confirmAddBtn.classList.remove('hidden');
                 if (savePosBtn) savePosBtn.classList.add('hidden');
             }
-        });
+        })();
     }
 
+    var calcBtn = document.getElementById('edit-order-add-calc-btn');
+    var priceEl = document.getElementById('edit-order-add-price');
+    var confirmAddBtn = document.getElementById('edit-order-add-confirm-btn');
+    var savePosBtn = document.getElementById('edit-order-save-position-btn');
+    if (calcBtn) {
+        calcBtn.addEventListener('click', async function () {
+            var form = addFormSel ? addFormSel.value.trim() : '';
+            var width = parseFloat(addWidthSel ? addWidthSel.value : NaN);
+            var lenPair = getEffectiveLengthFromEditPanel();
+            var billingLength = lenPair.billing;
+            var frame = document.getElementById('edit-order-add-frame') ? document.getElementById('edit-order-add-frame').value.trim() : '';
+            var poly = document.getElementById('edit-order-add-polycarbonate') ? document.getElementById('edit-order-add-polycarbonate').value.trim() : '';
+            if (!form || isNaN(width) || isNaN(billingLength) || !frame || !poly) {
+                if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
+                return;
+            }
+            await runEditOrderAddPanelCalculation();
+        });
+    }
+    (function attachEditOrderAddOptionsChangeListeners() {
+        var panel = document.getElementById('edit-order-add-item-panel');
+        if (!panel) return;
+        ['bracing', 'assembly', 'ground-hooks', 'on-wood', 'on-concrete'].forEach(function (id) {
+            var el = panel.querySelector('#edit-order-add-' + id);
+            if (el) el.addEventListener('change', scheduleEditOrderAddPanelRecalc);
+        });
+        panel.querySelectorAll('.edit-order-add-product-item select').forEach(function (sel) {
+            sel.addEventListener('change', scheduleEditOrderAddPanelRecalc);
+        });
+    })();
     if (confirmAddBtn) {
         confirmAddBtn.addEventListener('click', function () {
             if (!lastModalCalculationResult) return;
@@ -10470,48 +10568,37 @@ function getGiftOptions(giftNumber, selectedGifts, hasAdditionalWindow, availabl
                      selectedGifts[`gift-${giftNumber}`] === 'window-auto';
     
     if (giftNumber === 1) {
-        // Первый подарок: форточка, капельный полив, автоматическая форточка (если доступно 2+ подарка) или 4 грунтозацепа
+        // Первый слот (slot-model): базовые опции + window-auto если хватает 2 слотов
         options.push({ value: 'window', text: 'Дополнительная форточка' });
         options.push({ value: 'drip-mech', text: 'Капельный полив механический' });
-        // Если доступно 2+ подарка, предлагаем автоматическую форточку (занимает 2 слота)
+        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
         if (availableGifts >= 2) {
             options.push({ value: 'window-auto', text: 'Автоматическая форточка (форточка + автомат)' });
         }
-        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
     } else if (giftNumber === 2) {
-        // Второй подарок: капельный полив механический, вторая форточка, автомат (если есть форточка) или 4 грунтозацепа
-        options.push({ value: 'drip-mech', text: 'Капельный полив механический' });
+        // Второй слот (slot-model): те же базовые опции
         options.push({ value: 'window', text: 'Дополнительная форточка' });
-        
-        // ИСПРАВЛЕНО: Проверяем, выбран ли автомат в других подарках
+        options.push({ value: 'drip-mech', text: 'Капельный полив механический' });
+        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
         const hasAutomationInOtherGifts = otherGifts.some(([key, value]) => value === 'window-automation' || value === 'window-auto');
-        
-        // Если есть форточка (купленная или в любом подарке) И автомат еще НЕ выбран - предлагаем автомат
         if (hasWindow && !hasAutomationInOtherGifts) {
             options.push({ value: 'window-automation', text: 'Автомат для форточки' });
         }
-        
-        // Если доступно 3 подарка и в первом не выбрана window-auto, предлагаем автоматическую форточку
+        // window-auto: доступен только если есть 2 свободных слота (2 и 3)
         if (availableGifts >= 3 && selectedGifts['gift-1'] !== 'window-auto') {
             options.push({ value: 'window-auto', text: 'Автоматическая форточка (форточка + автомат)' });
         }
-        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
     } else if (giftNumber === 3) {
-        // Третий подарок: автомат для форточки (если есть доп форточка), капельный полив или 4 грунтозацепа
-        // ИСПРАВЛЕНО: Проверяем, выбран ли автомат в других подарках
+        // Третий слот (slot-model): те же базовые опции, что в 1 и 2
+        options.push({ value: 'window', text: 'Дополнительная форточка' });
+        options.push({ value: 'drip-mech', text: 'Капельный полив механический' });
+        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
+        // Автомат только от 55k и только при наличии форточки
         const hasAutomationInOtherGifts = otherGifts.some(([key, value]) => value === 'window-automation' || value === 'window-auto');
-        
-        // Если выбран автомат в другом подарке, предлагаем капельный полив
-        if (hasAutomationInOtherGifts) {
-            options.push({ value: 'drip-mech', text: 'Капельный полив механический' });
-        }
-        
-        // Если есть форточка (купленная или в любом подарке) И автомат еще НЕ выбран - предлагаем автомат
         if (hasWindow && !hasAutomationInOtherGifts) {
             options.push({ value: 'window-automation', text: 'Автомат для форточки' });
         }
-        
-        options.push({ value: 'stakes-4', text: '4 грунтозацепа' });
+        // window-auto в слоте 3 недоступен — занимает 2 слота, слота 4 нет
     }
     
     return options;
@@ -10532,19 +10619,8 @@ function updateGiftsBlock(totalPrice, overrideSelectedGifts = null) {
     }
     
     // Определяем количество доступных подарков
-    let availableGifts = 0;
-    let giftTier = '';
-    
-    if (totalPrice >= 75000) {
-        availableGifts = 3;
-        giftTier = 'от 75 000 рублей';
-    } else if (totalPrice >= 55000) {
-        availableGifts = 2;
-        giftTier = 'от 55 000 рублей';
-    } else if (totalPrice >= 35000) {
-        availableGifts = 1;
-        giftTier = 'от 35 000 рублей';
-    }
+    const availableGifts = getGiftSlotsByTotal(totalPrice);
+    const giftTier = availableGifts === 3 ? 'от 75 000 рублей' : availableGifts === 2 ? 'от 55 000 рублей' : availableGifts === 1 ? 'от 35 000 рублей' : '';
     
     // Если подарков нет, скрываем блок
     if (availableGifts === 0) {
@@ -10951,8 +11027,7 @@ function onGiftChange() {
         }
     } else {
         // Если "Автоматическая форточка" не выбрана в подарке 1, показываем подарок 2 (если он должен быть доступен)
-        // ИСПРАВЛЕНО: Используем уже рассчитанную цену из глобальной переменной
-        const availableGifts = lastCalculatedPrice >= 75000 ? 3 : (lastCalculatedPrice >= 55000 ? 2 : (lastCalculatedPrice >= 35000 ? 1 : 0));
+        const availableGifts = getGiftSlotsByTotal(lastCalculatedPrice);
         // Показываем подарок 2 только если доступно 2+ подарка
         if (availableGifts >= 2 && gift2Item) {
             gift2Item.style.display = '';
@@ -10968,8 +11043,7 @@ function onGiftChange() {
         }
     } else {
         // Если "Автоматическая форточка" не выбрана в подарке 2, показываем подарок 3 (если он должен быть доступен)
-        // ИСПРАВЛЕНО: Используем уже рассчитанную цену из глобальной переменной
-        const availableGifts = lastCalculatedPrice >= 75000 ? 3 : (lastCalculatedPrice >= 55000 ? 2 : (lastCalculatedPrice >= 35000 ? 1 : 0));
+        const availableGifts = getGiftSlotsByTotal(lastCalculatedPrice);
         // Показываем подарок 3 только если:
         // 1. Доступно 3 подарка
         // 2. Подарок 1 НЕ занял 2 слота (не выбрана window-auto в подарке 1)
@@ -11039,20 +11113,13 @@ function getGiftsTextFromObject(selectedGifts) {
     
     // Используем Map для подсчета количества каждого подарка
     const giftCounts = new Map();
-    const giftNames = {
-        'window': 'дополнительная форточка',
-        'drip-mech': 'капельный полив механический',
-        'window-automation': 'автомат для форточки',
-        'window-auto': 'автоматическая форточка (форточка + автомат)',
-        'stakes-4': '4 грунтозацепа'
-    };
     
     // Проходим по всем выбранным подаркам и считаем количество каждого
     Object.keys(selectedGifts).forEach(giftId => {
         const giftValue = selectedGifts[giftId];
         
         // Пропускаем пустые значения
-        if (!giftValue || giftValue.trim() === '' || !giftNames[giftValue]) {
+        if (!giftValue || giftValue.trim() === '' || !GIFT_NAMES[giftValue]) {
             return;
         }
         
@@ -11067,7 +11134,7 @@ function getGiftsTextFromObject(selectedGifts) {
         }
         
         // Увеличиваем счетчик для этого подарка
-        const giftName = giftNames[giftValue];
+        const giftName = GIFT_NAMES[giftValue];
         giftCounts.set(giftName, (giftCounts.get(giftName) || 0) + 1);
     });
     
@@ -11155,13 +11222,6 @@ function getGiftsText() {
     
     // Используем Map для подсчета количества каждого подарка
     const giftCounts = new Map();
-    const giftNames = {
-        'window': 'дополнительная форточка',
-        'drip-mech': 'капельный полив механический',
-        'window-automation': 'автомат для форточки',
-        'window-auto': 'автоматическая форточка (форточка + автомат)',
-        'stakes-4': '4 грунтозацепа'
-    };
     
     // Используем ID элемента для правильной нумерации (gift-1, gift-2, gift-3)
     // Проверяем только видимые элементы (не скрытые через display: none) и с непустыми значениями
@@ -11180,12 +11240,12 @@ function getGiftsText() {
         
         // Проверяем, что значение не пустое и есть в списке подарков
         const giftValue = select.value ? select.value.trim() : '';
-        if (!giftValue || !giftNames[giftValue]) {
+        if (!giftValue || !GIFT_NAMES[giftValue]) {
             return; // Пропускаем пустые значения и неизвестные подарки
         }
         
         // Увеличиваем счетчик для этого подарка
-        const giftName = giftNames[giftValue];
+        const giftName = GIFT_NAMES[giftValue];
         giftCounts.set(giftName, (giftCounts.get(giftName) || 0) + 1);
     });
     
@@ -13873,7 +13933,7 @@ function updateOrderCartUI() {
   var canAdd = !!(lastCalculation && lastCalculation.model);
   if (addBtn) {
     addBtn.disabled = !canAdd;
-    addBtn.title = canAdd ? 'Добавить текущую комплектацию в заказ' : 'Сначала нажмите «Рассчитать» в блоке «Стоимость теплицы»';
+    addBtn.title = canAdd ? 'Добавить текущую комплектацию в заказ' : 'Сначала нажмите «Обновить расчёт» в блоке «Стоимость теплицы»';
   }
   var warn = document.getElementById('order-calc-warning');
   if (warn) warn.classList.toggle('visible', orderCart.length === 0);

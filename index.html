@@ -43,15 +43,15 @@
   .edit-order-loading-overlay__spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:edit-order-loading-spin .85s linear infinite}
   @keyframes edit-order-loading-spin{to{transform:rotate(360deg)}}
   </style>
-  <link rel="preload" href="css/styles.css?v=266" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link rel="stylesheet" href="css/styles.css?v=266"></noscript>
+  <link rel="preload" href="css/styles.css?v=269" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="css/styles.css?v=269"></noscript>
   <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
   <script src="js/products-data.js?v=231" defer></script>
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=266" defer></script>
+  <script src="js/scripts.js?v=269" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -271,8 +271,10 @@
                   </div>
                 </div>
                 <div class="edit-order-add-item-row edit-order-add-item-row--actions">
-                  <button type="button" id="edit-order-add-calc-btn" class="edit-order-add-calc-btn">Рассчитать</button>
-                  <span id="edit-order-add-price" class="edit-order-add-price"></span>
+                  <div class="edit-order-add-calc-row">
+                    <button type="button" id="edit-order-add-calc-btn" class="edit-order-add-calc-btn" title="Обновить расчёт вручную, если он не обновился автоматически">Обновить расчёт</button>
+                    <span id="edit-order-add-price" class="edit-order-add-price"></span>
+                  </div>
                 </div>
                 <div id="edit-order-add-breakdown" class="edit-order-add-breakdown hidden" aria-live="polite"></div>
                 <div class="edit-order-add-item-row edit-order-add-item-row--commit" role="group" aria-label="Действия с позицией">
