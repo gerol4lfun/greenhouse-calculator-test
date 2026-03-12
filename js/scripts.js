@@ -638,6 +638,10 @@ let editOrderComposition = [];
 let editOrderDeliveryCost = 0;
 /** Итого по заказу при последней загрузке (для отображения цены теплицы как остаток, если base_price/item_total нет). */
 let lastLoadedOrderTotalForDisplay = null;
+/** Менеджер из загруженного заказа (для пересборки commercial_offer при edit). */
+var lastEditOrderManager = '';
+/** Оригинальный commercial_offer загруженного заказа (для извлечения height, snowLoad и т.д. при edit). */
+var lastLoadedOrderCommercialOffer = '';
 /** Индекс позиции при редактировании (null = добавление новой). */
 let editOrderEditingIndex = null;
 /** Данные цен по городу для подформы добавления позиции в модалке (не трогаем currentCityData). */
@@ -5559,6 +5563,8 @@ function renderEditOrderList(orders) {
         var comment = (order.comment || '').trim() || '';
 
         var isCompleted = order.status === 'completed';
+        var st = (order.status || '').trim().toLowerCase();
+        var isCancelled = st === 'cancelled' || st === 'canceled' || st === 'отмена';
         // Для заказов до 2025 года данные исторические: разные менеджеры, кривые цены — не показываем
         var createdYear = dateOnly ? parseInt(dateOnly.split('-')[0], 10) : 0;
         var isPreHistory = createdYear > 0 && createdYear < 2025;
@@ -5638,6 +5644,8 @@ function renderEditOrderList(orders) {
             var phoneSafe = phone.replace(/"/g, '&quot;');
             html += '<button type="button" class="edit-order-item-btn edit-order-item-btn--new-order" onclick="startNewOrderForPhone(\'' + phoneSafe + '\')">';
             html += '＋ Новый заказ для этого клиента</button>';
+        } else if (isCancelled) {
+            /* бейдж «Отменён» уже в карточке; кнопки нет */
         } else {
             var idEscaped = (id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
             html += '<button type="button" class="green-button edit-order-item-btn edit-order-btn-with-icon" data-order-id="' + id + '" onclick="if(typeof startEditOrder===\'function\')startEditOrder(\'' + idEscaped + '\')"><img src="icons/edit-order-icon-edit.png" alt="" class="edit-order-btn-icon edit-order-btn-icon--light" aria-hidden="true">Редактировать</button>';
@@ -5702,6 +5710,8 @@ function showEditOrderStep(step) {
 /** Заполнить форму редактирования в модалке данными заказа. */
 function fillEditOrderForm(order) {
     if (!order) return;
+    lastEditOrderManager = (order.manager || '').trim();
+    lastLoadedOrderCommercialOffer = (order.commercial_offer || '').trim();
     setEditOrderFieldValue('edit-order-client-name', order.client_name || '');
     setEditOrderFieldValue('edit-order-client-phone', order.client_phone || '');
     var deliveryStr = (order.delivery_date || '').trim();
@@ -6564,6 +6574,8 @@ function clearEditOrderForm() {
     setEditOrderFieldValue('edit-order-gift', '');
     editOrderComposition = [];
     lastLoadedOrderTotalForDisplay = null;
+    lastEditOrderManager = '';
+    lastLoadedOrderCommercialOffer = '';
     if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
     if (typeof currentOrderCreatedAtForEdit !== 'undefined') currentOrderCreatedAtForEdit = null;
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
@@ -6580,6 +6592,57 @@ function setEditOrderSelectValue(id, value) {
             if (el.options[i].value === value) { el.selectedIndex = i; break; }
         }
     }
+}
+
+/** Извлечь height, snowLoad, horizontalTies, equipment из блока commercial_offer. */
+function parseCatalogFieldsFromOfferBlock(blockText) {
+    if (!blockText || typeof blockText !== 'string') return {};
+    var out = {};
+    var m = blockText.match(/Высота:\s*([^\n]+)/);
+    if (m) out.height = m[1].trim();
+    m = blockText.match(/Снеговая нагрузка:\s*([^\n]+)/);
+    if (m) out.snowLoad = m[1].trim();
+    m = blockText.match(/Горизонтальные стяжки:\s*([^\n]+)/);
+    if (m) out.horizontalTies = m[1].trim();
+    m = blockText.match(/Комплектация:\s*([^\n]+)/);
+    if (m) out.equipment = m[1].trim();
+    return out;
+}
+
+/** Получить блок теплицы по индексу из commercial_offer (для 2+ разных — блоки разделены «N теплица:»). */
+function getGreenhouseBlockFromOffer(offerText, itemIndex) {
+    if (!offerText || typeof offerText !== 'string') return '';
+    if (offerText.indexOf('1 теплица:') === -1) return offerText;
+    var parts = offerText.split(/\d+ теплица:\s*\n/);
+    return (parts[itemIndex + 1] || parts[1] || '').trim();
+}
+
+/** Преобразовать позицию editOrderComposition в формат calc для generateFullOrderTemplate. */
+function editOrderItemToCalc(item, deliveryCost, isFirstOfMultiple, orderTotalForSingle, catalogOverride) {
+    var basePrice = (item.base_price != null && !isNaN(Number(item.base_price))) ? Number(item.base_price) : (item.item_total || 0);
+    var extrasStr = (item.extras != null ? String(item.extras) : '').trim();
+    var assemblyStr = (item.assembly != null ? String(item.assembly) : '').trim();
+    var finalTotal = (orderTotalForSingle != null && !isNaN(orderTotalForSingle)) ? orderTotalForSingle : (item.item_total != null ? item.item_total : basePrice);
+    var cat = catalogOverride && typeof catalogOverride === 'object' ? catalogOverride : {};
+    return {
+        model: item.model || 'Теплица',
+        width: item.width,
+        length: item.length,
+        frame: item.frame || '',
+        arcStep: item.arc_step != null ? String(item.arc_step) : '1',
+        polycarbonate: item.polycarbonate || '',
+        basePrice: basePrice,
+        snowLoad: (cat.snowLoad && cat.snowLoad.trim()) || 'Не указано',
+        height: (cat.height && cat.height.trim()) || 'Не указано',
+        horizontalTies: (cat.horizontalTies && cat.horizontalTies.trim()) || 'Не указано',
+        equipment: (cat.equipment && cat.equipment.trim()) || 'Не указано',
+        foundationText: extrasStr,
+        assemblyText: assemblyStr,
+        bedsAssemblyText: '',
+        additionalProductsText: '',
+        deliveryPrice: (isFirstOfMultiple ? (deliveryCost || 0) : 0),
+        finalTotalPrice: finalTotal
+    };
 }
 
 /** Собрать из полей модалки только редактируемые поля для update (частичное обновление). Включает состав и итог (Этап 6). */
@@ -6654,6 +6717,27 @@ function buildOrderPayloadFromEditModal() {
         payload.total = total;
         payload.delivery_cost = editOrderDeliveryCost || 0;
     }
+    var orderTotal = getEditOrderCompositionTotal ? getEditOrderCompositionTotal() : total;
+    var editOrderCart = editOrderComposition.map(function (item, i) {
+        var block = getGreenhouseBlockFromOffer(lastLoadedOrderCommercialOffer, i);
+        var parsed = parseCatalogFieldsFromOfferBlock(block);
+        var catalogOverride = {
+            height: (item.height && String(item.height).trim()) ? String(item.height).trim() : (parsed.height || ''),
+            snowLoad: (item.snowLoad && String(item.snowLoad).trim()) ? String(item.snowLoad).trim() : (parsed.snowLoad || ''),
+            horizontalTies: (item.horizontalTies && String(item.horizontalTies).trim()) ? String(item.horizontalTies).trim() : (parsed.horizontalTies || ''),
+            equipment: (item.equipment && String(item.equipment).trim()) ? String(item.equipment).trim() : (parsed.equipment || '')
+        };
+        return editOrderItemToCalc(item, editOrderDeliveryCost, i === 0, editOrderComposition.length === 1 ? orderTotal : null, catalogOverride);
+    });
+    var client = {
+        name: name,
+        manager: lastEditOrderManager || 'Менеджер',
+        deliveryDate: deliveryDate,
+        address: fullAddress,
+        phone: normalizePhone(phone)
+    };
+    var firstCalc = editOrderCart[0];
+    payload.commercial_offer = (editOrderCart.length > 0 && typeof generateFullOrderTemplate === 'function') ? generateFullOrderTemplate(firstCalc, client, editOrderCart, giftValue, function () { return orderTotal; }) : '';
     return payload;
 }
 
@@ -6745,6 +6829,13 @@ function startEditOrder(orderId, optFinally) {
         if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
         if (!order) {
             if (typeof showToast === 'function') showToast('Заказ не найден', 'error');
+            showEditOrderStep(1);
+            if (typeof optFinally === 'function') optFinally();
+            return;
+        }
+        var orderStatus = (order.status || '').trim().toLowerCase();
+        if (orderStatus === 'cancelled' || orderStatus === 'canceled' || orderStatus === 'отмена') {
+            if (typeof showToast === 'function') showToast('Отменённый заказ нельзя редактировать', 'error');
             showEditOrderStep(1);
             if (typeof optFinally === 'function') optFinally();
             return;
@@ -6974,6 +7065,15 @@ function initEditOrderModal() {
                 if (typeof showToast === 'function') showToast('Ошибка: заказ не выбран', 'error');
                 return;
             }
+            var statusRes = await supabaseClient.from('orders').select('status').eq('id', currentOrderIdForEdit).maybeSingle();
+            if (statusRes.data) {
+                var st = (statusRes.data.status || '').trim().toLowerCase();
+                if (st === 'cancelled' || st === 'canceled' || st === 'отмена') {
+                    if (typeof showToast === 'function') showToast('Отменённый заказ нельзя редактировать', 'error');
+                    if (hintEl) { hintEl.textContent = 'Отменённый заказ нельзя редактировать'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
+                    return;
+                }
+            }
             // Если суб-панель редактирования позиции открыта и есть несохранённый расчёт —
             // автоматически применяем его к составу перед сохранением (баг: пользователь нажал
             // «Рассчитать» но не нажал «Сохранить позицию», а сразу «Сохранить изменения»).
@@ -6992,7 +7092,11 @@ function initEditOrderModal() {
                     city: (typeof getEditOrderAddCity === 'function') ? getEditOrderAddCity() : (editOrderComposition[editOrderEditingIndex].city || ''),
                     extras: lastModalCalculationResult.extras || '',
                     assembly: lastModalCalculationResult.assembly || '',
-                    options: (typeof getEditOrderAddPanelOptionsForStorage === 'function') ? getEditOrderAddPanelOptionsForStorage() : undefined
+                    options: (typeof getEditOrderAddPanelOptionsForStorage === 'function') ? getEditOrderAddPanelOptionsForStorage() : undefined,
+                    height: lastModalCalculationResult.height,
+                    snowLoad: lastModalCalculationResult.snowLoad,
+                    horizontalTies: lastModalCalculationResult.horizontalTies,
+                    equipment: lastModalCalculationResult.equipment
                 };
                 closeEditOrderAddPanel();
                 lastModalCalculationResult = null;
@@ -7160,7 +7264,7 @@ function initEditOrderModal() {
             var extrasText = [(data.foundationText || ''), (data.additionalProductsText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
             var assemblyText = [(data.assemblyText || ''), (data.bedsAssemblyText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
             var basePrice = data.basePrice != null && !isNaN(Number(data.basePrice)) ? Number(data.basePrice) : undefined;
-            lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText };
+            lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText, height: data.height, snowLoad: data.snowLoad, horizontalTies: data.horizontalTies, equipment: data.equipment };
             if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(itemTotal) : itemTotal) + ' ₽';
             renderEditOrderAddBreakdown(data);
             if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
@@ -7192,7 +7296,11 @@ function initEditOrderModal() {
                 city: getEditOrderAddCity(),
                 extras: lastModalCalculationResult.extras || '',
                 assembly: lastModalCalculationResult.assembly || '',
-                options: getEditOrderAddPanelOptionsForStorage()
+                options: getEditOrderAddPanelOptionsForStorage(),
+                height: lastModalCalculationResult.height,
+                snowLoad: lastModalCalculationResult.snowLoad,
+                horizontalTies: lastModalCalculationResult.horizontalTies,
+                equipment: lastModalCalculationResult.equipment
             });
             renderEditOrderCompositionList();
             lastSavedEditOrderState = getEditOrderStateSnapshot();
@@ -7222,7 +7330,11 @@ function initEditOrderModal() {
                 city: getEditOrderAddCity(),
                 extras: lastModalCalculationResult.extras || '',
                 assembly: lastModalCalculationResult.assembly || '',
-                options: getEditOrderAddPanelOptionsForStorage()
+                options: getEditOrderAddPanelOptionsForStorage(),
+                height: lastModalCalculationResult.height,
+                snowLoad: lastModalCalculationResult.snowLoad,
+                horizontalTies: lastModalCalculationResult.horizontalTies,
+                equipment: lastModalCalculationResult.equipment
             };
             renderEditOrderCompositionList();
             lastSavedEditOrderState = getEditOrderStateSnapshot();
@@ -10696,38 +10808,8 @@ function rebuildLongOfferWithGifts(overrideSelectedGifts = null) {
         iterations++;
     }
     
-    // Также удаляем все строки, которые содержат названия подарков в неправильном месте
-    // (если они не в блоке подарков, а где-то еще)
-    const giftNames = ['Дополнительная форточка', 'Капельный полив механический', 'Автомат для форточки', 
-                       'Автоматическая форточка', '4 грунтозацепа', 'грунтозацепа'];
-    giftNames.forEach(name => {
-        // Удаляем строки с названиями подарков, которые идут перед блоком условий оплаты
-        // но не являются частью правильного блока подарков
-        const lines = currentOffer.split('\n');
-        const cleanedLines = [];
-        let foundGiftsBlock = false;
-        let foundPaymentBlock = false;
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            // Если нашли блок условий оплаты, помечаем
-            if (line.includes('💳 Без предоплаты')) {
-                foundPaymentBlock = true;
-            }
-            // Если нашли правильный блок подарков (с 🎁), помечаем
-            if (line.includes('🎁 Подарок') || line.includes('🎁 Подарки')) {
-                foundGiftsBlock = true;
-            }
-            // Если строка содержит название подарка, но мы еще не дошли до блока условий оплаты
-            // и это не правильный блок подарков - пропускаем её
-            if (!foundPaymentBlock && !foundGiftsBlock && giftNames.some(giftName => line.includes(giftName))) {
-                // Пропускаем эту строку (не добавляем в cleanedLines)
-                continue;
-            }
-            cleanedLines.push(line);
-        }
-        currentOffer = cleanedLines.join('\n');
-    });
+    // Не удаляем строки по названиям товаров (Дополнительная форточка и т.д.) — это могут быть
+    // платные допы из состава. Чистим только блоки с 🎁 (выше).
     
     // Удаляем множественные пустые строки
     currentOffer = currentOffer.replace(/\n{3,}/g, '\n\n');
@@ -12860,7 +12942,7 @@ function buildGreenhouseBlockIdentical(calc, quantity, orderTotal) {
     return greenhouse;
 }
 
-function generateFullOrderTemplate(calc, client, orderCart) {
+function generateFullOrderTemplate(calc, client, orderCart, optGiftsText, optOrderTotalFn) {
     const manager = client.manager;
     var displayName = (client.name && String(client.name).trim()) || 'Клиент';
     if (displayName === '2 разные теплицы' || displayName === '2 одинаковые теплицы') displayName = 'Клиент';
@@ -12881,11 +12963,12 @@ function generateFullOrderTemplate(calc, client, orderCart) {
         var first = orderCart[0];
         return item.model === first.model && item.width === first.width && item.length === first.length && item.frame === first.frame;
     });
+    var getTotalFn = (typeof optOrderTotalFn === 'function') ? optOrderTotalFn : (typeof getOrderCartTotal === 'function' ? getOrderCartTotal : null);
     if (isIdenticalCart && orderCart.length >= 2) {
-        var orderTotal = typeof getOrderCartTotal === 'function' ? getOrderCartTotal() : (calc.finalTotalPrice * orderCart.length + (calc.deliveryPrice || 0));
+        var orderTotal = getTotalFn ? getTotalFn() : (calc.finalTotalPrice * orderCart.length + (calc.deliveryPrice || 0));
         greenhouse = buildGreenhouseBlockIdentical(calc, orderCart.length, orderTotal);
     } else if (orderCart && orderCart.length >= 2) {
-        var orderTotalDiff = typeof getOrderCartTotal === 'function' ? getOrderCartTotal() : 0;
+        var orderTotalDiff = getTotalFn ? getTotalFn() : 0;
         var deliveryAmount = (orderCart[0] && (orderCart[0].deliveryPrice || orderCart[0].deliveryCost)) || (lastCalculation && (lastCalculation.deliveryPrice || lastCalculation.deliveryCost)) || 0;
         greenhouse = orderCart.map(function (item, i) {
             var label = (i + 1) + ' теплица';
@@ -12895,7 +12978,7 @@ function generateFullOrderTemplate(calc, client, orderCart) {
         greenhouse = buildGreenhouseBlock(calc);
     }
 
-    var giftsText = typeof getGiftsText === 'function' ? getGiftsText() : '';
+    var giftsText = (optGiftsText !== undefined && optGiftsText !== null) ? String(optGiftsText || '').trim() : (typeof getGiftsText === 'function' ? getGiftsText() : '');
     if (giftsText && giftsText.trim()) greenhouse += '\n' + giftsText.trim() + '\n';
 
     var hasAssembly = calc && (!!(calc.assemblyText && String(calc.assemblyText).trim()) || !!(calc.bedsAssemblyText && String(calc.bedsAssemblyText).trim()));

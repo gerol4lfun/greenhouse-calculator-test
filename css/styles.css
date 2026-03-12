@@ -3378,6 +3378,14 @@ input[type="radio"] {
   background: #f0faf0;
 }
 
+.edit-order-item-btn--disabled {
+  cursor: default;
+  color: #9e9e9e;
+  background: transparent;
+  border: none;
+  pointer-events: none;
+}
+
 .edit-order-back-btn {
   margin-bottom: var(--eo-space-lg);
 }
