@@ -8,6 +8,8 @@ logs.*.json
 telegram-bot/
 telegram-bot/.env
 e2e/.env
+e2e/.auth/
+e2e/test-results/
 # Токены и секреты
 *_token.txt
 *_token.md

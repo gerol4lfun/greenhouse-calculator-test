@@ -11030,6 +11030,9 @@ function onGiftChange() {
     // 2. Затем обновляем КП с подарками (один раз, в конце)
     // Используем selectedGifts, которые уже сохранены в localStorage
             updateCommercialOffersWithGifts(selectedGifts);
+
+    // 3. Обновляем отображение подарков в составе заказа слева (order-gifts-display)
+    if (typeof updateOrderTotalDisplay_ === 'function') updateOrderTotalDisplay_();
 }
 
 /**
@@ -11146,6 +11149,24 @@ function getGiftsTextFromObject(selectedGifts) {
     
     // Форматируем в одну строку через запятую
     return `\n🎁 ${giftsWord}: ${giftsList.join(', ')}`;
+}
+
+/**
+ * Получает текст подарков для заказа/отображения.
+ * Использует localStorage как основной источник (обновляется при каждом onGiftChange),
+ * чтобы 3-й слот и др. не терялись при скрытой форме.
+ * @returns {string} Текст с префиксом "🎁 Подарки: ..."
+ */
+function getGiftsTextForOrder() {
+    var saved = {};
+    try {
+        saved = JSON.parse(localStorage.getItem('selectedGifts') || '{}');
+    } catch (e) {}
+    if (saved && Object.keys(saved).length > 0 && typeof getGiftsTextFromObject === 'function') {
+        var fromStorage = getGiftsTextFromObject(saved);
+        if (fromStorage && fromStorage.trim()) return fromStorage.trim();
+    }
+    return (typeof getGiftsText === 'function' ? getGiftsText() : '') || '';
 }
 
 /**
@@ -12978,7 +12999,7 @@ function generateFullOrderTemplate(calc, client, orderCart, optGiftsText, optOrd
         greenhouse = buildGreenhouseBlock(calc);
     }
 
-    var giftsText = (optGiftsText !== undefined && optGiftsText !== null) ? String(optGiftsText || '').trim() : (typeof getGiftsText === 'function' ? getGiftsText() : '');
+    var giftsText = (optGiftsText !== undefined && optGiftsText !== null) ? String(optGiftsText || '').trim() : (typeof getGiftsTextForOrder === 'function' ? getGiftsTextForOrder() : (typeof getGiftsText === 'function' ? getGiftsText() : ''));
     if (giftsText && giftsText.trim()) greenhouse += '\n' + giftsText.trim() + '\n';
 
     var hasAssembly = calc && (!!(calc.assemblyText && String(calc.assemblyText).trim()) || !!(calc.bedsAssemblyText && String(calc.bedsAssemblyText).trim()));
@@ -13892,11 +13913,10 @@ function updateOrderTotalDisplay_() {
     el.textContent = 'Итого к оплате: —';
   }
   var giftsEl = document.getElementById('order-gifts-display');
-  if (giftsEl && typeof getGiftsText === 'function') {
-    var giftsText = getGiftsText();
+  if (giftsEl && typeof getGiftsTextForOrder === 'function') {
+    var giftsText = getGiftsTextForOrder();
     if (giftsText && giftsText.trim()) {
-      var text = giftsText.trim().replace(/^\s*\n?\s*🎁?\s*(Подарки?|подарки?):\s*/i, '').trim();
-      giftsEl.textContent = text || giftsText.trim();
+      giftsEl.textContent = giftsText.trim();
       giftsEl.style.display = '';
     } else {
       giftsEl.textContent = '';
@@ -13926,8 +13946,10 @@ function buildOrderPayloadFromFormAndCart() {
     var effectiveCalc = orderCart[0];
     const client = { name: clientName, phone: normalizePhone(clientPhone), deliveryDate: deliveryDate, manager: manager, address: fullAddress };
     const commercialOffer = generateFullOrderTemplate(effectiveCalc, client, orderCart);
-    const giftsText = getGiftsText();
+    const giftsText = (typeof getGiftsTextForOrder === 'function' ? getGiftsTextForOrder() : (typeof getGiftsText === 'function' ? getGiftsText() : '')) || '';
     var totalRounded = getOrderCartTotal();
+    // Финальная граница: если сумма ниже порога — не сохраняем подарок (как в buildOrderPayloadFromEditModal)
+    var giftForPayload = (totalRounded >= GIFT_THRESHOLDS.slot1) ? giftsText : '';
     var effectiveQuantity = orderCart.length;
     var commentWithQuantity = comment;
 
@@ -13998,7 +14020,7 @@ function buildOrderPayloadFromFormAndCart() {
         unit_price: effectiveCalc.basePrice,
         quantity: effectiveQuantity,
         extras: extrasForSheet,
-        gift: giftsText || '',
+        gift: giftForPayload || '',
         assembly: assemblyForSheet,
         delivery_cost: (effectiveCalc && effectiveCalc.deliveryPrice) || 0,
         total: totalRounded,
