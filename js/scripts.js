@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v269"; // v269: gift slots в edit — превью после «Рассчитать», восстановление при отмене панели
+const APP_VERSION = "v271"; // v271: auth RPC (authenticate_user, validate_session), админка временно отключена
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -346,6 +346,9 @@ function findCityInDropdown(cityName) {
 
 // Ключ для админа в localStorage (для доступа к админ-панели)
 const ADMIN_KEY = 'admin_access_granted';
+
+// Временно отключено: админка требует policy на users. После безопасных admin RPC — поставить false.
+const ADMIN_PANEL_DISABLED = true;
 
 // Приоритеты форм (чем меньше число, тем выше в списке)
 const formPriority = {
@@ -821,7 +824,7 @@ whenYmapsReady(() => {
     // const suggestView = new ymaps.SuggestView('address'); // Удалено, т.к. мы используем собственные подсказки
 });
 
-// Функция аутентификации через Supabase
+// Функция аутентификации через Supabase RPC (пароль не уходит в браузер)
 async function authenticate() {
     const loginInput = document.getElementById("login");
     const passwordInput = document.getElementById("password");
@@ -839,9 +842,6 @@ async function authenticate() {
     }
 
     try {
-        // Сначала проверяем без фильтра is_active, чтобы увидеть, существует ли пользователь
-        
-        // Проверяем, что Supabase клиент инициализирован
         if (!supabaseClient) {
             console.error("Supabase клиент не инициализирован!");
             if (authError) {
@@ -850,61 +850,38 @@ async function authenticate() {
             }
             return;
         }
-        
-        const { data, error } = await supabaseClient
-            .from('users')
-            .select('id, login, password, password_version, is_active')
-            .eq('login', login)
-            .single();
 
+        const { data, error } = await supabaseClient.rpc('authenticate_user', {
+            p_login: login,
+            p_password: password
+        });
 
         if (error) {
-            // Проверяем тип ошибки
             const errorMessage = error.message || '';
-            const errorCode = error.code || '';
-            
-            // Если это сетевая ошибка (TypeError: Load failed)
-            if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || (errorCode === '' && errorMessage)) {
-                console.error("Ошибка сети при подключении к Supabase:", error);
+            if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
                 if (authError) {
                     authError.textContent = "Ошибка подключения к серверу. Проверьте интернет-соединение и попробуйте снова.";
                     authError.style.display = "block";
                 }
                 return;
             }
-            
-            // Если пользователь не найден (PGRST116 - это код "No rows returned")
-            if (error.code === 'PGRST116' || errorMessage.includes('No rows') || errorMessage.includes('not found')) {
-            console.error("Пользователь не найден в Supabase:", error);
-                if (authError) {
-                    authError.textContent = "Неверный логин или пароль!";
-            authError.style.display = "block";
-                }
-                return;
-            }
-            
-            // Другие ошибки
-            console.error("Ошибка при запросе к Supabase:", error);
-            if (authError) {
-                authError.textContent = `Ошибка: ${errorMessage || 'Неизвестная ошибка'}`;
-                authError.style.display = "block";
-            }
-            return;
-        }
-        
-        if (!data) {
-            console.error("Пользователь не найден: данные пусты");
+            console.error("Ошибка RPC authenticate_user:", error);
             if (authError) {
                 authError.textContent = "Неверный логин или пароль!";
                 authError.style.display = "block";
             }
             return;
         }
-        
-        
-        // Проверяем, активен ли пользователь
+
+        if (!data || !data.user_id) {
+            if (authError) {
+                authError.textContent = "Неверный логин или пароль!";
+                authError.style.display = "block";
+            }
+            return;
+        }
+
         if (!data.is_active) {
-            console.error("Пользователь неактивен:", login);
             if (authError) {
                 authError.textContent = "Ваш аккаунт деактивирован. Обратитесь к администратору.";
                 authError.style.display = "block";
@@ -912,29 +889,12 @@ async function authenticate() {
             return;
         }
 
-        // Проверяем пароль (убираем лишние пробелы и приводим к строке)
-        const cleanPassword = String(password).trim();
-        const cleanDbPassword = String(data.password).trim();
-        
-        if (cleanDbPassword !== cleanPassword) {
-            if (authError) {
-                authError.textContent = "Неверный логин или пароль!";
-            authError.style.display = "block";
-            }
-            return;
-        }
-        
-
-        // Если всё верно, сохраняем данные в localStorage
         authError.style.display = "none";
-        localStorage.setItem('savedLogin', login);
+        localStorage.setItem('savedLogin', data.login || login);
         localStorage.setItem('appVersion', APP_VERSION);
-        localStorage.setItem('passwordVersion', data.password_version.toString());
-        localStorage.setItem('userId', data.id.toString());
+        localStorage.setItem('passwordVersion', String(data.password_version || 0));
+        localStorage.setItem('userId', data.user_id);
 
-        // Проверяем, не админ ли это (для доступа к админ-панели)
-        // Важно: проверяем точно как 'admin' (без toLowerCase, так как в базе может быть другой регистр)
-        // СТРОГАЯ проверка: только пользователь с логином точно "admin"
         if (login && login.trim().toLowerCase() === 'admin') {
             localStorage.setItem(ADMIN_KEY, 'true');
         } else {
@@ -947,18 +907,13 @@ async function authenticate() {
     } catch (err) {
         console.error("Ошибка при авторизации:", err);
         const errorMessage = err.message || '';
-        
-        // Проверяем тип ошибки
-        if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-            if (authError) {
+        if (authError) {
+            if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
                 authError.textContent = "Ошибка подключения к серверу. Проверьте интернет-соединение и попробуйте снова.";
-        authError.style.display = "block";
+            } else {
+                authError.textContent = "Неверный логин или пароль!";
             }
-        } else {
-            if (authError) {
-                authError.textContent = `Ошибка подключения: ${errorMessage || 'Неизвестная ошибка'}`;
-                authError.style.display = "block";
-            }
+            authError.style.display = "block";
         }
     }
 }
@@ -1026,39 +981,40 @@ function logout() {
     }
 }
 
-// Функция проверки актуальности пароля пользователя
+// Функция проверки актуальности пароля пользователя (через RPC, без чтения users)
 async function checkPasswordVersion() {
     const savedLogin = localStorage.getItem('savedLogin');
     const savedPasswordVersion = localStorage.getItem('passwordVersion');
 
     if (!savedLogin || !savedPasswordVersion) {
-        return false; // Нет сохраненных данных
+        return false;
     }
 
     try {
-        const { data, error } = await supabaseClient
-            .from('users')
-            .select('password_version, is_active')
-            .eq('login', savedLogin)
-            .single();
+        const { data, error } = await supabaseClient.rpc('validate_session', {
+            p_login: savedLogin,
+            p_password_version: savedPasswordVersion
+        });
 
-        if (error || !data) {
-            // Если это сетевая ошибка - НЕ разлогиниваем, продолжаем работу
+        if (error) {
             if (isNetworkError(error)) {
                 console.warn("[Сессия] Ошибка сети при проверке версии пароля (Supabase недоступен). Продолжаем работу.");
-                return true; // Продолжаем работу при сетевых ошибках
+                return true;
             }
-            // Другие ошибки (пользователь не найден) - разлогиниваем
-            console.error("Пользователь не найден в Supabase при проверке версии:", error);
+            console.error("Ошибка validate_session:", error);
             logout();
             return false;
         }
 
-        // Если пользователь деактивирован или версия пароля не совпадает - выход
-        if (!data.is_active || data.password_version.toString() !== savedPasswordVersion) {
+        if (!data || !data.user_id) {
             logout();
-            // Показываем alert только если версия пароля реально изменилась (пароль был изменён)
-            if (data.password_version.toString() !== savedPasswordVersion) {
+            showWarning("Сессия истекла. Пожалуйста, войдите снова.", 'Сессия');
+            return false;
+        }
+
+        if (!data.is_active || String(data.password_version || '') !== savedPasswordVersion) {
+            logout();
+            if (String(data.password_version || '') !== savedPasswordVersion) {
                 showWarning("Сессия истекла. Пожалуйста, войдите снова.", 'Сессия');
             }
             return false;
@@ -1066,13 +1022,12 @@ async function checkPasswordVersion() {
 
         return true;
     } catch (err) {
-        // Если ошибка сети - продолжаем работу, не разлогиниваем
         if (isNetworkError(err)) {
             console.warn("[Сессия] Ошибка сети при проверке версии пароля. Продолжаем работу.");
-            return true; // Продолжаем работу при сетевых ошибках
+            return true;
         }
         console.warn("Ошибка при проверке версии пароля (продолжаем работу):", err);
-        return true; // Даже при других ошибках продолжаем работу (менее агрессивно)
+        return true;
     }
 }
 
@@ -4295,9 +4250,14 @@ window.onload = async function () {
     
     // Принудительная проверка кнопки админа через 1 секунду (на случай задержки)
     setTimeout(() => {
-        const savedLogin = localStorage.getItem('savedLogin');
         const adminBtn = document.getElementById('admin-button');
         if (!adminBtn) return;
+        if (ADMIN_PANEL_DISABLED) {
+            adminBtn.classList.add('hidden');
+            adminBtn.style.display = 'none';
+            return;
+        }
+        const savedLogin = localStorage.getItem('savedLogin');
         const isAdmin = savedLogin && savedLogin.trim().toLowerCase() === 'admin';
         if (isAdmin) {
             adminBtn.classList.remove('hidden');
@@ -4359,12 +4319,15 @@ async function initializeCalculator() {
     }
     
     if (adminButton) {
-        if (isAdmin) {
+        if (ADMIN_PANEL_DISABLED) {
+            adminButton.classList.add("hidden");
+            adminButton.style.display = "none";
+        } else if (isAdmin) {
             adminButton.classList.remove("hidden");
             adminButton.style.display = "block";
             adminButton.style.visibility = "visible";
             adminButton.style.opacity = "1";
-            await loadUsersForAdmin(); // Загружаем список пользователей для админ-панели
+            await loadUsersForAdmin();
         } else {
             adminButton.classList.add("hidden");
             adminButton.style.display = "none";
@@ -4666,11 +4629,9 @@ whenYmapsReady(() => {
 
 // Загрузка списка пользователей для админ-панели
 async function loadUsersForAdmin() {
+    if (ADMIN_PANEL_DISABLED) return;
     try {
-        const { data, error } = await supabaseClient
-            .from('users')
-            .select('id, login, is_active')
-            .order('login');
+        const { data, error } = await supabaseClient.rpc('get_users_for_admin');
 
         if (error) {
             console.error("Ошибка при загрузке пользователей:", error);
@@ -4685,7 +4646,7 @@ async function loadUsersForAdmin() {
         if (data && data.length > 0) {
             data.forEach(user => {
                 const option = document.createElement('option');
-                option.value = user.id;
+                option.value = user.user_id;
                 option.dataset.login = user.login;
                 option.textContent = `${user.login}${!user.is_active ? ' (неактивен)' : ''}`;
                 userSelect.appendChild(option);
@@ -4704,6 +4665,10 @@ async function loadUsersForAdmin() {
 
 // Переключение видимости админ-панели
 function toggleAdminPanel() {
+    if (ADMIN_PANEL_DISABLED) {
+        if (typeof showWarning === 'function') return showWarning('Админ-панель временно недоступна. Смена пароля/логина — через Supabase SQL Editor.', 'Админка');
+        return;
+    }
     const adminPanel = document.getElementById("admin-panel");
     if (!adminPanel) return;
 
@@ -4747,6 +4712,7 @@ function toggleAdminPanel() {
 
 // Изменение пароля и/или имени (логина) пользователя
 async function changeUserPassword() {
+    if (ADMIN_PANEL_DISABLED) return;
     const userSelect = document.getElementById("admin-user-select");
     const userId = userSelect.value;
     const newLogin = (document.getElementById("admin-new-login") && document.getElementById("admin-new-login").value.trim()) || '';
@@ -4801,13 +4767,13 @@ async function changeUserPassword() {
 
         // 1. Изменение логина (если нужно)
         if (wantLoginChange) {
-            const { error: loginError } = await supabaseClient
-                .from('users')
-                .update({ login: newLogin, updated_at: new Date().toISOString() })
-                .eq('id', userId);
+            const { error: loginError } = await supabaseClient.rpc('update_user_login', {
+                p_user_id: userId,
+                p_new_login: newLogin
+            });
 
             if (loginError) {
-                const sqlLogin = `UPDATE users SET login = '${newLogin.replace(/'/g, "''")}', updated_at = NOW() WHERE id = ${userId};`;
+                const sqlLogin = `UPDATE users SET login = '${newLogin.replace(/'/g, "''")}', updated_at = NOW() WHERE id = '${userId}';`;
                 messageDiv.innerHTML = `
                     <strong style="color: orange;">⚠️ Не удалось изменить логин через интерфейс.</strong><br><br>
                     <strong>Используйте SQL Editor в Supabase:</strong><br>
@@ -4828,43 +4794,17 @@ async function changeUserPassword() {
             });
 
             if (rpcError) {
-                const { data: currentUser, error: fetchError } = await supabaseClient
-                    .from('users')
-                    .select('password_version')
-                    .eq('id', userId)
-                    .single();
-
-                if (fetchError) {
-                    throw new Error(`Не удалось получить данные пользователя: ${fetchError.message}`);
-                }
-
-                const { error: updateError } = await supabaseClient
-                    .from('users')
-                    .update({
-                        password: newPassword,
-                        password_version: (currentUser.password_version || 1) + 1,
-                        last_password_change: new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', userId);
-
-                if (updateError) {
-                    const sqlQuery = `UPDATE users 
-SET password = '${newPassword.replace(/'/g, "''")}', 
-    password_version = password_version + 1, 
-    last_password_change = NOW(),
-    updated_at = NOW()
-WHERE id = ${userId};`;
-                    messageDiv.innerHTML = `
-                        <strong style="color: orange;">⚠️ Не удалось изменить пароль через интерфейс.</strong><br><br>
-                        <strong>Используйте SQL Editor в Supabase:</strong><br>
-                        <textarea style="width: 100%; height: 80px; margin-top: 10px; font-family: monospace;" readonly>${sqlQuery}</textarea>
-                        <p style="margin-top: 10px;">Скопируйте SQL запрос выше и выполните его в SQL Editor.</p>
-                    `;
-                    messageDiv.style.color = "orange";
-                    console.error("Ошибка обновления пароля:", updateError);
-                    return;
-                }
+                const sqlQuery = `-- Выполните в Supabase SQL Editor (RPC не сработал)
+SELECT update_user_password('${(wantLoginChange ? newLogin : currentLogin).replace(/'/g, "''")}', '${newPassword.replace(/'/g, "''")}');`;
+                messageDiv.innerHTML = `
+                    <strong style="color: orange;">⚠️ Не удалось изменить пароль через интерфейс.</strong><br><br>
+                    <strong>Используйте SQL Editor в Supabase:</strong><br>
+                    <textarea style="width: 100%; height: 80px; margin-top: 10px; font-family: monospace;" readonly>${sqlQuery}</textarea>
+                    <p style="margin-top: 10px;">Скопируйте SQL запрос выше и выполните его в SQL Editor.</p>
+                `;
+                messageDiv.style.color = "orange";
+                console.error("Ошибка обновления пароля:", rpcError);
+                return;
             }
         }
 

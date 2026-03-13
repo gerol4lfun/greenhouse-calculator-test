@@ -1,5 +1,17 @@
 # История изменений проекта
 
+## Версия v271 — auth hotfix: логин через RPC, пароль не в браузере
+
+**Дата:** 2026-03-12.
+
+- **Безопасность:** логин через RPC `authenticate_user` — пароль не уходит в браузер.
+- **Сессия:** `checkPasswordVersion` через RPC `validate_session`.
+- **Админка:** временно отключена (`ADMIN_PANEL_DISABLED = true`). Смена пароля/логина — через Supabase SQL Editor (см. docs/instructions/ИНСТРУКЦИЯ_РУЧНАЯ_СМЕНА_ПАРОЛЯ.md).
+- **Деплой:** после применения SAFE RPC и клиента — удалить policy "Allow anon to read active users" на таблице users.
+- Синхронизация версий: v271 в scripts.js, index.html ?v=271, package.json.
+
+---
+
 ## Версия v269 — gift slots в edit: превью и восстановление
 
 **Дата:** 2026-03-12.
@@ -18,6 +30,8 @@
 - gift thresholds и gift names централизованы.
 
 **Открытые хвосты:** ручной пересчёт vs live-preview; UX кнопки; UI gift в preview-карточке; архитектура giftCore — до прода не трогать.
+
+**Документация (12.03.2026):** созданы docs/TRUTH_MAP.md, LEGACY_MAP.md, PREPROD_PLAN.md, SMOKE_CHECKLIST.md — карта проекта и план до прода.
 
 ---
 
