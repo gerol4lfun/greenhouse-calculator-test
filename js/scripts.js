@@ -5649,18 +5649,16 @@ function requestCloseEditOrderModal() {
     return true;
 }
 
-/** Поиск заказов в Supabase по телефону (нормализованный, 11 цифр с 7). Возвращает массив заказов. */
+/**
+ * Поиск заказов в Supabase по телефону через RPC search_orders_by_phone.
+ * Поддерживает: single phone, dual-phone slash-format, любой из двух номеров в stored dual-phone.
+ */
 async function searchOrdersByPhone(phone) {
-    var normalized = normalizePhone(phone);
-    if (!normalized || normalized.length !== 11) return [];
-    var list = await supabaseClient
-        .from('orders')
-        .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly, delivery_cost')
-        .eq('client_phone', normalized)
-        .order('created_at', { ascending: false })
-        .limit(30);
-    if (list.error) throw list.error;
-    return list.data || [];
+    var trimmed = (phone || '').trim();
+    if (!trimmed) return [];
+    var result = await supabaseClient.rpc('search_orders_by_phone', { p_search: trimmed });
+    if (result.error) throw result.error;
+    return result.data || [];
 }
 
 /** Число из total/delivery_cost/item_total: поддерживает "24.040" (точка — разделитель тысяч). */
@@ -7090,12 +7088,13 @@ function buildOrderPayloadFromEditModal() {
         };
         return editOrderItemToCalc(item, editOrderDeliveryCost, i === 0, editOrderComposition.length === 1 ? orderTotal : null, catalogOverride);
     });
+    // dual-phone: commercial_offer получает фактически сохраняемое значение телефона, а не normalizePhone
     var client = {
         name: name,
         manager: lastEditOrderManager || 'Менеджер',
         deliveryDate: deliveryDate,
         address: fullAddress,
-        phone: normalizePhone(phone)
+        phone: _clientPhoneForPayload
     };
     var firstCalc = editOrderCart[0];
     payload.commercial_offer = (editOrderCart.length > 0 && typeof generateFullOrderTemplate === 'function') ? generateFullOrderTemplate(firstCalc, client, editOrderCart, giftValue, function () { return orderTotal; }) : '';
@@ -7528,8 +7527,8 @@ function initEditOrderModal() {
                     var phoneInput = document.getElementById('edit-order-client-phone');
                     if (phoneInput) phoneToRefresh = (phoneInput.value || '').trim();
                 }
-                if (phoneToRefresh && typeof normalizePhone === 'function') phoneToRefresh = normalizePhone(phoneToRefresh);
-                if (phoneToRefresh && String(phoneToRefresh).length >= 11 && typeof searchOrdersByPhone === 'function') {
+                // dual-phone: не стрипаем через normalizePhone, searchOrdersByPhone принимает raw (RPC-aware)
+                if (phoneToRefresh && phoneToRefresh.length >= 11 && typeof searchOrdersByPhone === 'function') {
                     searchOrdersByPhone(phoneToRefresh).then(function (orders) {
                         if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
                         var searchHint = document.getElementById('edit-order-search-hint');
@@ -7760,16 +7759,16 @@ function initEditOrderModal() {
     if (searchBtn && phoneInput) {
         searchBtn.addEventListener('click', function () {
             var phone = (phoneInput.value || '').trim();
-            var normalized = normalizePhone(phone);
             if (!hintEl) hintEl = document.getElementById('edit-order-search-hint');
             if (hintEl) { hintEl.style.display = ''; hintEl.textContent = ''; hintEl.className = 'edit-order-hint'; }
-            if (!normalized || normalized.length !== 11) {
-                if (hintEl) { hintEl.textContent = 'Введите корректный номер телефона (11 цифр, начинается с 7).'; hintEl.className = 'edit-order-hint edit-order-hint--error'; }
+            // dual-phone aware: принимаем single phone и slash-format "num1 / num2"
+            if (!isValidPhoneForSave_(phone)) {
+                if (hintEl) { hintEl.textContent = 'Введите телефон (79211234567) или два номера через /: 79211234567 / 79219876543'; hintEl.className = 'edit-order-hint edit-order-hint--error'; }
                 renderEditOrderList([]);
                 if (typeof clearEditOrderForm === 'function') clearEditOrderForm();
                 return;
             }
-            lastEditOrderSearchedPhone = normalized;
+            lastEditOrderSearchedPhone = phone; // сохраняем raw (с возможным slash-format) для refresh
             searchBtn.disabled = true;
             if (hintEl) hintEl.textContent = 'Поиск...';
             searchOrdersByPhone(phone).then(function (orders) {
@@ -14081,15 +14080,9 @@ function markOrderFieldError_(fieldId) {
                 el.addEventListener('change', handler);
             }
         });
-        // Телефон: только цифры, ровно до 11 (формат 79211234567). 8 в начале → 7.
+        // Телефон: dual-phone aware — не стрипаем автоматически, пользователь может вводить slash-format.
         const phoneInput = document.getElementById('order-client-phone');
         if (phoneInput) {
-            phoneInput.addEventListener('input', function() {
-                let digits = this.value.replace(/\D/g, '').slice(0, 11);
-                if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
-                if (digits.length === 10 && digits[0] !== '7') digits = '7' + digits;
-                this.value = digits;
-            });
             phoneInput.addEventListener('blur', function () {
                 if (typeof checkSimilarOrderWarning === 'function') checkSimilarOrderWarning();
             });
@@ -14440,7 +14433,9 @@ function buildOrderPayloadFromFormAndCart() {
 
     const fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var effectiveCalc = orderCart[0];
-    const client = { name: clientName, phone: normalizePhone(clientPhone), deliveryDate: deliveryDate, manager: manager, address: fullAddress };
+    // dual-phone: сохраняем канонический формат (single или "num1 / num2")
+    const _canonicalPhone = sanitizePhoneForSave_(clientPhone);
+    const client = { name: clientName, phone: _canonicalPhone, deliveryDate: deliveryDate, manager: manager, address: fullAddress };
     const commercialOffer = generateFullOrderTemplate(effectiveCalc, client, orderCart);
     const giftsText = (typeof getGiftsTextForOrder === 'function' ? getGiftsTextForOrder() : (typeof getGiftsText === 'function' ? getGiftsText() : '')) || '';
     var totalRounded = getOrderCartTotal();
@@ -14503,7 +14498,7 @@ function buildOrderPayloadFromFormAndCart() {
         source: source,
         logged_in_user: localStorage.getItem('currentUser') || '',
         client_name: clientName,
-        client_phone: normalizePhone(clientPhone),
+        client_phone: _canonicalPhone,
         delivery_date: deliveryDate && deliveryDate.includes('-') ? formatDateRu(deliveryDate) : deliveryDate,
         delivery_address: fullAddress,
         city: extractCityFromAddress(fullAddress) || extractCityFromAddress((effectiveCalc && effectiveCalc.address) || '') || (effectiveCalc && effectiveCalc.city) || '',
@@ -14560,10 +14555,10 @@ async function submitOrder() {
         hasErrors = true;
     }
 
-    var phone = normalizePhone(clientPhone);
-    if (!isValidPhone11(phone)) {
-        setOrderFieldError_('of-phone', 'Введите 11 цифр, начиная с 7 (например 79211234567)');
-        errors.push('телефон: ровно 11 цифр, с 7 (например 79211234567)');
+    // dual-phone: допускаем single phone и slash-format "num1 / num2"
+    if (!isValidPhoneForSave_(clientPhone)) {
+        setOrderFieldError_('of-phone', 'Введите 11 цифр с 7 (79211234567) или два номера через /: 79211234567 / 79219876543');
+        errors.push('телефон: 11 цифр с 7 или формат 79211234567 / 79219876543');
         hasErrors = true;
     }
 
