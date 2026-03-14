@@ -1082,6 +1082,26 @@ function getDeliveryDateTextForBlock(withAssembly) {
     return `Доставка: с ${d}, сборки с ${a}${r}`;
 }
 
+/** Две ближайшие даты для блока доставки (без текста "кроме ..."). Год по Москве. */
+function getDeliveryDateBlockTwoLines() {
+    if (!currentDeliveryDate) return null;
+    var without = '', withA = '';
+    if (deliveryDatesFromCalendar) {
+        var nw = getNearestAvailableDate(false);
+        var naw = getNearestAvailableDate(true);
+        if (!nw && !naw) return null;
+        var yNw = nw ? nw.split('-')[0] : null;
+        var yNaw = naw ? naw.split('-')[0] : null;
+        without = nw ? (isoDateToDdMm(nw) + '.' + yNw) : '—';
+        withA = naw ? (isoDateToDdMm(naw) + '.' + yNaw) : '—';
+    } else {
+        var yMoscow = getTodayMoscowISO().slice(0, 4);
+        without = currentDeliveryDate + '.' + yMoscow;
+        withA = (currentDeliveryAssemblyDate || currentDeliveryDate) + '.' + yMoscow;
+    }
+    return 'Ближайшая дата без сборки: ' + without + '\nБлижайшая дата со сборкой: ' + withA;
+}
+
 /** Текущая календарная дата по Москве (UTC+3), ISO YYYY-MM-DD. Источник истины для фильтра доступных дат — не локальная дата браузера. */
 function getTodayMoscowISO() {
     var utcMs = Date.now();
@@ -1386,7 +1406,7 @@ function updateDeliveryDateDisplay() {
 function updateDeliveryResultDate() {
     const resultDiv = document.getElementById('result');
     if (!resultDiv || !resultDiv.innerText.trim() || !currentDeliveryDate) return;
-    const dateBlock = getDeliveryDateTextForBlock(true);
+    const dateBlock = getDeliveryDateBlockTwoLines();
     if (!dateBlock) return;
     const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
     const lines = resultDiv.innerText.split('\n');
@@ -2553,7 +2573,7 @@ if (!nearestCity) {
             const deliveryDate = await loadDeliveryDate(nearestCity.name);
             
             let resultText = `Стоимость доставки: ${formatPrice(roundedCost)} рублей (${nearestCity.name})`;
-            const dateBlock = getDeliveryDateTextForBlock(true);
+            const dateBlock = getDeliveryDateBlockTwoLines();
             if (dateBlock) {
                 const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
                 resultText += '\n' + dateLines.join('\n');
@@ -2690,6 +2710,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
         commercialOffer += `\nДоставка - ${formatPrice(deliveryPrice)} рублей\n`;
     }
     
+    const withAssembly = !!document.getElementById('assembly')?.checked;
     if (SHOW_DELIVERY_DATE_IN_OFFER) {
         if (!currentDeliveryDate) {
             const selectedCity = document.getElementById("city").value;
@@ -2697,12 +2718,12 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
                 await loadDeliveryDate(selectedCity);
             }
         }
-        const dateText = getDeliveryDateTextForKP(true);
+        const dateText = getDeliveryDateTextForKP(withAssembly);
         if (dateText) {
-            commercialOffer += `📅 ${dateText.includes('Доставка:') ? dateText : 'Доставка: с ' + dateText}\n`;
+            commercialOffer += `📅 Ближайшая дата доставки: ${dateText}\n`;
         }
     }
-    const dateTextForOffer = getDeliveryDateTextForKP(true);
+    const dateTextForOffer = getDeliveryDateTextForKP(withAssembly);
     const deliveryDateText = dateTextForOffer ? `📅 Ближайшая дата доставки: ${dateTextForOffer}.` : '';
     
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
@@ -3038,7 +3059,8 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
             variant2Text += `\nДоставка - ${formatPrice(deliveryPriceValue)} рублей\n`;
         }
         
-        const dateTextV2 = getDeliveryDateTextForKP(true);
+        const withAssemblyV2 = !!document.getElementById('assembly')?.checked;
+        const dateTextV2 = getDeliveryDateTextForKP(withAssemblyV2);
         const deliveryDateText = dateTextV2 ? `📅 Ближайшая дата доставки: ${dateTextV2}.` : '';
         
         // Добавляем итоговую сумму
@@ -3787,8 +3809,9 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
     // Это предотвращает дублирование подарков в КП
     
-    const dateText = getDeliveryDateTextForKP(true);
-    shortOffer += `\nБлижайшая дата доставки — ${dateText || '17 февраля'}.`;
+    const withAssemblyShort = !!document.getElementById('assembly')?.checked;
+    const dateText = getDeliveryDateTextForKP(withAssemblyShort);
+    if (dateText) shortOffer += `\nБлижайшая дата доставки — ${dateText}.`;
     
     const shortOfferTextarea = document.getElementById("commercial-offer-short");
     if (shortOfferTextarea) {
@@ -10977,8 +11000,9 @@ function rebuildShortOfferWithGifts(overrideSelectedGifts = null) {
             datePart = '\n' + deliveryMatch[0].trim();
             if (!datePart.endsWith('.')) datePart += '.';
         } else {
-            const dtShort = getDeliveryDateTextForKP(true);
-            datePart = '\nБлижайшая дата доставки — ' + (dtShort || '17 февраля') + '.';
+            const withAssemblyRebuild = !!document.getElementById('assembly')?.checked;
+            const dtShort = getDeliveryDateTextForKP(withAssemblyRebuild);
+            datePart = dtShort ? '\nБлижайшая дата доставки — ' + dtShort + '.' : '';
         }
         
         // Получаем текст подарков
@@ -11014,9 +11038,10 @@ function rebuildShortOfferWithGifts(overrideSelectedGifts = null) {
     if (deliveryMatch) {
         datePart = '\n' + deliveryMatch[0].trim();
         if (!datePart.endsWith('.')) datePart += '.';
-        } else {
-        const dateTextShort = getDeliveryDateTextForKP(true);
-        datePart = '\nБлижайшая дата доставки — ' + (dateTextShort || '17 февраля') + '.';
+    } else {
+        const withAssemblyRebuild2 = !!document.getElementById('assembly')?.checked;
+        const dateTextShort = getDeliveryDateTextForKP(withAssemblyRebuild2);
+        datePart = dateTextShort ? '\nБлижайшая дата доставки — ' + dateTextShort + '.' : '';
     }
     
     // Получаем текст подарков
