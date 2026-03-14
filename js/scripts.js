@@ -400,6 +400,39 @@ const deliveryRegions = [
     { keywords: ["ярославль", "yaroslavl", "ярославская область"] }
 ];
 
+/**
+ * Маппинг keyword → canonical city для delivery_calendar / delivery_dates.
+ * Используется для legacy/freeform адресов в edit existing order calendar.
+ * Первый keyword каждой группы — канонический город (как в delivery_calendar).
+ * Дополнительные keyword — альтернативные написания области/региона.
+ */
+const _regionCalendarMap_ = (function() {
+    var map = [];
+    deliveryRegions.forEach(function(entry) {
+        if (!entry.keywords || entry.keywords.length < 2) return;
+        var city = entry.keywords[0]; // первый keyword = канонический город
+        entry.keywords.slice(1).forEach(function(alias) {
+            map.push({ alias: alias, city: city });
+        });
+    });
+    return map;
+})();
+
+/**
+ * Привести freeform адрес / регион к каноническому городу delivery_calendar.
+ * Возвращает canonical city string, или null если не определён.
+ */
+function resolveRegionToCanonicalCity_(text) {
+    if (!text || typeof text !== 'string') return null;
+    var lower = text.trim().toLowerCase().replace(/ё/g, 'е');
+    for (var i = 0; i < _regionCalendarMap_.length; i++) {
+        if (lower.indexOf(_regionCalendarMap_[i].alias) !== -1) {
+            return _regionCalendarMap_[i].city;
+        }
+    }
+    return null;
+}
+
 /** Проверка по массивам localities и administrativeAreas (нижний регистр): входит ли адрес в зону доставки. Один источник правды для расчёта доставки и форм заказа. */
 function isAddressInDeliveryRegionByLocality(localities, administrativeAreas) {
     if (!Array.isArray(localities)) localities = [];
@@ -13839,6 +13872,12 @@ function toggleEditOrderCalendar() {
     var canonicalCity = cityCandidate && typeof findCityInDropdown === 'function'
         ? (findCityInDropdown(cityCandidate) || findCityInDropdown(p1) || cityCandidate)
         : cityCandidate;
+    // region→canonical city: для legacy/freeform адресов (напр. "Московская область") пробуем
+    // привести к каноническому городу из delivery_calendar через keyword mapping
+    if (canonicalCity && typeof resolveRegionToCanonicalCity_ === 'function') {
+        var _resolvedCity = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(canonicalCity);
+        if (_resolvedCity) canonicalCity = _resolvedCity;
+    }
     if (canonicalCity && _savedDeliveryDateState === null) {
         _savedDeliveryDateState = {
             date: currentDeliveryDate,
