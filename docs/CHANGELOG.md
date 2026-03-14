@@ -2,6 +2,7 @@
 
 ## Docs / source of truth sync (14.03.2026)
 
+- **Phone scope:** TRUTH_MAP, PREPROD_PLAN — зафиксировано: legacy untouched dual-phone raw-preserve подтверждён; explicit dual-phone edit / search / second-phone UI не реализованы, future step.
 - **Existing line_items-order update** manual confirmed на заказе `79000000018`: менялось только delivery_date; line_items сохранился; quantity/status/comment/commercial_offer не уехали.
 - **Existing cancel flow** manual confirmed на заказе `79000000066`: status synced→cancelled; comment дописка; quantity/delivery_date/line_items/commercial_offer не изменились; edit-path блокируется.
 - **Open:** auto-sync after edit без /sync не confirmed; create-order-line-items автотест flaky/unsafe; cancel flow race «заказ не выбран» при раннем клике.

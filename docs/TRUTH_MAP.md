@@ -53,6 +53,7 @@
 ## Инварианты (при споре — истина)
 
 - **gifts = slots.** Fixed bundles не источник истины. См. GIFT_TRUTH.md.
+- **Phone scope:** legacy dual-phone slash-format («79128974834 /79085842934») — два номера одного клиента. Подтверждён только fix data-loss для existing untouched order (phone field не трогали → raw-preserve literally). Не реализовано и не считать подтверждённым: ввод dual-phone через UI, explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера. Future step — отдельный UX/поле для второго номера.
 - **cancelled** — не редактируется. UI + проверка перед save.
 - **Платные допы** — не должны пропадать из long КП из-за логики подарков.
 - **slot count** — зависит только от total / preview total.

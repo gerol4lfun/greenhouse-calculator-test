@@ -31,6 +31,7 @@
 
 ## Open issues / suspected issues
 
+- **Phone scope:** dual-phone UI не реализован. Legacy untouched raw-preserve подтверждён. Explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера — не подтверждены, future step. См. TRUTH_MAP.md.
 - **Gifts consistency end-to-end** не закрыт полностью
 - **Multi-item сценарии** не закрыты полностью. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
 - **Auto-sync after edit** без ручного /sync не confirmed; по факту не сработал.
