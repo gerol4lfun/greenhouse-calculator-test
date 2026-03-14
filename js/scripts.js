@@ -638,6 +638,10 @@ let deliveryCost = 0; // Стоимость доставки
 let currentDeliveryDate = null; // Текущая дата доставки для выбранного города
 let currentDeliveryAssemblyDate = null; // Дата сборки (null = совпадает с доставкой)
 let currentDeliveryRestrictions = null; // Общие ограничения по датам (доставка и сборка)
+/** Новый слой дат: true = данные из delivery_calendar, иначе fallback на delivery_dates */
+let deliveryDatesFromCalendar = false;
+let currentAvailableDatesWithoutAssembly = []; // ISO даты (ДС+Д), только даты > сегодня Москва
+let currentAvailableDatesWithAssembly = [];   // ISO даты (только ДС), только даты > сегодня Москва
 let activeOfferTab = 'short'; // Активная вкладка КП: 'short' или 'long'
 let orderTextFilledBySubmit = false; // true = в «Текст заказа» только что подставили полный шаблон, не перезаписывать превью
 let clearingFormAfterSubmit = false; // true = очищаем форму после отправки, не перезаписывать поле «Текст заказа»
@@ -1077,14 +1081,92 @@ function getDeliveryDateTextForBlock(withAssembly) {
     return `Доставка: с ${d}, сборки с ${a}${r}`;
 }
 
+/** Текущая календарная дата по Москве (UTC+3), ISO YYYY-MM-DD. Источник истины для фильтра доступных дат — не локальная дата браузера. */
+function getTodayMoscowISO() {
+    var utcMs = Date.now();
+    var moscowMs = utcMs + 3 * 60 * 60 * 1000;
+    var d = new Date(moscowMs);
+    var y = d.getUTCFullYear();
+    var m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    var day = String(d.getUTCDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+}
+
+/** ISO YYYY-MM-DD → DD.MM для отображения в блоке доставки/КП */
+function isoDateToDdMm(iso) {
+    if (!iso || typeof iso !== 'string') return null;
+    var p = iso.split('-');
+    if (p.length !== 3) return null;
+    return p[2] + '.' + p[1];
+}
+
 // Функция загрузки даты доставки для города
 async function loadDeliveryDate(cityName) {
     if (!cityName) {
         currentDeliveryDate = null;
         currentDeliveryAssemblyDate = null;
         currentDeliveryRestrictions = null;
+        deliveryDatesFromCalendar = false;
+        currentAvailableDatesWithoutAssembly = [];
+        currentAvailableDatesWithAssembly = [];
         updateDeliveryDateDisplay();
         return null;
+    }
+
+    var todayMoscow = getTodayMoscowISO();
+
+    try {
+        var calRes = await supabaseClient
+            .from('delivery_calendar')
+            .select('delivery_date, available_without_assembly, available_with_assembly')
+            .eq('city_name', cityName)
+            .gt('delivery_date', todayMoscow)
+            .order('delivery_date');
+
+        if (!calRes.error && calRes.data && calRes.data.length > 0) {
+            var rows = calRes.data;
+            var withoutAssembly = [];
+            var withAssembly = [];
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var iso = r.delivery_date;
+                if (typeof iso !== 'string' && iso) iso = iso.toString();
+                if (!iso || iso.length < 10) continue;
+                if (iso.indexOf('-') !== -1) {
+                    var parts = iso.split('T')[0].split('-');
+                    if (parts.length >= 3) iso = parts[0] + '-' + parts[1] + '-' + parts[2];
+                }
+                if (iso <= todayMoscow) continue;
+                if (r.available_without_assembly) withoutAssembly.push(iso);
+                if (r.available_with_assembly) withAssembly.push(iso);
+            }
+            deliveryDatesFromCalendar = true;
+            currentAvailableDatesWithoutAssembly = withoutAssembly;
+            currentAvailableDatesWithAssembly = withAssembly;
+            currentDeliveryRestrictions = null;
+            if (withoutAssembly.length === 0 && withAssembly.length === 0) {
+                currentDeliveryDate = null;
+                currentDeliveryAssemblyDate = null;
+                updateDeliveryDateDisplay();
+                return null;
+            }
+            var nearestWithout = withoutAssembly.length > 0 ? withoutAssembly[0] : null;
+            var nearestWith = withAssembly.length > 0 ? withAssembly[0] : null;
+            currentDeliveryDate = isoDateToDdMm(nearestWithout || nearestWith);
+            currentDeliveryAssemblyDate = nearestWith ? isoDateToDdMm(nearestWith) : (nearestWithout ? isoDateToDdMm(nearestWithout) : null);
+            updateDeliveryDateDisplay();
+            return currentDeliveryDate;
+        }
+
+        if (calRes.error || !calRes.data || calRes.data.length === 0) {
+            deliveryDatesFromCalendar = false;
+            currentAvailableDatesWithoutAssembly = [];
+            currentAvailableDatesWithAssembly = [];
+        }
+    } catch (e) {
+        deliveryDatesFromCalendar = false;
+        currentAvailableDatesWithoutAssembly = [];
+        currentAvailableDatesWithAssembly = [];
     }
 
     try {
@@ -1120,6 +1202,9 @@ async function loadDeliveryDate(cityName) {
                 currentDeliveryDate = null;
                 currentDeliveryAssemblyDate = null;
                 currentDeliveryRestrictions = null;
+                deliveryDatesFromCalendar = false;
+                currentAvailableDatesWithoutAssembly = [];
+                currentAvailableDatesWithAssembly = [];
                 updateDeliveryDateDisplay();
                 return null;
             }
@@ -1134,6 +1219,9 @@ async function loadDeliveryDate(cityName) {
                 });
                 if (found) {
                     if (DEBUG) console.log(`Найдена дата для "${cityName}" через "${found.city_name}": ${found.delivery_date}`);
+                    deliveryDatesFromCalendar = false;
+                    currentAvailableDatesWithoutAssembly = [];
+                    currentAvailableDatesWithAssembly = [];
                     currentDeliveryDate = found.delivery_date;
                     currentDeliveryAssemblyDate = found.assembly_date || null;
                     currentDeliveryRestrictions = found.restrictions || null;
@@ -1145,11 +1233,17 @@ async function loadDeliveryDate(cityName) {
             currentDeliveryDate = null;
             currentDeliveryAssemblyDate = null;
             currentDeliveryRestrictions = null;
+            deliveryDatesFromCalendar = false;
+            currentAvailableDatesWithoutAssembly = [];
+            currentAvailableDatesWithAssembly = [];
             updateDeliveryDateDisplay();
             return null;
         }
 
-        // НЕ используем "Город доставки" — источник истины только канонические города
+        // НЕ используем "Город доставки" — источник истины только канонические города (fallback delivery_dates)
+        deliveryDatesFromCalendar = false;
+        currentAvailableDatesWithoutAssembly = [];
+        currentAvailableDatesWithAssembly = [];
         currentDeliveryDate = data.delivery_date;
         currentDeliveryAssemblyDate = data.assembly_date || null;
         currentDeliveryRestrictions = data.restrictions || null;
@@ -1160,6 +1254,9 @@ async function loadDeliveryDate(cityName) {
         currentDeliveryDate = null;
         currentDeliveryAssemblyDate = null;
         currentDeliveryRestrictions = null;
+        deliveryDatesFromCalendar = false;
+        currentAvailableDatesWithoutAssembly = [];
+        currentAvailableDatesWithAssembly = [];
         updateDeliveryDateDisplay();
         return null;
     }
@@ -11602,6 +11699,15 @@ function handleAssemblyChange() {
     
     // Если все нормально - вызываем расчет стоимости
     calculateGreenhouseCost();
+
+    if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+        var cal = document.getElementById('order-calendar');
+        if (cal && cal.classList.contains('open')) {
+            var withAssembly = assemblyCheckbox.checked;
+            _orderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
+            if (typeof renderOrderCalendar === 'function') renderOrderCalendar();
+        }
+    }
 }
 
 // Функция показа информации о поликарбонате
@@ -13155,7 +13261,15 @@ function populateOrderDeliveryDate() {
 }
 
 function _initCalendarWithDate(dateStr) {
-    _orderCalSlots = buildDeliverySlots(dateStr);
+    if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+        var assemblyEl = document.getElementById('assembly');
+        var withAssembly = assemblyEl ? assemblyEl.checked : false;
+        _orderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
+    } else if (deliveryDatesFromCalendar) {
+        _orderCalSlots = [];
+    } else {
+        _orderCalSlots = buildDeliverySlots(dateStr);
+    }
     var iso = _orderCalSlots.length > 0 ? _orderCalSlots[0] : '';
     selectOrderCalDate(iso);
     if (iso) {
@@ -13302,6 +13416,17 @@ document.addEventListener('click', function(e) {
     }
 });
 
+document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'edit-order-add-assembly' && deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+        var cal = document.getElementById('edit-order-calendar');
+        if (cal && cal.classList.contains('open')) {
+            var withAssembly = e.target.checked;
+            _editOrderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
+            if (typeof renderEditOrderCalendar === 'function') renderEditOrderCalendar();
+        }
+    }
+});
+
 // --- Календарь даты доставки в модалке «Редактирование заказа» (привязка к датам доставки по городу, как в оформлении) ---
 var _editOrderCalMonth = null;
 var _editOrderCalSelected = '';
@@ -13382,8 +13507,16 @@ function toggleEditOrderCalendar() {
             };
         }
         loadDeliveryDate(cityOrRegion).then(function () {
-            _editOrderCalSlots = currentDeliveryDate ? buildDeliverySlots(currentDeliveryDate) : [];
-            if (!_editOrderCalSlots.length) _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+            if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+                var assemblyEditEl = document.getElementById('edit-order-add-assembly');
+                var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
+                _editOrderCalSlots = withAssemblyEdit ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
+            } else if (deliveryDatesFromCalendar) {
+                _editOrderCalSlots = [];
+            } else {
+                _editOrderCalSlots = currentDeliveryDate ? buildDeliverySlots(currentDeliveryDate) : [];
+                if (!_editOrderCalSlots.length) _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+            }
             renderEditOrderCalendar();
         }).catch(function () {
             _editOrderCalSlots = buildEditOrderCalSlotsFallback();
