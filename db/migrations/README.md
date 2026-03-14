@@ -35,6 +35,12 @@
 
 Используйте ТОЛЬКО в development окружении!
 
+## Последние миграции
+
+- `20260314_add_updated_at_to_orders.sql` — добавляет `updated_at` в `orders` (change-signal для TG auto-sync): колонка, backfill, DEFAULT, BEFORE UPDATE trigger, индекс.
+
+---
+
 ## Порядок выполнения
 
 1. Для новой БД:

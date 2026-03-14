@@ -1,5 +1,21 @@
 # История изменений проекта
 
+## Docs / source of truth sync (14.03.2026)
+
+- **Existing line_items-order update** manual confirmed на заказе `79000000018`: менялось только delivery_date; line_items сохранился; quantity/status/comment/commercial_offer не уехали.
+- **Existing cancel flow** manual confirmed на заказе `79000000066`: status synced→cancelled; comment дописка; quantity/delivery_date/line_items/commercial_offer не изменились; edit-path блокируется.
+- **Open:** auto-sync after edit без /sync не confirmed; create-order-line-items автотест flaky/unsafe; cancel flow race «заказ не выбран» при раннем клике.
+- Подтверждён manual existing multi-item identical-order update на заказе `79000000020`. Менялось только `delivery_date` (18.03.2026). quantity=2, line_items=NULL; delivery_date обновился; quantity/status/gift/comment/city/commercial_offer не уехали. Подтверждает только кейс «2 одинаковые через quantity=2». Кейсы multi-item с line_items — open. Manual confirmed, не auto verified.
+- Подтверждён manual existing-order update через калькулятор на заказе `70000000019`.
+- Менялось только одно поле: `delivery_date`.
+- После reopen в калькуляторе новая дата сохранилась.
+- Новая дата появилась в Google Sheets.
+- В Telegram пришло сообщение `Заказ изменён` с корректным diff по дате: старая → новая.
+- Статус: manual confirmed, не auto verified.
+- Следующий приоритет: автоматизировать existing-order update flow без создания новых тестовых заказов.
+
+---
+
 ## UI: блок дат доставки — компактный формат «17 марта» (14.03.2026)
 
 - **Формат дат:** «17 марта» вместо 17.03.2026 (год не показывается).

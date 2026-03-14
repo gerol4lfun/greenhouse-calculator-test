@@ -7,6 +7,7 @@ const { test, expect } = require('@playwright/test');
 const {
   testPhone,
   SEARCH_PHONE,
+  selectFirstOption,
   expandOrderFormAndWaitCity,
   calculateGreenhouse,
   addItemsToCart,
@@ -84,6 +85,70 @@ test.describe('order-flow', () => {
       '#order-result: ' + (diag.resultText || '').slice(0, 200),
     ].join('\n');
     throw new Error(msg);
+  });
+
+  test('create-order-line-items-integration: 2 разные позиции → line_items [staging/manual]', async ({ page }) => {
+    const phone = testPhone(String(Date.now() % 100));
+
+    await page.goto('/');
+    await expandOrderFormAndWaitCity(page);
+
+    // Первая позиция
+    await calculateGreenhouse(page);
+    await page.waitForSelector('#order-add-to-cart-btn:not([disabled])', { timeout: 10000 });
+    await page.locator('#order-add-to-cart-btn').click();
+    await page.waitForSelector('#order-cart-block', { state: 'visible', timeout: 5000 });
+
+    // Вторая позиция: меняем width (index: 2) — width входит в identity check, позиции будут точно разные
+    await page.waitForFunction(
+      (id) => document.querySelectorAll(`#${id} option[value]:not([value=""])`).length >= 2,
+      'width',
+      { timeout: 5000 }
+    );
+    await page.locator('#width').selectOption({ index: 2 });
+    await page.waitForFunction(
+      (id) => document.querySelectorAll(`#${id} option[value]:not([value=""])`).length > 0,
+      'length',
+      { timeout: 5000 }
+    );
+    await selectFirstOption(page, 'length');
+    await page.waitForFunction(
+      (id) => document.querySelectorAll(`#${id} option[value]:not([value=""])`).length > 0,
+      'frame',
+      { timeout: 5000 }
+    );
+    await selectFirstOption(page, 'frame');
+    await page.waitForFunction(
+      (id) => document.querySelectorAll(`#${id} option[value]:not([value=""])`).length > 0,
+      'polycarbonate',
+      { timeout: 5000 }
+    );
+    await selectFirstOption(page, 'polycarbonate');
+    await page.locator('button:has-text("Рассчитать стоимость теплицы")').click();
+    await page.waitForSelector('#order-add-to-cart-btn:not([disabled])', { timeout: 10000 });
+    await page.locator('#order-add-to-cart-btn').click();
+    await page.waitForSelector('#order-cart-block', { state: 'visible', timeout: 5000 });
+
+    await fillAndSubmitOrderForm(page, { phone });
+    await waitOrderSuccess(page);
+
+    // Прочитать созданный заказ из Supabase по телефону
+    const order = await page.evaluate(async (ph) => {
+      const { data } = await window.supabaseClient
+        .from('orders')
+        .select('id,line_items')
+        .eq('client_phone', ph)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    }, phone);
+
+    expect(order).toBeTruthy();
+    expect(order.line_items).not.toBeNull();
+    const items = JSON.parse(order.line_items);
+    expect(Array.isArray(items)).toBe(true);
+    expect(items).toHaveLength(2);
   });
 
   test('create-order-paid-extras: заказ с платными допами', async ({ page }) => {

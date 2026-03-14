@@ -698,6 +698,12 @@ let editOrderRestoringState = false;
 let editOrderGiftBlockRebuilding = false;
 /** Предыдущее кол-во gift slots (для уведомления о смене tier). -1 = ещё не инициализировано. */
 let editOrderGiftSlotsPrev = -1;
+/** Raw gift text существующего заказа на момент открытия. null = не установлен (новый заказ). */
+let _editOrderOriginalGiftRaw = null;
+/** Пользователь явно выбирал подарки в селектах модалки в текущей сессии редактирования. */
+let _editOrderGiftTouchedByUser = false;
+/** Gift tier (кол-во слотов) на момент открытия заказа. Для определения реального tier change из-за изменения состава. */
+let _editOrderGiftTierAtOpen = 0;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6090,6 +6096,11 @@ function fillEditOrderForm(order) {
         cancelOrderBtnEl.style.display = (st === 'cancelled' || st === 'completed') ? 'none' : '';
     }
     editOrderGiftSlotsPrev = -1;
+    // raw-preserve: сохранить оригинальный gift text до render-cascade, которая может нормализовать его в текущий формат
+    _editOrderOriginalGiftRaw = order.gift != null ? String(order.gift) : '';
+    _editOrderGiftTouchedByUser = false;
+    _editOrderGiftTierAtOpen = (typeof getGiftSlotsByTotal === 'function' && typeof getEditOrderCompositionTotal === 'function')
+        ? getGiftSlotsByTotal(getEditOrderCompositionTotal()) : 0;
     renderEditOrderCompositionList(); // вызывает updateEditOrderGiftFromTotal → threshold → показ/скрытие блока
     // Принудительный enforce видимости: renderEditOrderCompositionList может не успеть при асинхронных изменениях DOM
     if (typeof updateEditOrderGiftsBlock === 'function' && typeof getEditOrderCompositionTotal === 'function') {
@@ -6174,6 +6185,10 @@ function onEditOrderGiftSelectChange() {
     var text = typeof getGiftsTextFromObject === 'function' ? getGiftsTextFromObject(selected) : '';
     giftEl.value = text ? String(text).replace(/^\s+/, '').trim() : '';
     if (editOrderGiftBlockRebuilding) return;
+    // raw-preserve: фиксируем явный выбор пользователя; при restore или пересборке блока — не ставим
+    if (!editOrderRestoringState) {
+        _editOrderGiftTouchedByUser = true;
+    }
     if (!editOrderRestoringState && lastSavedEditOrderState != null) {
         editOrderStateUndoSample = { composition: lastSavedEditOrderState.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, lastSavedEditOrderState.gifts) };
         editOrderStateRedoSample = null;
@@ -6966,7 +6981,18 @@ function editOrderItemToCalc(item, deliveryCost, isFirstOfMultiple, orderTotalFo
 
 /** Собрать из полей модалки только редактируемые поля для update (частичное обновление). Включает состав и итог (Этап 6). */
 function buildOrderPayloadFromEditModal() {
-    if (typeof onEditOrderGiftSelectChange === 'function') onEditOrderGiftSelectChange();
+    // raw-preserve: решаем, сохранять raw legacy gift или пересобирать в канонический формат
+    var _giftCurrentTier = (typeof getGiftSlotsByTotal === 'function' && typeof getEditOrderCompositionTotal === 'function')
+        ? getGiftSlotsByTotal(getEditOrderCompositionTotal()) : 0;
+    var _giftTierChanged = _editOrderOriginalGiftRaw !== null && _giftCurrentTier !== _editOrderGiftTierAtOpen;
+    if (!_editOrderGiftTouchedByUser && !_giftTierChanged && _editOrderOriginalGiftRaw !== null) {
+        // Пользователь не трогал gifts и tier не изменился: вернуть оригинальный raw text в поле
+        var _giftElRaw = document.getElementById('edit-order-gift');
+        if (_giftElRaw) _giftElRaw.value = _editOrderOriginalGiftRaw;
+    } else {
+        // Пользователь реально менял gifts или tier изменился: пересобрать в канонический формат
+        if (typeof onEditOrderGiftSelectChange === 'function') onEditOrderGiftSelectChange();
+    }
     var name = (document.getElementById('edit-order-client-name') && document.getElementById('edit-order-client-name').value) ? document.getElementById('edit-order-client-name').value.trim() : '';
     var phone = (document.getElementById('edit-order-client-phone') && document.getElementById('edit-order-client-phone').value) ? document.getElementById('edit-order-client-phone').value.trim() : '';
     var dateInput = document.getElementById('edit-order-delivery-date');
