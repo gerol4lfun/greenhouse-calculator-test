@@ -700,6 +700,10 @@ let editOrderGiftBlockRebuilding = false;
 let editOrderGiftSlotsPrev = -1;
 /** Raw gift text существующего заказа на момент открытия. null = не установлен (новый заказ). */
 let _editOrderOriginalGiftRaw = null;
+/** Raw client_phone существующего заказа на момент открытия. null = не установлен (новый заказ). */
+let _editOrderOriginalPhoneRaw = null;
+/** Пользователь явно редактировал поле телефона в текущей сессии редактирования. */
+let _editOrderPhoneTouchedByUser = false;
 /** Пользователь явно выбирал подарки в селектах модалки в текущей сессии редактирования. */
 let _editOrderGiftTouchedByUser = false;
 /** Gift tier (кол-во слотов) на момент открытия заказа. Для определения реального tier change из-за изменения состава. */
@@ -5997,6 +6001,9 @@ function fillEditOrderForm(order) {
     lastLoadedOrderCommercialOffer = (order.commercial_offer || '').trim();
     setEditOrderFieldValue('edit-order-client-name', order.client_name || '');
     setEditOrderFieldValue('edit-order-client-phone', order.client_phone || '');
+    // raw-preserve: сохранить оригинальный телефон до любых изменений пользователем
+    _editOrderOriginalPhoneRaw = order.client_phone != null ? String(order.client_phone) : '';
+    _editOrderPhoneTouchedByUser = false;
     var deliveryStr = (order.delivery_date || '').trim();
     var displayDate = '';
     var isoForDate = '';
@@ -7007,9 +7014,18 @@ function buildOrderPayloadFromEditModal() {
     var fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var dateForDb = deliveryDate && deliveryDate.indexOf('-') !== -1 ? formatDateRu(deliveryDate) : deliveryDate;
 
+    // raw-preserve: если пользователь не трогал phone field, сохранять оригинальный raw телефон literally
+    var _clientPhoneForPayload;
+    if (!_editOrderPhoneTouchedByUser && _editOrderOriginalPhoneRaw !== null) {
+        _clientPhoneForPayload = _editOrderOriginalPhoneRaw;
+    } else {
+        // phone был реально изменён — нормализуем; dual-phone slash-format сохраняется через sanitizePhone_
+        _clientPhoneForPayload = sanitizePhoneForSave_(phone);
+    }
+
     var payload = {
         client_name: name,
-        client_phone: normalizePhone(phone),
+        client_phone: _clientPhoneForPayload,
         delivery_date: dateForDb,
         delivery_address: fullAddress,
         source: source,
@@ -7100,8 +7116,10 @@ function validateEditOrderModal() {
     var source = document.getElementById('edit-order-source') ? document.getElementById('edit-order-source').value : '';
 
     if (!name) errors.push('имя клиента');
-    var normalizedPhone = normalizePhone(phone);
-    if (!isValidPhone11(normalizedPhone)) errors.push('телефон: 11 цифр, с 7');
+    // raw-preserve: если phone не трогали, пропускаем валидацию (legacy dual-phone может не пройти isValidPhone11)
+    if (_editOrderPhoneTouchedByUser || _editOrderOriginalPhoneRaw === null) {
+        if (!isValidPhoneForSave_(phone)) errors.push('телефон: 11 цифр, с 7 (или формат 79111111111 / 79222222222)');
+    }
     if (!deliveryDate) errors.push('дата доставки');
     if (typeof isOrderFormAddressRequired === 'function' && isOrderFormAddressRequired()) {
         if (!addr1) errors.push('регион/город');
@@ -7554,6 +7572,15 @@ function initEditOrderModal() {
                 el.addEventListener('change', clearThisFieldError);
             }
         });
+    })();
+
+    // raw-preserve: фиксируем явное редактирование поля телефона пользователем
+    (function () {
+        var phoneFieldForTouch = document.getElementById('edit-order-client-phone');
+        if (phoneFieldForTouch) {
+            phoneFieldForTouch.addEventListener('input', function () { _editOrderPhoneTouchedByUser = true; });
+            phoneFieldForTouch.addEventListener('change', function () { _editOrderPhoneTouchedByUser = true; });
+        }
     })();
 
     var addItemBtn = document.getElementById('edit-order-add-item-btn');
@@ -13187,6 +13214,45 @@ function isValidPhone11(phone) {
     if (!phone || typeof phone !== 'string') return false;
     const digits = phone.replace(/\D/g, '');
     return digits.length === 11 && digits[0] === '7' && /^\d+$/.test(digits);
+}
+
+/**
+ * Проверка телефона для сохранения при явном редактировании пользователем.
+ * Допускает: одиночный 11-значный номер с 7, либо dual-phone slash-format «num1 / num2».
+ * Пробелы вокруг «/» опциональны.
+ */
+function isValidPhoneForSave_(raw) {
+    if (!raw || typeof raw !== 'string') return false;
+    const trimmed = raw.trim();
+    // Dual-phone slash-format: "79111111111 / 79222222222" (пробелы опциональны)
+    const slashIdx = trimmed.indexOf('/');
+    if (slashIdx !== -1) {
+        const part1 = trimmed.slice(0, slashIdx).trim();
+        const part2 = trimmed.slice(slashIdx + 1).trim();
+        return isValidPhone11(normalizePhone(part1)) && isValidPhone11(normalizePhone(part2));
+    }
+    // Single phone
+    return isValidPhone11(normalizePhone(trimmed));
+}
+
+/**
+ * Нормализация телефона для сохранения при явном редактировании.
+ * Dual-phone slash-format сохраняется как есть (с нормализацией каждого номера).
+ * Single phone — normalizePhone.
+ */
+function sanitizePhoneForSave_(raw) {
+    if (!raw || typeof raw !== 'string') return normalizePhone(raw);
+    const trimmed = raw.trim();
+    const slashIdx = trimmed.indexOf('/');
+    if (slashIdx !== -1) {
+        const part1 = normalizePhone(trimmed.slice(0, slashIdx).trim());
+        const part2 = normalizePhone(trimmed.slice(slashIdx + 1).trim());
+        // Если оба номера валидны — вернуть canonical dual-phone с пробелами
+        if (part1 && part2) return part1 + ' / ' + part2;
+        // Если только первый валиден — одиночный
+        if (part1) return part1;
+    }
+    return normalizePhone(trimmed);
 }
 
 /** Формат телефона для отображения в КП клиенту */
