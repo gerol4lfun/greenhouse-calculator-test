@@ -642,6 +642,7 @@ let currentDeliveryRestrictions = null; // Общие ограничения п�
 let deliveryDatesFromCalendar = false;
 let currentAvailableDatesWithoutAssembly = []; // ISO даты (ДС+Д), только даты > сегодня Москва
 let currentAvailableDatesWithAssembly = [];   // ISO даты (только ДС), только даты > сегодня Москва
+let currentDeliveryDateStateMap = Object.create(null); // { iso: { withoutAssembly, withAssembly, rawStatus } }
 let activeOfferTab = 'short'; // Активная вкладка КП: 'short' или 'long'
 let orderTextFilledBySubmit = false; // true = в «Текст заказа» только что подставили полный шаблон, не перезаписывать превью
 let clearingFormAfterSubmit = false; // true = очищаем форму после отправки, не перезаписывать поле «Текст заказа»
@@ -1100,6 +1101,110 @@ function isoDateToDdMm(iso) {
     return p[2] + '.' + p[1];
 }
 
+function normalizeDeliveryCalendarISO(value) {
+    if (!value) return null;
+    var iso = typeof value === 'string' ? value : String(value);
+    if (!iso) return null;
+    if (iso.indexOf('T') !== -1) iso = iso.split('T')[0];
+    var parts = iso.split('-');
+    if (parts.length !== 3) return null;
+    return parts[0] + '-' + parts[1] + '-' + parts[2];
+}
+
+function getMoscowTodayDateObject() {
+    var parts = getTodayMoscowISO().split('-');
+    return new Date(+parts[0], +parts[1] - 1, +parts[2]);
+}
+
+function getCurrentCalendarSlotsByMode(withAssembly) {
+    return withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
+}
+
+/** Дата доступна для режима? delivery_calendar = слой ограничений; future unknown = доступна */
+function isDateAvailableForMode(iso, withAssembly, todayISO) {
+    if (!iso || iso <= todayISO) return false;
+    var meta = currentDeliveryDateStateMap[iso];
+    if (!meta) return true;
+    return withAssembly ? !!meta.withAssembly : !!meta.withoutAssembly;
+}
+
+/** Ближайшая доступная дата после todayMoscow для режима (сборка/без) */
+function getNearestAvailableDate(withAssembly) {
+    if (!deliveryDatesFromCalendar) return null;
+    var todayISO = getTodayMoscowISO();
+    var p = todayISO.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    for (var i = 0; i < 400; i++) {
+        d.setDate(d.getDate() + 1);
+        var iso = formatISOLocal(d);
+        if (isDateAvailableForMode(iso, withAssembly, todayISO)) return iso;
+    }
+    return null;
+}
+
+function getDeliveryCalendarCellState(cellISO, withAssembly, todayISO) {
+    if (cellISO <= todayISO) return 'past';
+    var meta = currentDeliveryDateStateMap[cellISO];
+    if (!meta) return 'available';
+    return withAssembly ? (meta.withAssembly ? 'available' : 'blocked') : (meta.withoutAssembly ? 'available' : 'blocked');
+}
+
+function syncOrderCalendarSlotsWithMode() {
+    if (!deliveryDatesFromCalendar) return false;
+    var assemblyEl = document.getElementById('assembly');
+    var withAssembly = assemblyEl ? assemblyEl.checked : false;
+    var todayISO = getTodayMoscowISO();
+    if (_orderCalSelected && isDateAvailableForMode(_orderCalSelected, withAssembly, todayISO)) return true;
+    selectOrderCalDate(getNearestAvailableDate(withAssembly) || '');
+    return true;
+}
+
+function syncEditOrderCalendarSlotsWithMode() {
+    if (!deliveryDatesFromCalendar) return false;
+    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
+    var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
+    var todayISO = getTodayMoscowISO();
+    if (_editOrderCalSelected && isDateAvailableForMode(_editOrderCalSelected, withAssemblyEdit, todayISO)) return true;
+    selectEditOrderCalDate(getNearestAvailableDate(withAssemblyEdit) || '');
+    return true;
+}
+
+function applyDeliveryCalendarRows(rows, todayMoscow) {
+    var withoutAssembly = [];
+    var withAssembly = [];
+    var stateMap = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var iso = normalizeDeliveryCalendarISO(r.delivery_date);
+        if (!iso) continue;
+        stateMap[iso] = {
+            withoutAssembly: !!r.available_without_assembly,
+            withAssembly: !!r.available_with_assembly,
+            rawStatus: r.raw_status || null
+        };
+        if (iso <= todayMoscow) continue;
+        if (r.available_without_assembly) withoutAssembly.push(iso);
+        if (r.available_with_assembly) withAssembly.push(iso);
+    }
+    deliveryDatesFromCalendar = true;
+    currentAvailableDatesWithoutAssembly = withoutAssembly;
+    currentAvailableDatesWithAssembly = withAssembly;
+    currentDeliveryDateStateMap = stateMap;
+    currentDeliveryRestrictions = null;
+    var nearestWithout = getNearestAvailableDate(false);
+    var nearestWith = getNearestAvailableDate(true);
+    if (!nearestWithout && !nearestWith) {
+        currentDeliveryDate = null;
+        currentDeliveryAssemblyDate = null;
+        updateDeliveryDateDisplay();
+        return null;
+    }
+    currentDeliveryDate = isoDateToDdMm(nearestWithout || nearestWith);
+    currentDeliveryAssemblyDate = nearestWith ? isoDateToDdMm(nearestWith) : (nearestWithout ? isoDateToDdMm(nearestWithout) : null);
+    updateDeliveryDateDisplay();
+    return currentDeliveryDate;
+}
+
 // Функция загрузки даты доставки для города
 async function loadDeliveryDate(cityName) {
     if (!cityName) {
@@ -1109,6 +1214,7 @@ async function loadDeliveryDate(cityName) {
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
+        currentDeliveryDateStateMap = Object.create(null);
         updateDeliveryDateDisplay();
         return null;
     }
@@ -1118,55 +1224,56 @@ async function loadDeliveryDate(cityName) {
     try {
         var calRes = await supabaseClient
             .from('delivery_calendar')
-            .select('delivery_date, available_without_assembly, available_with_assembly')
+            .select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status')
             .eq('city_name', cityName)
-            .gt('delivery_date', todayMoscow)
             .order('delivery_date');
 
         if (!calRes.error && calRes.data && calRes.data.length > 0) {
-            var rows = calRes.data;
-            var withoutAssembly = [];
-            var withAssembly = [];
-            for (var i = 0; i < rows.length; i++) {
-                var r = rows[i];
-                var iso = r.delivery_date;
-                if (typeof iso !== 'string' && iso) iso = iso.toString();
-                if (!iso || iso.length < 10) continue;
-                if (iso.indexOf('-') !== -1) {
-                    var parts = iso.split('T')[0].split('-');
-                    if (parts.length >= 3) iso = parts[0] + '-' + parts[1] + '-' + parts[2];
-                }
-                if (iso <= todayMoscow) continue;
-                if (r.available_without_assembly) withoutAssembly.push(iso);
-                if (r.available_with_assembly) withAssembly.push(iso);
-            }
-            deliveryDatesFromCalendar = true;
-            currentAvailableDatesWithoutAssembly = withoutAssembly;
-            currentAvailableDatesWithAssembly = withAssembly;
-            currentDeliveryRestrictions = null;
-            if (withoutAssembly.length === 0 && withAssembly.length === 0) {
-                currentDeliveryDate = null;
-                currentDeliveryAssemblyDate = null;
-                updateDeliveryDateDisplay();
-                return null;
-            }
-            var nearestWithout = withoutAssembly.length > 0 ? withoutAssembly[0] : null;
-            var nearestWith = withAssembly.length > 0 ? withAssembly[0] : null;
-            currentDeliveryDate = isoDateToDdMm(nearestWithout || nearestWith);
-            currentDeliveryAssemblyDate = nearestWith ? isoDateToDdMm(nearestWith) : (nearestWithout ? isoDateToDdMm(nearestWithout) : null);
-            updateDeliveryDateDisplay();
+            applyDeliveryCalendarRows(calRes.data, todayMoscow);
+            console.log('[diag a] delivery_calendar load: cityName=' + cityName + ' rows=' + calRes.data.length + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
             return currentDeliveryDate;
+        }
+
+        if (!calRes.error && calRes.data && calRes.data.length === 0) {
+            var normalizedCity = normalizeCityName(cityName);
+            var calAltRes = await supabaseClient
+                .from('delivery_calendar')
+                .select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status')
+                .limit(1000);
+
+            if (!calAltRes.error && calAltRes.data && calAltRes.data.length > 0) {
+                var matchedRow = calAltRes.data.find(function(item) {
+                    var cleanedItem = cleanDeliveryCityName(item.city_name);
+                    var normalizedItem = normalizeCityName(cleanedItem);
+                    return normalizedItem === normalizedCity ||
+                           normalizedCity.includes(normalizedItem) ||
+                           normalizedItem.includes(normalizedCity);
+                });
+                if (matchedRow) {
+                    var matchedNormalizedCity = normalizeCityName(cleanDeliveryCityName(matchedRow.city_name));
+                    var matchedRows = calAltRes.data.filter(function(item) {
+                        return normalizeCityName(cleanDeliveryCityName(item.city_name)) === matchedNormalizedCity;
+                    });
+                    if (matchedRows.length > 0) {
+                        applyDeliveryCalendarRows(matchedRows, todayMoscow);
+                        console.log('[diag a] delivery_calendar load: cityName=' + cityName + ' rows=' + matchedRows.length + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
+                        return currentDeliveryDate;
+                    }
+                }
+            }
         }
 
         if (calRes.error || !calRes.data || calRes.data.length === 0) {
             deliveryDatesFromCalendar = false;
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
+            currentDeliveryDateStateMap = Object.create(null);
         }
     } catch (e) {
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
+        currentDeliveryDateStateMap = Object.create(null);
     }
 
     try {
@@ -1174,14 +1281,14 @@ async function loadDeliveryDate(cityName) {
             .from('delivery_dates')
             .select('delivery_date, assembly_date, restrictions')
             .eq('city_name', cityName)
-            .single();
+            .maybeSingle();
 
         if (error && error.code === '42703') {
             const { data: fallback } = await supabaseClient
                 .from('delivery_dates')
                 .select('delivery_date, restrictions')
                 .eq('city_name', cityName)
-                .single();
+                .maybeSingle();
             if (fallback) {
                 data = { ...fallback, assembly_date: null };
                 error = null;
@@ -1205,6 +1312,7 @@ async function loadDeliveryDate(cityName) {
                 deliveryDatesFromCalendar = false;
                 currentAvailableDatesWithoutAssembly = [];
                 currentAvailableDatesWithAssembly = [];
+                currentDeliveryDateStateMap = Object.create(null);
                 updateDeliveryDateDisplay();
                 return null;
             }
@@ -1222,6 +1330,7 @@ async function loadDeliveryDate(cityName) {
                     deliveryDatesFromCalendar = false;
                     currentAvailableDatesWithoutAssembly = [];
                     currentAvailableDatesWithAssembly = [];
+                    currentDeliveryDateStateMap = Object.create(null);
                     currentDeliveryDate = found.delivery_date;
                     currentDeliveryAssemblyDate = found.assembly_date || null;
                     currentDeliveryRestrictions = found.restrictions || null;
@@ -1236,6 +1345,7 @@ async function loadDeliveryDate(cityName) {
             deliveryDatesFromCalendar = false;
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
+            currentDeliveryDateStateMap = Object.create(null);
             updateDeliveryDateDisplay();
             return null;
         }
@@ -1244,6 +1354,7 @@ async function loadDeliveryDate(cityName) {
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
+        currentDeliveryDateStateMap = Object.create(null);
         currentDeliveryDate = data.delivery_date;
         currentDeliveryAssemblyDate = data.assembly_date || null;
         currentDeliveryRestrictions = data.restrictions || null;
@@ -1257,6 +1368,7 @@ async function loadDeliveryDate(cityName) {
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
+        currentDeliveryDateStateMap = Object.create(null);
         updateDeliveryDateDisplay();
         return null;
     }
@@ -5358,6 +5470,8 @@ function closeEditOrderModal() {
         currentDeliveryDate = _savedDeliveryDateState.date;
         currentDeliveryAssemblyDate = _savedDeliveryDateState.assembly;
         currentDeliveryRestrictions = _savedDeliveryDateState.restrictions;
+        deliveryDatesFromCalendar = _savedDeliveryDateState.fromCalendar || false;
+        currentDeliveryDateStateMap = _savedDeliveryDateState.stateMap || Object.create(null);
         _savedDeliveryDateState = null;
         if (typeof populateOrderDeliveryDate === 'function') populateOrderDeliveryDate();
     }
@@ -11700,11 +11814,10 @@ function handleAssemblyChange() {
     // Если все нормально - вызываем расчет стоимости
     calculateGreenhouseCost();
 
-    if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+    if (deliveryDatesFromCalendar) {
+        syncOrderCalendarSlotsWithMode();
         var cal = document.getElementById('order-calendar');
         if (cal && cal.classList.contains('open')) {
-            var withAssembly = assemblyCheckbox.checked;
-            _orderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
             if (typeof renderOrderCalendar === 'function') renderOrderCalendar();
         }
     }
@@ -13261,22 +13374,18 @@ function populateOrderDeliveryDate() {
 }
 
 function _initCalendarWithDate(dateStr) {
-    if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
-        var assemblyEl = document.getElementById('assembly');
-        var withAssembly = assemblyEl ? assemblyEl.checked : false;
-        _orderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
-    } else if (deliveryDatesFromCalendar) {
-        _orderCalSlots = [];
+    if (deliveryDatesFromCalendar) {
+        syncOrderCalendarSlotsWithMode();
     } else {
         _orderCalSlots = buildDeliverySlots(dateStr);
+        selectOrderCalDate(_orderCalSlots.length > 0 ? _orderCalSlots[0] : '');
     }
-    var iso = _orderCalSlots.length > 0 ? _orderCalSlots[0] : '';
-    selectOrderCalDate(iso);
+    var iso = deliveryDatesFromCalendar ? _orderCalSelected : (_orderCalSlots.length > 0 ? _orderCalSlots[0] : '');
     if (iso) {
         var parts = iso.split('-');
         _orderCalMonth = { year: +parts[0], month: +parts[1] - 1 };
     } else {
-        var now = new Date();
+        var now = getMoscowTodayDateObject();
         _orderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
     }
 }
@@ -13321,13 +13430,13 @@ function toggleOrderCalendar() {
             if (v && typeof deliveryDateDdMmToISO === 'function' && deliveryDateDdMmToISO(v)) baseDateStr = v;
         }
         if (!baseDateStr) {
-            var now = new Date();
+            var now = getMoscowTodayDateObject();
             baseDateStr = String(now.getDate()).padStart(2, '0') + '.' + String(now.getMonth() + 1).padStart(2, '0') + '.' + now.getFullYear();
         }
         _initCalendarWithDate(baseDateStr);
     }
     if (!_orderCalMonth) {
-        var now = new Date();
+        var now = getMoscowTodayDateObject();
         _orderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
         if (_orderCalSelected) {
             var sp = _orderCalSelected.split('-');
@@ -13357,6 +13466,8 @@ function renderOrderCalendar() {
     var grid = document.getElementById('order-cal-grid');
     var titleEl = document.getElementById('order-cal-title');
     if (!grid || !titleEl || !_orderCalMonth) return;
+    var todayISO = getTodayMoscowISO();
+    console.log('[diag b] renderOrderCalendar: fromCalendar=' + deliveryDatesFromCalendar + ' todayMoscow=' + todayISO + ' selected=' + _orderCalSelected + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
 
     var y = _orderCalMonth.year;
     var m = _orderCalMonth.month;
@@ -13366,9 +13477,10 @@ function renderOrderCalendar() {
     var firstDay = new Date(y, m, 1);
     var startDow = (firstDay.getDay() + 6) % 7; // Mon=0
     var daysInMonth = new Date(y, m + 1, 0).getDate();
-    var todayISO = formatISOLocal(new Date());
     var slotsSet = {};
     for (var i = 0; i < _orderCalSlots.length; i++) slotsSet[_orderCalSlots[i]] = true;
+    var assemblyEl = document.getElementById('assembly');
+    var withAssembly = assemblyEl ? assemblyEl.checked : false;
 
     grid.innerHTML = '';
 
@@ -13386,7 +13498,27 @@ function renderOrderCalendar() {
         btn.textContent = day;
         btn.className = 'order-cal-day';
 
-        if (slotsSet[cellISO]) {
+        if (deliveryDatesFromCalendar) {
+            var cellState = getDeliveryCalendarCellState(cellISO, withAssembly, todayISO);
+            if (cellState === 'available') {
+                btn.classList.add('available');
+                btn.setAttribute('data-date', cellISO);
+                btn.onclick = (function(iso) {
+                    return function() {
+                        selectOrderCalDate(iso);
+                        renderOrderCalendar();
+                        closeOrderCalendar();
+                    };
+                })(cellISO);
+            } else if (cellState === 'blocked') {
+                btn.style.background = '#fee2e2';
+                btn.style.color = '#b91c1c';
+                btn.style.cursor = 'not-allowed';
+                btn.disabled = true;
+            } else {
+                btn.disabled = true;
+            }
+        } else if (slotsSet[cellISO]) {
             btn.classList.add('available');
             btn.setAttribute('data-date', cellISO);
             btn.onclick = (function(iso) {
@@ -13398,7 +13530,7 @@ function renderOrderCalendar() {
             })(cellISO);
         }
         if (cellISO === _orderCalSelected) btn.classList.add('selected');
-        if (cellISO === todayISO) btn.classList.add('today');
+        if (!deliveryDatesFromCalendar && cellISO === todayISO) btn.classList.add('today');
         grid.appendChild(btn);
     }
 }
@@ -13417,11 +13549,10 @@ document.addEventListener('click', function(e) {
 });
 
 document.addEventListener('change', function(e) {
-    if (e.target && e.target.id === 'edit-order-add-assembly' && deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
+    if (e.target && e.target.id === 'edit-order-add-assembly' && deliveryDatesFromCalendar) {
+        syncEditOrderCalendarSlotsWithMode();
         var cal = document.getElementById('edit-order-calendar');
         if (cal && cal.classList.contains('open')) {
-            var withAssembly = e.target.checked;
-            _editOrderCalSlots = withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
             if (typeof renderEditOrderCalendar === 'function') renderEditOrderCalendar();
         }
     }
@@ -13435,7 +13566,7 @@ var EDIT_ORDER_CAL_DAYS_AHEAD = 90;
 
 /** Fallback: 90 дней от сегодня или от выбранной даты (если заказ старый — его дата всё равно доступна). */
 function buildEditOrderCalSlotsFallback() {
-    var base = new Date();
+    var base = getMoscowTodayDateObject();
     if (_editOrderCalSelected) {
         var p = _editOrderCalSelected.split('-');
         if (p.length === 3) {
@@ -13488,31 +13619,41 @@ function toggleEditOrderCalendar() {
             var sp = _editOrderCalSelected.split('-');
             _editOrderCalMonth = { year: +sp[0], month: +sp[1] - 1 };
         } else {
-            var now = new Date();
+            var now = getMoscowTodayDateObject();
             _editOrderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
         }
     }
     var part1 = document.getElementById('edit-order-address-part1');
-    var cityOrRegion = (part1 && part1.value) ? part1.value.trim() : '';
-    // Всегда открываем календарь сразу (fallback-слоты), чтобы по клику «Изменить дату» сразу что-то открывалось
-    _editOrderCalSlots = buildEditOrderCalSlotsFallback();
+    var part2 = document.getElementById('edit-order-address-part2');
+    var part3 = document.getElementById('edit-order-address-part3');
+    var p1 = (part1 && part1.value) ? part1.value.trim() : '';
+    var p2 = (part2 && part2.value) ? part2.value.trim() : '';
+    var p3 = (part3 && part3.value) ? part3.value.trim() : '';
+    var fullAddr = [p1, p2, p3].filter(Boolean).join(', ');
+    var cityCandidate = (typeof extractCityFromAddress === 'function' ? extractCityFromAddress(fullAddr) : '') || p1;
+    var canonicalCity = cityCandidate && typeof findCityInDropdown === 'function'
+        ? (findCityInDropdown(cityCandidate) || findCityInDropdown(p1) || cityCandidate)
+        : cityCandidate;
+    if (canonicalCity && _savedDeliveryDateState === null) {
+        _savedDeliveryDateState = {
+            date: currentDeliveryDate,
+            assembly: typeof currentDeliveryAssemblyDate !== 'undefined' ? currentDeliveryAssemblyDate : null,
+            restrictions: typeof currentDeliveryRestrictions !== 'undefined' ? currentDeliveryRestrictions : null,
+            fromCalendar: deliveryDatesFromCalendar,
+            stateMap: currentDeliveryDateStateMap
+        };
+    }
+    if (canonicalCity) {
+        deliveryDatesFromCalendar = false;
+        currentDeliveryDateStateMap = Object.create(null);
+    }
+    _editOrderCalSlots = canonicalCity ? [] : buildEditOrderCalSlotsFallback();
     renderEditOrderCalendar();
     cal.classList.add('open');
-    if (cityOrRegion && typeof loadDeliveryDate === 'function' && typeof buildDeliverySlots === 'function') {
-        if (_savedDeliveryDateState === null) {
-            _savedDeliveryDateState = {
-                date: currentDeliveryDate,
-                assembly: typeof currentDeliveryAssemblyDate !== 'undefined' ? currentDeliveryAssemblyDate : null,
-                restrictions: typeof currentDeliveryRestrictions !== 'undefined' ? currentDeliveryRestrictions : null
-            };
-        }
-        loadDeliveryDate(cityOrRegion).then(function () {
-            if (deliveryDatesFromCalendar && (currentAvailableDatesWithoutAssembly.length > 0 || currentAvailableDatesWithAssembly.length > 0)) {
-                var assemblyEditEl = document.getElementById('edit-order-add-assembly');
-                var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
-                _editOrderCalSlots = withAssemblyEdit ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
-            } else if (deliveryDatesFromCalendar) {
-                _editOrderCalSlots = [];
+    if (canonicalCity && typeof loadDeliveryDate === 'function' && typeof buildDeliverySlots === 'function') {
+        loadDeliveryDate(canonicalCity).then(function () {
+            if (deliveryDatesFromCalendar) {
+                syncEditOrderCalendarSlotsWithMode();
             } else {
                 _editOrderCalSlots = currentDeliveryDate ? buildDeliverySlots(currentDeliveryDate) : [];
                 if (!_editOrderCalSlots.length) _editOrderCalSlots = buildEditOrderCalSlotsFallback();
@@ -13544,7 +13685,10 @@ function renderEditOrderCalendar() {
     var grid = document.getElementById('edit-order-cal-grid');
     var titleEl = document.getElementById('edit-order-cal-title');
     if (!grid || !titleEl || !_editOrderCalMonth) return;
-    var slots = _editOrderCalSlots && _editOrderCalSlots.length ? _editOrderCalSlots : buildEditOrderCalSlotsFallback();
+    var todayISO = getTodayMoscowISO();
+    var editCityVal = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
+    console.log('[diag c] renderEditOrderCalendar: fromCalendar=' + deliveryDatesFromCalendar + ' todayMoscow=' + todayISO + ' selected=' + _editOrderCalSelected + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length + ' editCity=' + editCityVal);
+    var slots = _editOrderCalSlots || [];
     var slotsSet = {};
     for (var i = 0; i < slots.length; i++) slotsSet[slots[i]] = true;
     if (_editOrderCalSelected) slotsSet[_editOrderCalSelected] = true;
@@ -13557,7 +13701,8 @@ function renderEditOrderCalendar() {
     var firstDay = new Date(y, m, 1);
     var startDow = (firstDay.getDay() + 6) % 7;
     var daysInMonth = new Date(y, m + 1, 0).getDate();
-    var todayISO = formatISOLocal(new Date());
+    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
+    var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
 
     grid.innerHTML = '';
     for (var blank = 0; blank < startDow; blank++) {
@@ -13572,7 +13717,28 @@ function renderEditOrderCalendar() {
         btn.type = 'button';
         btn.textContent = day;
         btn.className = 'order-cal-day';
-        if (slotsSet[cellISO]) {
+
+        if (deliveryDatesFromCalendar) {
+            var editCellState = getDeliveryCalendarCellState(cellISO, withAssemblyEdit, todayISO);
+            if (editCellState === 'available') {
+                btn.classList.add('available');
+                btn.setAttribute('data-date', cellISO);
+                btn.onclick = (function(iso) {
+                    return function() {
+                        selectEditOrderCalDate(iso);
+                        renderEditOrderCalendar();
+                        closeEditOrderCalendar();
+                    };
+                })(cellISO);
+            } else if (editCellState === 'blocked') {
+                btn.style.background = '#fee2e2';
+                btn.style.color = '#b91c1c';
+                btn.style.cursor = 'not-allowed';
+                btn.disabled = true;
+            } else {
+                btn.disabled = true;
+            }
+        } else if (slotsSet[cellISO]) {
             btn.classList.add('available');
             btn.setAttribute('data-date', cellISO);
             btn.onclick = (function(iso) {
@@ -13584,7 +13750,7 @@ function renderEditOrderCalendar() {
             })(cellISO);
         }
         if (cellISO === _editOrderCalSelected) btn.classList.add('selected');
-        if (cellISO === todayISO) btn.classList.add('today');
+        if (!deliveryDatesFromCalendar && cellISO === todayISO) btn.classList.add('today');
         grid.appendChild(btn);
     }
 }

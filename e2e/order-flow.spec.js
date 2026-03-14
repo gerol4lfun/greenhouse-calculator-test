@@ -34,14 +34,56 @@ test.describe('order-flow', () => {
   });
 
   test('create-order-integration: полный submit заказа [staging/manual]', async ({ page }) => {
-    const phone = testPhone('001');
+    const phone = testPhone(String(Date.now() % 100));
+    const diag = { postOrders: false, response: null, requestFailed: null, consoleLogs: [], resultText: null };
+    let outcomeResolve;
+    const outcomePromise = new Promise((r) => { outcomeResolve = r; });
+    const RESOLVE_WAIT_MS = 12000;
+
+    const isOrdersPost = (req) => req.method() === 'POST' && req.url().includes('/rest/v1/orders');
+    page.on('console', (msg) => { diag.consoleLogs.push({ type: msg.type(), text: msg.text() }); });
+    page.on('requestfailed', (request) => {
+      if (!diag.requestFailed && isOrdersPost(request)) {
+        diag.postOrders = true;
+        diag.requestFailed = { url: request.url(), method: request.method(), error: request.failure()?.errorText || String(request.failure()) };
+        outcomeResolve();
+      }
+    });
+    page.on('response', (response) => {
+      const req = response.request();
+      if (!diag.response && isOrdersPost(req)) {
+        diag.postOrders = true;
+        diag.response = { url: req.url(), method: req.method(), status: response.status() };
+        outcomeResolve();
+      }
+    });
+
     await page.goto('/');
     await expandOrderFormAndWaitCity(page);
     await calculateGreenhouse(page);
     await page.locator('#order-add-to-cart-btn').click();
     await page.waitForSelector('#order-cart-block', { state: 'visible', timeout: 5000 });
     await fillAndSubmitOrderForm(page, { phone });
-    await waitOrderSuccess(page);
+
+    await Promise.race([
+      outcomePromise,
+      new Promise((r) => setTimeout(() => r(), RESOLVE_WAIT_MS)),
+    ]);
+    diag.resultText = (await page.locator('#order-result').textContent()) || '';
+
+    if (diag.response && diag.response.status >= 200 && diag.response.status < 300 && /готово|оформлен|ура/i.test(diag.resultText)) {
+      expect(diag.resultText).toMatch(/готово|оформлен|ура/i);
+      return;
+    }
+    const msg = [
+      'DIAG create-order-integration:',
+      'POST /orders: ' + (diag.postOrders ? 'yes' : 'no'),
+      'response: ' + (diag.response ? `${diag.response.status} ${diag.response.url}` : 'none'),
+      'requestFailed: ' + (diag.requestFailed ? diag.requestFailed.error : 'no'),
+      'console: ' + JSON.stringify(diag.consoleLogs.slice(-20)),
+      '#order-result: ' + (diag.resultText || '').slice(0, 200),
+    ].join('\n');
+    throw new Error(msg);
   });
 
   test('create-order-paid-extras: заказ с платными допами', async ({ page }) => {
@@ -204,5 +246,41 @@ test.describe('order-flow', () => {
     await page.locator('#edit-order-modal-body[data-step="2"]').waitFor({ state: 'visible', timeout: 5000 });
     const composition = await page.locator('#edit-order-composition-list').textContent();
     expect(composition).toBeTruthy();
+  });
+
+  test('gifts-save-reopen: подарок сохраняется и восстанавливается при reopen', async ({ page }) => {
+    const phone = testPhone(String(Date.now() % 100));
+    await page.goto('/');
+    await expandOrderFormAndWaitCity(page);
+    await setPaidExtras(page, 2, 2);
+    await calculateGreenhouse(page);
+    await page.locator('#order-add-to-cart-btn').click();
+    await page.waitForSelector('#order-cart-block', { state: 'visible', timeout: 5000 });
+    await fillAndSubmitOrderForm(page, { phone });
+    await page.locator('#order-result').waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForFunction(
+      () => {
+        const el = document.getElementById('order-result');
+        if (!el) return false;
+        const t = (el.textContent || '').trim();
+        return /готово|оформлен|ура/i.test(t) || /Ошибка|не удалось|duplicate/i.test(t);
+      },
+      { timeout: 15000 }
+    );
+    const resultText = await page.locator('#order-result').textContent();
+    if (!/готово|оформлен|ура/i.test(resultText || '')) {
+      throw new Error('Ожидался успех заказа, получено: ' + (resultText || '').slice(0, 150));
+    }
+
+    const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
+    const giftSelect = page.locator('.edit-order-gift-select').first();
+    await giftSelect.waitFor({ state: 'visible', timeout: 25000 });
+    await giftSelect.selectOption('drip-mech');
+    await saveEditOrder(page);
+
+    await openEditOrderById(page, orderId);
+    await expect(page.locator('.edit-order-gift-select').first()).toHaveValue('drip-mech');
+    const giftInputVal = await page.locator('#edit-order-gift').inputValue();
+    expect(giftInputVal).toMatch(/капельн|полив/i);
   });
 });
