@@ -1667,6 +1667,8 @@ select option {
   padding: 20px !important;
   box-sizing: border-box !important;
   margin: 0 !important;
+  overflow: hidden !important;
+  overscroll-behavior: contain;
 }
 
 .delivery-dates-modal.hidden {
@@ -1676,9 +1678,9 @@ select option {
 .delivery-dates-modal-content {
   background: #fff;
   border-radius: 12px;
-  width: 100%;
-  max-width: 900px;
-  max-height: 90vh;
+  width: auto;
+  max-width: min(95vw, 900px);
+  max-height: min(90vh, 90dvh);
   display: flex;
   flex-direction: column;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
@@ -1754,72 +1756,213 @@ select option {
 
 .delivery-dates-modal-body {
   padding: 24px;
-  overflow-y: auto;
-  flex: 1;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #fafbfc;
 }
 
-#delivery-dates-table-container {
-  border: 2px solid #e1e8ed;
-  border-radius: 8px;
+.delivery-dates-split {
+  position: relative;
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
-.delivery-dates-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.delivery-dates-table thead {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  position: sticky;
+.delivery-dates-left {
+  position: absolute;
   top: 0;
-  z-index: 10;
+  bottom: 0;
+  left: 0;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
 }
 
-.delivery-dates-table th {
-  padding: 16px;
-  text-align: left;
-  font-weight: 600;
-  border-bottom: 2px solid #e1e8ed;
-  color: #2c3e50;
-  font-size: 15px;
+.delivery-dates-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
 }
 
-.delivery-dates-table td {
-  padding: 14px 16px;
+.delivery-dates-city-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.delivery-dates-city-item {
+  padding: 10px 12px;
   border-bottom: 1px solid #f0f4f8;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
 }
 
-.delivery-dates-table tbody tr {
-  transition: background-color 0.2s ease;
+.delivery-dates-city-item:hover {
+  background: #f8f9fa;
 }
 
-.delivery-dates-table tbody tr:hover {
-  background-color: #f8f9fa;
+.delivery-dates-city-item.selected {
+  background: #e8f4fd;
+  border-left: 3px solid #4a90e2;
 }
 
-.delivery-dates-table tbody tr:last-child td {
+.delivery-dates-city-item:last-child {
   border-bottom: none;
 }
 
-.city-name {
+.delivery-dates-city-name {
   font-weight: 600;
-  color: #4a90e2;
+  color: #2c3e50;
 }
 
-.delivery-date {
-  color: #27ae60;
-  font-weight: 600;
+.delivery-dates-city-dates {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
 }
 
-.delivery-restrictions {
-  color: #e74c3c;
+.delivery-dates-right {
+  margin-left: 304px;
+  display: flex;
+  flex-direction: column;
+}
+
+.delivery-dates-cal-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 15px;
+}
+
+.delivery-dates-cal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.delivery-dates-cal-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.delivery-dates-cal-city {
+  font-weight: 500;
+  font-size: 14px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.delivery-dates-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delivery-dates-cal-nav .order-cal-title {
+  flex: 1;
+  text-align: center;
+  font-size: 14px;
+}
+
+.delivery-dates-cal-panel .order-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.delivery-dates-cal-panel .order-cal-day {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
-  font-style: italic;
+  border-radius: 4px;
+}
+
+.delivery-dates-cal-panel .order-cal-day.past {
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: default;
+}
+
+.delivery-dates-cal-panel .order-cal-day.available {
+  background: #dcfce7;
+  color: #166534;
+  cursor: default;
+}
+
+.delivery-dates-cal-panel .order-cal-day.blocked {
+  background: #fee2e2;
+  color: #b91c1c;
+  cursor: default;
+}
+
+.delivery-dates-cal-panel .order-cal-day.only-delivery {
+  background: #fef3c7;
+  color: #b45309;
+  cursor: default;
+}
+
+.delivery-dates-cal-panel .order-cal-day.other-month {
+  background: transparent;
+  color: #e2e8f0;
+}
+
+.delivery-dates-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.delivery-dates-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.delivery-dates-legend .legend-available::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: #dcfce7;
+  border-radius: 2px;
+}
+
+.delivery-dates-legend .legend-only-delivery::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: #fef3c7;
+  border-radius: 2px;
+}
+
+.delivery-dates-legend .legend-blocked::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: #fee2e2;
+  border-radius: 2px;
 }
 
 .no-data {

@@ -1230,7 +1230,6 @@ async function loadDeliveryDate(cityName) {
 
         if (!calRes.error && calRes.data && calRes.data.length > 0) {
             applyDeliveryCalendarRows(calRes.data, todayMoscow);
-            console.log('[diag a] delivery_calendar load: cityName=' + cityName + ' rows=' + calRes.data.length + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
             return currentDeliveryDate;
         }
 
@@ -1256,7 +1255,6 @@ async function loadDeliveryDate(cityName) {
                     });
                     if (matchedRows.length > 0) {
                         applyDeliveryCalendarRows(matchedRows, todayMoscow);
-                        console.log('[diag a] delivery_calendar load: cityName=' + cityName + ' rows=' + matchedRows.length + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
                         return currentDeliveryDate;
                     }
                 }
@@ -5036,89 +5034,62 @@ SELECT update_user_password('${(wantLoginChange ? newLogin : currentLogin).repla
 
 // ==================== МОДАЛЬНОЕ ОКНО С ДАТАМИ ДОСТАВКИ ====================
 
-// Функция открытия модального окна с датами доставки
+var _deliveryModalCitySummary = [];
+var _deliveryModalFilteredSummary = [];
+var _deliveryModalSelectedCity = null;
+var _deliveryModalCalMonth = null;
+var _deliveryModalStateMapCache = {};
+var _deliveryModalCurrentStateMap = {};
+
 async function showDeliveryDatesModal() {
-    
-    const modal = document.getElementById('delivery-dates-modal');
-    const loadingDiv = document.getElementById('delivery-dates-loading');
-    const contentDiv = document.getElementById('delivery-dates-content');
-    
+    var modal = document.getElementById('delivery-dates-modal');
+    var loadingDiv = document.getElementById('delivery-dates-loading');
+    var contentDiv = document.getElementById('delivery-dates-content');
     if (!modal) {
-        console.error("❌ Модальное окно не найдено!");
+        console.error("Модальное окно не найдено!");
         alert("Ошибка: модальное окно не найдено. Обновите страницу.");
         return;
     }
-    
     try {
-        // Убираем класс hidden и принудительно показываем модальное окно
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
         modal.style.visibility = 'visible';
         modal.style.opacity = '1';
-        
-        // Показываем загрузку
         if (loadingDiv) {
             loadingDiv.style.display = 'block';
             loadingDiv.innerHTML = 'Загрузка данных...';
         }
-        
-        // Скрываем контент
-        if (contentDiv) {
-            contentDiv.style.display = 'none';
-        }
-        
-        // Загружаем все даты доставки (принудительно обновляем при каждом открытии)
-        // Всегда загружаем свежие данные из базы
-        await loadAllDeliveryDates(true);
-        
-        // Скрываем загрузку и показываем контент
-        if (loadingDiv) {
-            loadingDiv.style.display = 'none';
-        }
-        if (contentDiv) {
-            contentDiv.style.display = 'block';
-        }
+        if (contentDiv) contentDiv.style.display = 'none';
+        await loadDeliveryDatesModalData();
+        if (loadingDiv) loadingDiv.style.display = 'none';
+        if (contentDiv) contentDiv.style.display = 'flex';
     } catch (err) {
-        console.error("❌ Ошибка при открытии модального окна:", err);
+        console.error("Ошибка при открытии модального окна:", err);
         if (loadingDiv) {
-            loadingDiv.innerHTML = '<div class="no-data" style="color: red; padding: 20px;">Ошибка загрузки данных. Проверьте подключение к интернету.<br><br>' + err.message + '</div>';
+            loadingDiv.innerHTML = '<div class="no-data" style="color: red; padding: 20px;">Ошибка загрузки. ' + (err.message || '') + '</div>';
         }
     }
 }
 
-// Функция обновления дат доставки
 async function refreshDeliveryDates() {
-    const loadingDiv = document.getElementById('delivery-dates-loading');
-    const contentDiv = document.getElementById('delivery-dates-content');
-    const container = document.getElementById('delivery-dates-table-container');
-    
+    var loadingDiv = document.getElementById('delivery-dates-loading');
+    var contentDiv = document.getElementById('delivery-dates-content');
     if (loadingDiv) {
         loadingDiv.style.display = 'block';
-        loadingDiv.innerHTML = '🔄 Обновление данных...';
+        loadingDiv.innerHTML = 'Обновление данных...';
     }
-    
-    if (contentDiv) {
-        contentDiv.style.display = 'none';
-    }
-    
+    if (contentDiv) contentDiv.style.display = 'none';
     try {
-        // Принудительно обновляем данные
-        await loadAllDeliveryDates(true);
-        
-        if (loadingDiv) {
-            loadingDiv.style.display = 'none';
-        }
-        if (contentDiv) {
-            contentDiv.style.display = 'block';
-        }
-        
-        showSuccess('Данные успешно обновлены', 'Обновление завершено');
+        await loadDeliveryDatesModalData();
+        if (loadingDiv) loadingDiv.style.display = 'none';
+        if (contentDiv) contentDiv.style.display = 'flex';
+        if (typeof showSuccess === 'function') showSuccess('Данные обновлены', '');
     } catch (err) {
-        console.error("❌ Ошибка при обновлении данных:", err);
-        if (loadingDiv) {
-            loadingDiv.innerHTML = '<div class="no-data" style="color: red; padding: 20px;">Ошибка обновления данных.<br><br>' + err.message + '</div>';
-        }
-        showError('Не удалось обновить данные', 'Ошибка обновления');
+        console.error("Ошибка обновления:", err);
+        if (loadingDiv) loadingDiv.innerHTML = '<div class="no-data" style="color: red; padding: 20px;">' + (err.message || '') + '</div>';
+        if (typeof showError === 'function') showError('Не удалось обновить', '');
     }
 }
 
@@ -5130,228 +5101,287 @@ window.updateDeliveryResultDate = updateDeliveryResultDate;
 
 // Функция закрытия модального окна
 function closeDeliveryDatesModal() {
-    const modal = document.getElementById('delivery-dates-modal');
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    var modal = document.getElementById('delivery-dates-modal');
     if (modal) {
         modal.classList.add('hidden');
         modal.style.display = 'none';
     }
 }
 
-// Функция загрузки всех дат доставки из Supabase
-async function loadAllDeliveryDates(forceRefresh = false) {
-    const container = document.getElementById('delivery-dates-table-container');
-    if (!container) {
-        console.error("Контейнер для таблицы не найден!");
-        return;
+function buildStateMapFromRows(rows, todayMoscow) {
+    var stateMap = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var iso = normalizeDeliveryCalendarISO(r.delivery_date);
+        if (!iso) continue;
+        stateMap[iso] = {
+            withoutAssembly: !!r.available_without_assembly,
+            withAssembly: !!r.available_with_assembly,
+            rawStatus: r.raw_status || null
+        };
     }
-
-    try {
-        // Принудительно обновляем данные
-        // Загружаем поля включая restrictions для отображения ограничений
-        // Если колонка restrictions не существует, загружаем без неё
-        // Supabase всегда возвращает актуальные данные из базы при каждом запросе
-        if (DEBUG) console.log('🔄 Загрузка дат доставки из Supabase (forceRefresh:', forceRefresh, ')');
-        
-        let query = supabaseClient
-            .from('delivery_dates')
-            .select('city_name, delivery_date, assembly_date, restrictions')
-            .order('city_name');
-        
-        // Выполняем запрос - Supabase всегда возвращает актуальные данные из базы
-        let { data, error } = await query;
-        
-        if (DEBUG) console.log('📊 Получено записей:', data ? data.length : 0, 'Ошибка:', error);
-        
-        if (error && error.code === '42703') {
-            if (DEBUG) console.warn('⚠️ Колонка assembly_date или restrictions не найдена. Выполните миграцию: db/migrations/20260213_add_assembly_date_to_delivery_dates.sql');
-            const { data: fallbackData, error: fallbackError } = await supabaseClient
-                .from('delivery_dates')
-                .select('city_name, delivery_date')
-                .order('city_name');
-            if (!fallbackError && fallbackData) {
-                data = fallbackData.map(item => ({ ...item, assembly_date: null, restrictions: null }));
-                error = null;
-            }
-        }
-
-        // Добавляем пустое поле restrictions для совместимости с кодом отрисовки
-        let dataWithRestrictions = null;
-        if (data && !error) {
-            // Нормализуем названия городов и убираем дубликаты
-            const normalizedMap = new Map();
-            
-            // Маппинг для стандартизации названий (приводим к правильному регистру)
-            const standardCityNames = {
-                'санкт-петербург': 'Санкт-Петербург',
-                'москва': 'Москва',
-                'нижний новгород': 'Нижний Новгород',
-                'набережные челны': 'Набережные Челны',
-                'великий новгород': 'Великий Новгород',
-                'йошкар-ола': 'Йошкар-Ола',
-                'орёл': 'Орёл'
-            };
-            
-            // Фильтруем дубликаты "Город доставки" — показываем только каноническую запись
-            const canonicalData = data.filter(item => !/ доставки$/i.test(item.city_name));
-            
-            canonicalData.forEach(item => {
-                const cleanedCity = cleanDeliveryCityName(item.city_name);
-                const normalizedKey = normalizeCityName(cleanedCity);
-                
-                const standardName = standardCityNames[normalizedKey] || 
-                                    (cleanedCity.charAt(0).toUpperCase() + cleanedCity.slice(1).toLowerCase());
-                
-                let restrictionsValue = null;
-                if (item.restrictions !== null && item.restrictions !== undefined) {
-                    const trimmed = String(item.restrictions).trim();
-                    if (trimmed !== '') restrictionsValue = trimmed;
-                }
-                
-                normalizedMap.set(normalizedKey, {
-                    ...item,
-                    city_name: standardName,
-                    restrictions: restrictionsValue,
-                    assembly_date: (item.assembly_date && String(item.assembly_date).trim()) || null
-                });
-            });
-            
-            dataWithRestrictions = Array.from(normalizedMap.values());
-            
-            // Сортируем: Москва первая, Санкт-Петербург второй, остальные по алфавиту
-            dataWithRestrictions.sort((a, b) => {
-                const cityA = (a.city_name || '').toLowerCase().trim();
-                const cityB = (b.city_name || '').toLowerCase().trim();
-                
-                // Москва всегда первая
-                if (cityA === 'москва') return -1;
-                if (cityB === 'москва') return 1;
-                
-                // Санкт-Петербург всегда второй
-                if (cityA === 'санкт-петербург') return -1;
-                if (cityB === 'санкт-петербург') return 1;
-                
-                // Остальные по алфавиту
-                return cityA.localeCompare(cityB, 'ru');
-            });
-        }
-
-        if (error) {
-            console.error("❌ Ошибка при загрузке дат доставки:", error);
-            if (DEBUG) console.error("Детали ошибки:", JSON.stringify(error, null, 2));
-            container.innerHTML = 
-                '<div class="no-data" style="color: red; padding: 20px;">Ошибка загрузки данных из базы. Проверьте подключение к Supabase.<br><br>Детали: ' + (error.message || 'Неизвестная ошибка') + '<br>Код ошибки: ' + (error.code || 'N/A') + '</div>';
-            return;
-        }
-
-        if (!dataWithRestrictions || dataWithRestrictions.length === 0) {
-            if (DEBUG) console.warn("⚠️ Данные о датах доставки отсутствуют или пусты. Загружено записей:", data ? data.length : 0);
-            container.innerHTML = 
-                '<div class="no-data">Данные о датах доставки отсутствуют в базе данных.</div>';
-            return;
-        }
-        
-        if (DEBUG) console.log("✅ Успешно загружено дат доставки:", dataWithRestrictions.length);
-
-        // Формируем таблицу
-        renderDeliveryDatesTable(dataWithRestrictions);
-        
-        // Добавляем обработчик поиска
-        setupDeliveryDatesSearch(dataWithRestrictions);
-        
-    } catch (err) {
-        console.error("Ошибка при загрузке дат доставки:", err);
-        if (container) {
-            container.innerHTML = 
-                '<div class="no-data" style="color: red; padding: 20px;">Критическая ошибка: ' + (err.message || 'Неизвестная ошибка') + '</div>';
-        }
-    }
+    return stateMap;
 }
 
-// Функция отрисовки таблицы с датами доставки
-function renderDeliveryDatesTable(data) {
-    const container = document.getElementById('delivery-dates-table-container');
-    
-    if (!data || data.length === 0) {
-        container.innerHTML = '<div class="no-data">Нет данных для отображения.</div>';
-        return;
+function getNearestFromStateMap(stateMap, todayISO, withAssembly) {
+    var p = todayISO.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    for (var i = 0; i < 400; i++) {
+        d.setDate(d.getDate() + 1);
+        var iso = formatISOLocal(d);
+        if (iso <= todayISO) continue;
+        var meta = stateMap[iso];
+        if (!meta) return iso;
+        var ok = withAssembly ? meta.withAssembly : meta.withoutAssembly;
+        if (ok) return iso;
     }
+    return null;
+}
 
-    const currentYear = new Date().getFullYear();
-    let html = '<table class="delivery-dates-table">';
-    html += '<thead><tr>';
-    html += '<th style="width: 35%;">Город</th>';
-    html += '<th style="width: 35%;">Даты</th>';
-    html += '<th style="width: 30%;">Ограничения</th>';
-    html += '</tr></thead>';
-    html += '<tbody>';
-    
-    const fmtDate = (dm) => {
-        if (!dm) return '';
-        const s = String(dm).trim();
-        if (/\d{4}$/.test(s)) return s;
-        return `${s}.${currentYear}`;
+function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
+    if (cellISO <= todayISO) return 'past';
+    var meta = stateMap[cellISO];
+    if (!meta) return 'available';
+    if (meta.withoutAssembly && meta.withAssembly) return 'available';
+    if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
+    return 'blocked';
+}
+
+async function loadDeliveryDatesModalData() {
+    var listEl = document.getElementById('delivery-dates-city-list');
+    if (!listEl) return;
+    var standardCityNames = {
+        'санкт-петербург': 'Санкт-Петербург', 'москва': 'Москва', 'нижний новгород': 'Нижний Новгород',
+        'набережные челны': 'Набережные Челны', 'великий новгород': 'Великий Новгород',
+        'йошкар-ола': 'Йошкар-Ола', 'орёл': 'Орёл'
     };
-    
-    data.forEach(item => {
-        let datesText = 'Не указано';
-        if (item.delivery_date) {
-            const d = String(item.delivery_date).trim();
-            const a = (item.assembly_date && String(item.assembly_date).trim()) || d;
-            const hasDifferentAssembly = a && d && a !== d;
-            if (hasDifferentAssembly) {
-                datesText = `доставки с ${fmtDate(d)}, сборки с ${fmtDate(a)}`;
-            } else {
-                datesText = fmtDate(d);
-            }
+    var todayISO = getTodayMoscowISO();
+    var dd = new Date(+todayISO.split('-')[0], +todayISO.split('-')[1] - 1, +todayISO.split('-')[2]);
+    var endD = new Date(dd.getTime() + 95 * 86400000);
+    var endStr = endD.getFullYear() + '-' + String(endD.getMonth() + 1).padStart(2, '0') + '-' + String(endD.getDate()).padStart(2, '0');
+    var datesQ = supabaseClient.from('delivery_dates').select('city_name, delivery_date, assembly_date, restrictions').order('city_name');
+    var calQ = supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date');
+    var res = await Promise.all([datesQ, calQ]);
+    var data = res[0].data;
+    var error = res[0].error;
+    var calData = res[1].data || [];
+    if (error && error.code === '42703') {
+        var fb = await supabaseClient.from('delivery_dates').select('city_name, delivery_date').order('city_name');
+        if (!fb.error && fb.data) {
+            data = fb.data.map(function (i) { return { city_name: i.city_name, delivery_date: i.delivery_date, assembly_date: null, restrictions: null }; });
+            error = null;
         }
-        
-        let restrictionsText = '';
-        if (item.restrictions && item.restrictions.trim()) {
-            const restrictions = item.restrictions
-                .replace(/[()]+/g, '')
-                .split(',')
-                .map(r => r.trim().replace(/[()]/g, '')).filter(r => r);
-            if (restrictions.length > 0) {
-                restrictionsText = `кроме ${restrictions.join(', ')}`;
-            }
-        }
-        
-        html += '<tr>';
-        html += `<td class="city-name">${item.city_name}</td>`;
-        html += `<td class="delivery-date">${datesText}</td>`;
-        html += `<td class="delivery-restrictions">${restrictionsText || '—'}</td>`;
-        html += '</tr>';
+    }
+    if (error || !data || data.length === 0) {
+        listEl.innerHTML = '<div class="no-data">Нет данных о городах.</div>';
+        return;
+    }
+    var canonical = data.filter(function (i) { return !/ доставки$/i.test(i.city_name); });
+    var normalizedMap = {};
+    var deliveryDatesByCity = {};
+    for (var i = 0; i < canonical.length; i++) {
+        var item = canonical[i];
+        var cleaned = cleanDeliveryCityName(item.city_name);
+        var key = normalizeCityName(cleaned);
+        if (normalizedMap[key]) continue;
+        var name = standardCityNames[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase());
+        normalizedMap[key] = { city_name: name };
+        deliveryDatesByCity[name] = { delivery_date: item.delivery_date, assembly_date: item.assembly_date };
+    }
+    var cityList = Object.keys(normalizedMap).map(function (k) { return normalizedMap[k].city_name; });
+    cityList.sort(function (a, b) {
+        var ca = (a || '').toLowerCase().trim();
+        var cb = (b || '').toLowerCase().trim();
+        if (ca === 'москва') return -1;
+        if (cb === 'москва') return 1;
+        if (ca === 'санкт-петербург') return -1;
+        if (cb === 'санкт-петербург') return 1;
+        return ca.localeCompare(cb, 'ru');
     });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
+    var calByCity = {};
+    for (var c = 0; c < calData.length; c++) {
+        var row = calData[c];
+        var cn = cleanDeliveryCityName(row.city_name);
+        var nn = normalizeCityName(cn);
+        if (!calByCity[nn]) calByCity[nn] = [];
+        calByCity[nn].push(row);
+    }
+    _deliveryModalCitySummary = [];
+    _deliveryModalStateMapCache = {};
+    var fmt = function (iso) {
+        if (!iso) return '—';
+        return typeof isoDateToDdMm === 'function' ? isoDateToDdMm(iso) : iso;
+    };
+    for (var j = 0; j < cityList.length; j++) {
+        var city = cityList[j];
+        var nw = null;
+        var naw = null;
+        var stateMap = null;
+        var calRows = calByCity[normalizeCityName(city)];
+        if (calRows && calRows.length > 0) {
+            stateMap = buildStateMapFromRows(calRows, todayISO);
+            nw = getNearestFromStateMap(stateMap, todayISO, false);
+            naw = getNearestFromStateMap(stateMap, todayISO, true);
+            _deliveryModalStateMapCache[city] = stateMap;
+        } else {
+            var fd = deliveryDatesByCity[city];
+            if (fd && fd.delivery_date) {
+                var isoD = typeof deliveryDateDdMmToISO === 'function' ? deliveryDateDdMmToISO(fd.delivery_date) : null;
+                nw = isoD;
+                naw = fd.assembly_date && typeof deliveryDateDdMmToISO === 'function' ? deliveryDateDdMmToISO(fd.assembly_date) : isoD;
+            }
+        }
+        _deliveryModalCitySummary.push({
+            city: city,
+            nearestWithout: fmt(nw),
+            nearestWith: fmt(naw || nw),
+            hasCalendar: !!stateMap
+        });
+    }
+    _deliveryModalFilteredSummary = _deliveryModalCitySummary.slice();
+    renderDeliveryDatesCityList(_deliveryModalFilteredSummary);
+    setupDeliveryDatesModalSearch();
+    var defaultCity = cityList.indexOf('Москва') >= 0 ? 'Москва' : (cityList[0] || null);
+    _deliveryModalSelectedCity = defaultCity;
+    var now = getMoscowTodayDateObject();
+    _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+    if (defaultCity && _deliveryModalStateMapCache[defaultCity]) {
+        var placeholder = document.getElementById('delivery-dates-cal-placeholder');
+        var panel = document.getElementById('delivery-dates-cal-panel');
+        var cityEl = document.getElementById('delivery-dates-cal-city');
+        if (placeholder) placeholder.style.display = 'none';
+        if (panel) panel.style.display = 'flex';
+        if (cityEl) cityEl.textContent = defaultCity;
+        _deliveryModalCurrentStateMap = _deliveryModalStateMapCache[defaultCity];
+        renderDeliveryModalCalendar();
+    } else if (defaultCity) {
+        loadDeliveryDate(defaultCity).then(function () {
+            _deliveryModalCurrentStateMap = currentDeliveryDateStateMap;
+            var placeholder = document.getElementById('delivery-dates-cal-placeholder');
+            var panel = document.getElementById('delivery-dates-cal-panel');
+            var cityEl = document.getElementById('delivery-dates-cal-city');
+            if (placeholder) placeholder.style.display = 'none';
+            if (panel) panel.style.display = 'flex';
+            if (cityEl) cityEl.textContent = defaultCity;
+            renderDeliveryModalCalendar();
+        });
+    } else {
+        var placeholder = document.getElementById('delivery-dates-cal-placeholder');
+        var panel = document.getElementById('delivery-dates-cal-panel');
+        if (placeholder) placeholder.style.display = 'flex';
+        if (panel) panel.style.display = 'none';
+    }
 }
 
-// Функция настройки поиска по городам
-function setupDeliveryDatesSearch(allData) {
-    const searchInput = document.getElementById('delivery-dates-search');
-    if (!searchInput) return;
-    
-    // Очищаем предыдущий обработчик
-    const newSearchInput = searchInput.cloneNode(true);
-    searchInput.parentNode.replaceChild(newSearchInput, searchInput);
-    
-    newSearchInput.addEventListener('input', (e) => {
-        const searchTerm = e.target.value.trim().toLowerCase();
-        
-        if (!searchTerm) {
-            renderDeliveryDatesTable(allData);
-            return;
-        }
-        
-        const filtered = allData.filter(item => {
-            const cityName = normalizeCityName(item.city_name);
-            const searchNormalized = normalizeCityName(searchTerm);
-            return cityName.includes(searchNormalized) || searchNormalized.includes(cityName);
+function renderDeliveryDatesCityList(summary) {
+    var listEl = document.getElementById('delivery-dates-city-list');
+    if (!listEl) return;
+    if (!summary || summary.length === 0) {
+        listEl.innerHTML = '<div class="no-data">Нет данных.</div>';
+        return;
+    }
+    var html = '';
+    for (var i = 0; i < summary.length; i++) {
+        var s = summary[i];
+        var sel = s.city === _deliveryModalSelectedCity ? ' selected' : '';
+        var cityEsc = (s.city || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        html += '<div class="delivery-dates-city-item' + sel + '" data-city="' + cityEsc + '">';
+        html += '<div class="delivery-dates-city-name">' + (s.city || '') + '</div>';
+        html += '<div class="delivery-dates-city-dates">без сборки: ' + (s.nearestWithout || '—') + ' · со сборкой: ' + (s.nearestWith || '—') + '</div>';
+        html += '</div>';
+    }
+    listEl.innerHTML = html;
+}
+
+function setupDeliveryDatesModalSearch() {
+    var input = document.getElementById('delivery-dates-search');
+    if (!input) return;
+    var clone = input.cloneNode(true);
+    input.parentNode.replaceChild(clone, input);
+    clone.addEventListener('input', function () {
+        var term = (clone.value || '').trim().toLowerCase();
+        _deliveryModalFilteredSummary = !term ? _deliveryModalCitySummary.slice() : _deliveryModalCitySummary.filter(function (s) {
+            return normalizeCityName(s.city).indexOf(normalizeCityName(term)) !== -1;
         });
-        
-        renderDeliveryDatesTable(filtered);
+        renderDeliveryDatesCityList(_deliveryModalFilteredSummary);
     });
+}
+
+function deliveryModalSelectCity(city) {
+    if (!city) return;
+    _deliveryModalSelectedCity = city;
+    var cached = _deliveryModalStateMapCache[city];
+    if (cached) {
+        _deliveryModalCurrentStateMap = cached;
+        var now = getMoscowTodayDateObject();
+        if (!_deliveryModalCalMonth) _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+        var placeholder = document.getElementById('delivery-dates-cal-placeholder');
+        var panel = document.getElementById('delivery-dates-cal-panel');
+        var cityEl = document.getElementById('delivery-dates-cal-city');
+        if (placeholder) placeholder.style.display = 'none';
+        if (panel) panel.style.display = 'flex';
+        if (cityEl) cityEl.textContent = city;
+        renderDeliveryModalCalendar();
+        renderDeliveryDatesCityList(_deliveryModalFilteredSummary);
+        return;
+    }
+    loadDeliveryDate(city).then(function () {
+        _deliveryModalCurrentStateMap = currentDeliveryDateStateMap || {};
+        var now = getMoscowTodayDateObject();
+        _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+        var placeholder = document.getElementById('delivery-dates-cal-placeholder');
+        var panel = document.getElementById('delivery-dates-cal-panel');
+        var cityEl = document.getElementById('delivery-dates-cal-city');
+        if (placeholder) placeholder.style.display = 'none';
+        if (panel) panel.style.display = 'flex';
+        if (cityEl) cityEl.textContent = city;
+        renderDeliveryModalCalendar();
+        renderDeliveryDatesCityList(_deliveryModalFilteredSummary);
+    });
+}
+
+function deliveryModalCalNav(dir) {
+    if (!_deliveryModalCalMonth) return;
+    _deliveryModalCalMonth.month += dir;
+    if (_deliveryModalCalMonth.month > 11) { _deliveryModalCalMonth.month = 0; _deliveryModalCalMonth.year++; }
+    if (_deliveryModalCalMonth.month < 0) { _deliveryModalCalMonth.month = 11; _deliveryModalCalMonth.year--; }
+    renderDeliveryModalCalendar();
+}
+
+function renderDeliveryModalCalendar() {
+    var grid = document.getElementById('delivery-dates-cal-grid');
+    var titleEl = document.getElementById('delivery-dates-cal-title');
+    if (!grid || !titleEl || !_deliveryModalCalMonth) return;
+    var todayISO = getTodayMoscowISO();
+    var y = _deliveryModalCalMonth.year;
+    var m = _deliveryModalCalMonth.month;
+    var monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    titleEl.textContent = monthNames[m] + ' ' + y;
+    var firstDay = new Date(y, m, 1);
+    var startDow = (firstDay.getDay() + 6) % 7;
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    grid.innerHTML = '';
+    for (var blank = 0; blank < startDow; blank++) {
+        var empty = document.createElement('span');
+        empty.className = 'order-cal-day other-month';
+        grid.appendChild(empty);
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+        var cellDate = new Date(y, m, day);
+        var cellISO = formatISOLocal(cellDate);
+        var btn = document.createElement('span');
+        btn.className = 'order-cal-day';
+        btn.textContent = day;
+        var stateMap = _deliveryModalCurrentStateMap || {};
+        var state = getDeliveryModalCellState(cellISO, todayISO, stateMap);
+        if (state === 'past') btn.classList.add('past');
+        else if (state === 'available') btn.classList.add('available');
+        else if (state === 'only-delivery') btn.classList.add('only-delivery');
+        else btn.classList.add('blocked');
+        grid.appendChild(btn);
+    }
 }
 
 // Убеждаемся, что функции доступны глобально для onclick
@@ -5367,10 +5397,17 @@ if (document.readyState === 'loading') {
 }
 
 function initDeliveryDatesModal() {
-    document.addEventListener('click', (event) => {
-        const modal = document.getElementById('delivery-dates-modal');
+    var listEl = document.getElementById('delivery-dates-city-list');
+    if (listEl) {
+        listEl.addEventListener('click', function (e) {
+            var item = e.target && e.target.closest ? e.target.closest('.delivery-dates-city-item') : null;
+            if (item) deliveryModalSelectCity(item.getAttribute('data-city') || '');
+        });
+    }
+    document.addEventListener('click', function (event) {
+        var modal = document.getElementById('delivery-dates-modal');
         if (modal && !modal.classList.contains('hidden')) {
-            const modalContent = modal.querySelector('.delivery-dates-modal-content');
+            var modalContent = modal.querySelector('.delivery-dates-modal-content');
             if (modalContent && !modalContent.contains(event.target) && event.target === modal) {
                 closeDeliveryDatesModal();
             }
@@ -13467,7 +13504,6 @@ function renderOrderCalendar() {
     var titleEl = document.getElementById('order-cal-title');
     if (!grid || !titleEl || !_orderCalMonth) return;
     var todayISO = getTodayMoscowISO();
-    console.log('[diag b] renderOrderCalendar: fromCalendar=' + deliveryDatesFromCalendar + ' todayMoscow=' + todayISO + ' selected=' + _orderCalSelected + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length);
 
     var y = _orderCalMonth.year;
     var m = _orderCalMonth.month;
@@ -13687,7 +13723,6 @@ function renderEditOrderCalendar() {
     if (!grid || !titleEl || !_editOrderCalMonth) return;
     var todayISO = getTodayMoscowISO();
     var editCityVal = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
-    console.log('[diag c] renderEditOrderCalendar: fromCalendar=' + deliveryDatesFromCalendar + ' todayMoscow=' + todayISO + ' selected=' + _editOrderCalSelected + ' stateMapKeys=' + Object.keys(currentDeliveryDateStateMap).length + ' editCity=' + editCityVal);
     var slots = _editOrderCalSlots || [];
     var slotsSet = {};
     for (var i = 0; i < slots.length; i++) slotsSet[slots[i]] = true;

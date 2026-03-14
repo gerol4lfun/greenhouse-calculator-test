@@ -342,13 +342,31 @@
         </div>
       </div>
       <div class="delivery-dates-modal-body">
-        <div id="delivery-dates-loading" style="text-align: center; padding: 20px;">
-          Загрузка данных...
-        </div>
-        <div id="delivery-dates-content" style="display: none;">
-          <input type="text" id="delivery-dates-search" placeholder="Поиск по городу..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
-          <div id="delivery-dates-table-container" style="max-height: 500px; overflow-y: auto;">
-            <!-- Таблица будет добавлена через JavaScript -->
+        <div id="delivery-dates-loading" style="text-align: center; padding: 20px;">Загрузка данных...</div>
+        <div id="delivery-dates-content" class="delivery-dates-split" style="display: none;">
+          <div class="delivery-dates-left">
+            <input type="text" id="delivery-dates-search" placeholder="Поиск по городу..." class="delivery-dates-search-input">
+            <div id="delivery-dates-city-list" class="delivery-dates-city-list"></div>
+          </div>
+          <div class="delivery-dates-right">
+            <div id="delivery-dates-cal-placeholder" class="delivery-dates-cal-placeholder">Выберите город</div>
+            <div id="delivery-dates-cal-panel" class="delivery-dates-cal-panel" style="display: none;">
+              <div class="delivery-dates-cal-header">
+                <span id="delivery-dates-cal-city" class="delivery-dates-cal-city"></span>
+                <div class="delivery-dates-cal-nav">
+                  <button type="button" class="order-cal-nav" onclick="deliveryModalCalNav(-1)">&#8249;</button>
+                  <span id="delivery-dates-cal-title" class="order-cal-title"></span>
+                  <button type="button" class="order-cal-nav" onclick="deliveryModalCalNav(1)">&#8250;</button>
+                </div>
+              </div>
+              <div class="order-cal-weekdays"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
+              <div id="delivery-dates-cal-grid" class="order-cal-grid"></div>
+              <div class="delivery-dates-legend">
+                <span class="legend-item legend-available">доставка + сборка</span>
+                <span class="legend-item legend-only-delivery">только доставка</span>
+                <span class="legend-item legend-blocked">недоступно</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
