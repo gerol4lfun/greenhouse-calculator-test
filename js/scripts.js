@@ -5649,16 +5649,18 @@ function requestCloseEditOrderModal() {
     return true;
 }
 
-/**
- * Поиск заказов в Supabase по телефону через RPC search_orders_by_phone.
- * Поддерживает: single phone, dual-phone slash-format, любой из двух номеров в stored dual-phone.
- */
+/** Поиск заказов в Supabase по телефону (нормализованный, 11 цифр с 7). Возвращает массив заказов. */
 async function searchOrdersByPhone(phone) {
-    var trimmed = (phone || '').trim();
-    if (!trimmed) return [];
-    var result = await supabaseClient.rpc('search_orders_by_phone', { p_search: trimmed });
-    if (result.error) throw result.error;
-    return result.data || [];
+    var normalized = normalizePhone(phone);
+    if (!normalized || normalized.length !== 11) return [];
+    var list = await supabaseClient
+        .from('orders')
+        .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly, delivery_cost')
+        .eq('client_phone', normalized)
+        .order('created_at', { ascending: false })
+        .limit(30);
+    if (list.error) throw list.error;
+    return list.data || [];
 }
 
 /** Число из total/delivery_cost/item_total: поддерживает "24.040" (точка — разделитель тысяч). */
@@ -7527,8 +7529,8 @@ function initEditOrderModal() {
                     var phoneInput = document.getElementById('edit-order-client-phone');
                     if (phoneInput) phoneToRefresh = (phoneInput.value || '').trim();
                 }
-                // dual-phone: не стрипаем через normalizePhone, searchOrdersByPhone принимает raw (RPC-aware)
-                if (phoneToRefresh && phoneToRefresh.length >= 11 && typeof searchOrdersByPhone === 'function') {
+                if (phoneToRefresh && typeof normalizePhone === 'function') phoneToRefresh = normalizePhone(phoneToRefresh);
+                if (phoneToRefresh && String(phoneToRefresh).length >= 11 && typeof searchOrdersByPhone === 'function') {
                     searchOrdersByPhone(phoneToRefresh).then(function (orders) {
                         if (typeof renderEditOrderList === 'function') renderEditOrderList(orders);
                         var searchHint = document.getElementById('edit-order-search-hint');
@@ -7759,16 +7761,16 @@ function initEditOrderModal() {
     if (searchBtn && phoneInput) {
         searchBtn.addEventListener('click', function () {
             var phone = (phoneInput.value || '').trim();
+            var normalized = normalizePhone(phone);
             if (!hintEl) hintEl = document.getElementById('edit-order-search-hint');
             if (hintEl) { hintEl.style.display = ''; hintEl.textContent = ''; hintEl.className = 'edit-order-hint'; }
-            // dual-phone aware: принимаем single phone и slash-format "num1 / num2"
-            if (!isValidPhoneForSave_(phone)) {
-                if (hintEl) { hintEl.textContent = 'Введите телефон (79211234567) или два номера через /: 79211234567 / 79219876543'; hintEl.className = 'edit-order-hint edit-order-hint--error'; }
+            if (!normalized || normalized.length !== 11) {
+                if (hintEl) { hintEl.textContent = 'Введите корректный номер телефона (11 цифр, начинается с 7).'; hintEl.className = 'edit-order-hint edit-order-hint--error'; }
                 renderEditOrderList([]);
                 if (typeof clearEditOrderForm === 'function') clearEditOrderForm();
                 return;
             }
-            lastEditOrderSearchedPhone = phone; // сохраняем raw (с возможным slash-format) для refresh
+            lastEditOrderSearchedPhone = normalized;
             searchBtn.disabled = true;
             if (hintEl) hintEl.textContent = 'Поиск...';
             searchOrdersByPhone(phone).then(function (orders) {
