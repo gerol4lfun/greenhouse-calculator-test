@@ -7014,12 +7014,16 @@ function buildOrderPayloadFromEditModal() {
     var fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var dateForDb = deliveryDate && deliveryDate.indexOf('-') !== -1 ? formatDateRu(deliveryDate) : deliveryDate;
 
-    // raw-preserve: если пользователь не трогал phone field, сохранять оригинальный raw телефон literally
+    // raw-preserve: решаем по фактическому value, а не только по touched-flag
+    // (touched flag ненадёжен: listener мог не сработать при программном вводе)
+    var _phoneEffectivelyChanged = _editOrderOriginalPhoneRaw === null
+        || phone.trim() !== _editOrderOriginalPhoneRaw.trim();
     var _clientPhoneForPayload;
-    if (!_editOrderPhoneTouchedByUser && _editOrderOriginalPhoneRaw !== null) {
+    if (!_phoneEffectivelyChanged) {
+        // значение не менялось — возвращаем literally original raw
         _clientPhoneForPayload = _editOrderOriginalPhoneRaw;
     } else {
-        // phone был реально изменён — нормализуем; dual-phone slash-format сохраняется через sanitizePhone_
+        // значение реально изменилось — канонизируем; dual-phone slash-format сохраняется через sanitizePhoneForSave_
         _clientPhoneForPayload = sanitizePhoneForSave_(phone);
     }
 
@@ -7117,8 +7121,10 @@ function validateEditOrderModal() {
     var source = document.getElementById('edit-order-source') ? document.getElementById('edit-order-source').value : '';
 
     if (!name) errors.push('имя клиента');
-    // raw-preserve: если phone не трогали, пропускаем валидацию (legacy dual-phone может не пройти isValidPhone11)
-    if (_editOrderPhoneTouchedByUser || _editOrderOriginalPhoneRaw === null) {
+    // raw-preserve: пропускаем валидацию только если phone фактически не менялся
+    var _phoneChangedForValidation = _editOrderOriginalPhoneRaw === null
+        || phone.trim() !== _editOrderOriginalPhoneRaw.trim();
+    if (_phoneChangedForValidation) {
         if (!isValidPhoneForSave_(phone)) errors.push('телефон: 11 цифр, с 7 (или формат 79111111111 / 79222222222)');
     }
     if (!deliveryDate) errors.push('дата доставки');
@@ -14082,9 +14088,15 @@ function markOrderFieldError_(fieldId) {
                 el.addEventListener('change', handler);
             }
         });
-        // Телефон: dual-phone aware — не стрипаем автоматически, пользователь может вводить slash-format.
+        // Телефон: только цифры, ровно до 11 (формат 79211234567). 8 в начале → 7.
         const phoneInput = document.getElementById('order-client-phone');
         if (phoneInput) {
+            phoneInput.addEventListener('input', function() {
+                let digits = this.value.replace(/\D/g, '').slice(0, 11);
+                if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+                if (digits.length === 10 && digits[0] !== '7') digits = '7' + digits;
+                this.value = digits;
+            });
             phoneInput.addEventListener('blur', function () {
                 if (typeof checkSimilarOrderWarning === 'function') checkSimilarOrderWarning();
             });
@@ -14435,9 +14447,7 @@ function buildOrderPayloadFromFormAndCart() {
 
     const fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var effectiveCalc = orderCart[0];
-    // dual-phone: сохраняем канонический формат (single или "num1 / num2")
-    const _canonicalPhone = sanitizePhoneForSave_(clientPhone);
-    const client = { name: clientName, phone: _canonicalPhone, deliveryDate: deliveryDate, manager: manager, address: fullAddress };
+    const client = { name: clientName, phone: normalizePhone(clientPhone), deliveryDate: deliveryDate, manager: manager, address: fullAddress };
     const commercialOffer = generateFullOrderTemplate(effectiveCalc, client, orderCart);
     const giftsText = (typeof getGiftsTextForOrder === 'function' ? getGiftsTextForOrder() : (typeof getGiftsText === 'function' ? getGiftsText() : '')) || '';
     var totalRounded = getOrderCartTotal();
@@ -14500,7 +14510,7 @@ function buildOrderPayloadFromFormAndCart() {
         source: source,
         logged_in_user: localStorage.getItem('currentUser') || '',
         client_name: clientName,
-        client_phone: _canonicalPhone,
+        client_phone: normalizePhone(clientPhone),
         delivery_date: deliveryDate && deliveryDate.includes('-') ? formatDateRu(deliveryDate) : deliveryDate,
         delivery_address: fullAddress,
         city: extractCityFromAddress(fullAddress) || extractCityFromAddress((effectiveCalc && effectiveCalc.address) || '') || (effectiveCalc && effectiveCalc.city) || '',
@@ -14557,10 +14567,10 @@ async function submitOrder() {
         hasErrors = true;
     }
 
-    // dual-phone: допускаем single phone и slash-format "num1 / num2"
-    if (!isValidPhoneForSave_(clientPhone)) {
-        setOrderFieldError_('of-phone', 'Введите 11 цифр с 7 (79211234567) или два номера через /: 79211234567 / 79219876543');
-        errors.push('телефон: 11 цифр с 7 или формат 79211234567 / 79219876543');
+    var phone = normalizePhone(clientPhone);
+    if (!isValidPhone11(phone)) {
+        setOrderFieldError_('of-phone', 'Введите 11 цифр, начиная с 7 (например 79211234567)');
+        errors.push('телефон: ровно 11 цифр, с 7 (например 79211234567)');
         hasErrors = true;
     }
 
