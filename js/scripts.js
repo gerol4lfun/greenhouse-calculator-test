@@ -433,6 +433,63 @@ function resolveRegionToCanonicalCity_(text) {
     return null;
 }
 
+/**
+ * Нормализация alias-форм city key к каноническому названию delivery_calendar.
+ * МСК/msk -> Москва, СПБ/spb/Питер -> Санкт-Петербург, и т.п.
+ * Если alias не найден, возвращает исходную строку без изменений.
+ */
+function normalizeCityAlias_(cityRaw) {
+    if (!cityRaw || typeof cityRaw !== 'string') return cityRaw || null;
+    var lower = cityRaw.trim().toLowerCase().replace(/ё/g, 'е');
+    var aliasMap = {
+        'мск': 'Москва', 'msk': 'Москва', 'москва': 'Москва',
+        'спб': 'Санкт-Петербург', 'spb': 'Санкт-Петербург',
+        'питер': 'Санкт-Петербург', 'петербург': 'Санкт-Петербург',
+        'санкт-петербург': 'Санкт-Петербург',
+        'нн': 'Нижний Новгород', 'нижний': 'Нижний Новгород',
+        'челны': 'Набережные Челны'
+    };
+    return aliasMap[lower] || cityRaw.trim();
+}
+
+/**
+ * Приоритетный выбор canonical city для edit calendar existing order.
+ * 1) orders.city (сохранённый при расчёте/создании заказа) — primary source of truth
+ * 2) первый ненулевой line_items[].city из editOrderComposition — надёжный fallback
+ * 3) derive from DOM address — legacy/recovery fallback
+ */
+function resolveEditOrderCalendarCity_() {
+    // Priority 1: saved orders.city
+    if (_editOrderLoadedCityRaw) {
+        var c1 = normalizeCityAlias_(_editOrderLoadedCityRaw);
+        if (c1) return c1;
+    }
+    // Priority 2: first line_items[].city
+    if (Array.isArray(editOrderComposition) && editOrderComposition.length > 0) {
+        for (var i = 0; i < editOrderComposition.length; i++) {
+            var c2 = (editOrderComposition[i].city || '').trim();
+            if (c2) return normalizeCityAlias_(c2);
+        }
+    }
+    // Priority 3: derive from DOM address (legacy/recovery fallback)
+    var part1 = document.getElementById('edit-order-address-part1');
+    var part2 = document.getElementById('edit-order-address-part2');
+    var part3 = document.getElementById('edit-order-address-part3');
+    var p1 = (part1 && part1.value) ? part1.value.trim() : '';
+    var p2 = (part2 && part2.value) ? part2.value.trim() : '';
+    var p3 = (part3 && part3.value) ? part3.value.trim() : '';
+    var fullAddr = [p1, p2, p3].filter(Boolean).join(', ');
+    var cityCandidate = (typeof extractCityFromAddress === 'function' ? extractCityFromAddress(fullAddr) : '') || p1;
+    var c3 = cityCandidate && typeof findCityInDropdown === 'function'
+        ? (findCityInDropdown(cityCandidate) || findCityInDropdown(p1) || cityCandidate)
+        : cityCandidate;
+    if (c3 && typeof resolveRegionToCanonicalCity_ === 'function') {
+        var resolved = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(c3);
+        if (resolved) c3 = resolved;
+    }
+    return c3 || null;
+}
+
 /** Проверка по массивам localities и administrativeAreas (нижний регистр): входит ли адрес в зону доставки. Один источник правды для расчёта доставки и форм заказа. */
 function isAddressInDeliveryRegionByLocality(localities, administrativeAreas) {
     if (!Array.isArray(localities)) localities = [];
@@ -741,6 +798,8 @@ let _editOrderPhoneTouchedByUser = false;
 let _editOrderGiftTouchedByUser = false;
 /** Gift tier (кол-во слотов) на момент открытия заказа. Для определения реального tier change из-за изменения состава. */
 let _editOrderGiftTierAtOpen = 0;
+/** Сохранённый orders.city на момент открытия заказа. Primary source of truth для edit calendar. null = не установлен. */
+let _editOrderLoadedCityRaw = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6071,6 +6130,8 @@ function fillEditOrderForm(order) {
     setEditOrderFieldValue('edit-order-comment', order.comment || '');
 
     var orderCity = (order.city || '').trim() || (parsedAddr.part1 || '').trim();
+    // primary source of truth для edit calendar
+    _editOrderLoadedCityRaw = (order.city || '').trim() || null;
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
     editOrderDeliveryCost = parseOrderPrice_(order.delivery_cost);
@@ -6952,6 +7013,7 @@ function clearEditOrderForm() {
     if (typeof currentOrderIdForEdit !== 'undefined') currentOrderIdForEdit = null;
     if (typeof currentOrderCreatedAtForEdit !== 'undefined') currentOrderCreatedAtForEdit = null;
     editOrderGiftSlotsPrev = -1;
+    _editOrderLoadedCityRaw = null;
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
     showEditOrderStep(1);
@@ -13861,23 +13923,10 @@ function toggleEditOrderCalendar() {
             _editOrderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
         }
     }
-    var part1 = document.getElementById('edit-order-address-part1');
-    var part2 = document.getElementById('edit-order-address-part2');
-    var part3 = document.getElementById('edit-order-address-part3');
-    var p1 = (part1 && part1.value) ? part1.value.trim() : '';
-    var p2 = (part2 && part2.value) ? part2.value.trim() : '';
-    var p3 = (part3 && part3.value) ? part3.value.trim() : '';
-    var fullAddr = [p1, p2, p3].filter(Boolean).join(', ');
-    var cityCandidate = (typeof extractCityFromAddress === 'function' ? extractCityFromAddress(fullAddr) : '') || p1;
-    var canonicalCity = cityCandidate && typeof findCityInDropdown === 'function'
-        ? (findCityInDropdown(cityCandidate) || findCityInDropdown(p1) || cityCandidate)
-        : cityCandidate;
-    // region→canonical city: для legacy/freeform адресов (напр. "Московская область") пробуем
-    // привести к каноническому городу из delivery_calendar через keyword mapping
-    if (canonicalCity && typeof resolveRegionToCanonicalCity_ === 'function') {
-        var _resolvedCity = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(canonicalCity);
-        if (_resolvedCity) canonicalCity = _resolvedCity;
-    }
+    // city для edit calendar: primary = orders.city, fallback 1 = line_items[].city, fallback 2 = derive from address
+    var canonicalCity = typeof resolveEditOrderCalendarCity_ === 'function'
+        ? resolveEditOrderCalendarCity_()
+        : null;
     if (canonicalCity && _savedDeliveryDateState === null) {
         _savedDeliveryDateState = {
             date: currentDeliveryDate,
