@@ -1123,6 +1123,42 @@ select option {
   font-weight: 500;
 }
 
+/* Блок дат доставки после расчёта адреса */
+.delivery-result-cost {
+  margin-bottom: 12px;
+}
+.delivery-result-dates {
+  margin-top: 12px;
+  text-align: left;
+  max-width: 320px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.delivery-result-dates-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+.delivery-date-row {
+  font-size: 15px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: #f0f6fc;
+  color: #4a90e2;
+  transition: background 0.2s, color 0.2s;
+}
+.delivery-date-row--active {
+  background: #4a90e2;
+  color: #fff;
+  font-weight: 600;
+}
+@media (max-width: 480px) {
+  .delivery-result-dates { max-width: 100%; }
+  .delivery-date-row { font-size: 14px; padding: 6px 10px; }
+}
+
 #map {
   width: 100%;
   height: 300px;

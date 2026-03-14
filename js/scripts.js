@@ -1082,6 +1082,38 @@ function getDeliveryDateTextForBlock(withAssembly) {
     return `Доставка: с ${d}, сборки с ${a}${r}`;
 }
 
+/** DD.MM или DD.MM.YYYY → "17 марта" (год не показывается). Для UI блока доставки. */
+function formatDateToDayMonth(dateStr) {
+    if (!dateStr || dateStr === '—') return '—';
+    var parts = String(dateStr).split('.');
+    if (parts.length < 2) return dateStr;
+    var day = parts[0];
+    var monthNum = parseInt(parts[1], 10);
+    if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) return dateStr;
+    var months = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+    return day + ' ' + months[monthNum - 1];
+}
+
+/** Данные для UI блока доставки: { without, withAssembly } в формате DD.MM.YYYY или "—". */
+function getDeliveryDateBlockForUI() {
+    if (!currentDeliveryDate) return null;
+    var without = '', withA = '';
+    if (deliveryDatesFromCalendar) {
+        var nw = getNearestAvailableDate(false);
+        var naw = getNearestAvailableDate(true);
+        if (!nw && !naw) return null;
+        var yNw = nw ? nw.split('-')[0] : null;
+        var yNaw = naw ? naw.split('-')[0] : null;
+        without = nw ? (isoDateToDdMm(nw) + '.' + yNw) : '—';
+        withA = naw ? (isoDateToDdMm(naw) + '.' + yNaw) : '—';
+    } else {
+        var yMoscow = getTodayMoscowISO().slice(0, 4);
+        without = currentDeliveryDate + '.' + yMoscow;
+        withA = (currentDeliveryAssemblyDate || currentDeliveryDate) + '.' + yMoscow;
+    }
+    return { without: without, withAssembly: withA };
+}
+
 /** Две ближайшие даты для блока доставки (без текста "кроме ..."). Год по Москве. */
 function getDeliveryDateBlockTwoLines() {
     if (!currentDeliveryDate) return null;
@@ -1400,18 +1432,34 @@ function updateDeliveryDateDisplay() {
 }
 
 /**
+ * Рендерит блок результата доставки: стоимость + компактные даты (формат "17 марта").
+ * Активная строка подсвечивается по чекбоксу сборки.
+ */
+function renderDeliveryResultBlock(costText, dateData) {
+    if (!dateData) return costText;
+    var withoutStr = formatDateToDayMonth(dateData.without);
+    var withStr = formatDateToDayMonth(dateData.withAssembly);
+    var hasAssembly = !!document.getElementById('assembly')?.checked;
+    var activeWithout = hasAssembly ? '' : ' delivery-date-row--active';
+    var activeWith = hasAssembly ? ' delivery-date-row--active' : '';
+    return costText + '<div class="delivery-result-dates"><div class="delivery-result-dates-title">Даты доставки</div>' +
+        '<div class="delivery-date-row' + activeWithout + '">Без сборки — ' + withoutStr + '</div>' +
+        '<div class="delivery-date-row' + activeWith + '">Со сборкой — ' + withStr + '</div></div>';
+}
+
+/**
  * Обновляет дату в блоке результата доставки (дата доставки и сборки).
- * Показывает всю релевантную инфу для озвучивания менеджером.
+ * Перерисовывает блок с учётом активного режима сборки.
  */
 function updateDeliveryResultDate() {
     const resultDiv = document.getElementById('result');
-    if (!resultDiv || !resultDiv.innerText.trim() || !currentDeliveryDate) return;
-    const dateBlock = getDeliveryDateBlockTwoLines();
-    if (!dateBlock) return;
-    const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
-    const lines = resultDiv.innerText.split('\n');
-    const costLine = lines[0];
-    resultDiv.innerText = [costLine, ...dateLines].join('\n');
+    if (!resultDiv || !currentDeliveryDate) return;
+    var costEl = resultDiv.querySelector('.delivery-result-cost');
+    if (!costEl) return;
+    var costText = '<div class="delivery-result-cost">' + costEl.textContent.trim() + '</div>';
+    var dateData = getDeliveryDateBlockForUI();
+    if (!dateData) return;
+    resultDiv.innerHTML = renderDeliveryResultBlock(costText, dateData);
 }
 
 // Функция для загрузки городов из Supabase с учётом пагинации
@@ -2572,13 +2620,9 @@ if (!nearestCity) {
 
             const deliveryDate = await loadDeliveryDate(nearestCity.name);
             
-            let resultText = `Стоимость доставки: ${formatPrice(roundedCost)} рублей (${nearestCity.name})`;
-            const dateBlock = getDeliveryDateBlockTwoLines();
-            if (dateBlock) {
-                const dateLines = dateBlock.split('\n').map(l => '📅 ' + l.trim()).filter(Boolean);
-                resultText += '\n' + dateLines.join('\n');
-            }
-            document.getElementById('result').innerText = resultText;
+            var costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(roundedCost) + ' рублей (' + nearestCity.name + ')</div>';
+            var dateData = getDeliveryDateBlockForUI();
+            document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
         } catch (routeError) {
             document.getElementById('result').innerText = "Ошибка при расчёте маршрута.";
         }
@@ -11875,6 +11919,7 @@ function handleAssemblyChange() {
     
     // Если все нормально - вызываем расчет стоимости
     calculateGreenhouseCost();
+    updateDeliveryResultDate();
 
     if (deliveryDatesFromCalendar) {
         syncOrderCalendarSlotsWithMode();
