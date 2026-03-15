@@ -53,7 +53,9 @@
 ## Инварианты (при споре — истина)
 
 - **gifts = slots.** Fixed bundles не источник истины. См. GIFT_TRUTH.md.
+- **Gifts raw-preserve:** legacy gift на existing order не должен автоматически переписываться в канонический формат при edit другого поля. Подтверждено на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (gift «форточка 1 шт.» сохранился при смене только delivery_date).
 - **Phone scope:** legacy dual-phone slash-format («79128974834 /79085842934») — два номера одного клиента. Подтверждён только fix data-loss для existing untouched order (phone field не трогали → raw-preserve literally). Не реализовано и не считать подтверждённым: ввод dual-phone через UI, explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера. Future step — отдельный UX/поле для второго номера.
+- **Edit calendar source-of-truth:** confirmed. Приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Manual confirmed: заказ 8e803d39-db87-4da1-b420-4325a29e0dfb (Жирнов Сергей, city=МСК) — календарь показывает ограничения Москвы.
 - **cancelled** — не редактируется. UI + проверка перед save.
 - **Платные допы** — не должны пропадать из long КП из-за логики подарков.
 - **slot count** — зависит только от total / preview total.

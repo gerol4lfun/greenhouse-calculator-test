@@ -2,7 +2,10 @@
 
 ## Docs / source of truth sync (14.03.2026)
 
+- **Edit calendar source-of-truth:** confirmed. Календарь в edit existing order использует приоритет orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Manual confirmed: заказ 8e803d39-db87-4da1-b420-4325a29e0dfb (Жирнов Сергей, orders.city=МСК) — календарь показывает ограничения Москвы, а не все даты зелёными.
+- **Gifts raw-preserve:** подтверждён на legacy existing order 8e803d39-db87-4da1-b420-4325a29e0dfb — gift «форточка 1 шт.» сохранился при edit только delivery_date.
 - **Phone scope:** TRUTH_MAP, PREPROD_PLAN — зафиксировано: legacy untouched dual-phone raw-preserve подтверждён; explicit dual-phone edit / search / second-phone UI не реализованы, future step.
+- **Calendar region mapping:** open issue — legacy address («Московская область») в edit не мапится в «Москва», календарь все даты зелёные. Рекомендовано: region→canonical city. Не реализовано.
 - **Existing line_items-order update** manual confirmed на заказе `79000000018`: менялось только delivery_date; line_items сохранился; quantity/status/comment/commercial_offer не уехали.
 - **Existing cancel flow** manual confirmed на заказе `79000000066`: status synced→cancelled; comment дописка; quantity/delivery_date/line_items/commercial_offer не изменились; edit-path блокируется.
 - **Open:** auto-sync after edit без /sync не confirmed; create-order-line-items автотест flaky/unsafe; cancel flow race «заказ не выбран» при раннем клике.

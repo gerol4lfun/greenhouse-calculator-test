@@ -25,6 +25,8 @@
 - **Existing line_items-order update:** manual confirmed на заказе 79000000018. Менялось только `delivery_date`; line_items сохранился; quantity/status/comment/commercial_offer не уехали. Manual confirmed, не auto verified.
 - **Existing cancel flow:** manual confirmed на заказе 79000000066. status: synced → cancelled; comment получил дописку с причиной отмены; quantity, delivery_date, line_items, commercial_offer не изменились; обычный edit-path после cancel блокируется. Manual confirmed, не auto verified.
 - **Восстановление подарков в edit-модалке:** баг исправлен. Причина — parseGiftTextToSelected не распознавал текст вида «2 дополнительные форточки» и не разворачивал количество в слоты (id=window). Ручная проверка на заказе 70000000019: после reopen Подарок 1 и Подарок 2 = Дополнительная форточка. Gifts consistency в целом по-прежнему partial — integration e2e gifts-save-reopen не verified в локальном окружении (зависимость от Supabase/waitOrderSuccess).
+- **Gifts raw-preserve на legacy existing order:** manual confirmed на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (client_phone 79266302494, Жирнов Сергей). Меняли только delivery_date; gift остался literally «форточка 1 шт.» — legacy gift не переписывается в канонический формат при edit другого поля.
+- **Edit calendar source-of-truth:** manual confirmed. Календарь в edit existing order использует приоритет: orders.city → line_items[].city → fallback derive from address. Alias city key (МСК, СПБ, Питер) нормализуется в канонический город. Кейс: заказ 8e803d39-db87-4da1-b420-4325a29e0dfb (Жирнов Сергей, orders.city=МСК) — после фикса календарь показывает ограничения Москвы, а не все даты зелёными.
 - **Логика дат доставки:** Москва в основной форме; Набережные Челны в edit modal со сборкой — подтверждены вручную. Логика основной формы и edit modal выровнена (канонический city key в обоих).
 
 ---
@@ -32,6 +34,7 @@
 ## Open issues / suspected issues
 
 - **Phone scope:** dual-phone UI не реализован. Legacy untouched raw-preserve подтверждён. Explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера — не подтверждены, future step. См. TRUTH_MAP.md.
+- **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Gifts consistency end-to-end** не закрыт полностью
 - **Multi-item сценарии** не закрыты полностью. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
 - **Auto-sync after edit** без ручного /sync не confirmed; по факту не сработал.

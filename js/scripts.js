@@ -5331,7 +5331,7 @@ async function loadDeliveryDatesModalData() {
     var endD = new Date(dd.getTime() + 95 * 86400000);
     var endStr = endD.getFullYear() + '-' + String(endD.getMonth() + 1).padStart(2, '0') + '-' + String(endD.getDate()).padStart(2, '0');
     var datesQ = supabaseClient.from('delivery_dates').select('city_name, delivery_date, assembly_date, restrictions').order('city_name');
-    var calQ = supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date');
+    var calQ = supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(0, 9999);
     var res = await Promise.all([datesQ, calQ]);
     var data = res[0].data;
     var error = res[0].error;
