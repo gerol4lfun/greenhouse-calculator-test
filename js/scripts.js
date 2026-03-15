@@ -6175,7 +6175,7 @@ function fillEditOrderForm(order) {
                         item_total: parseOrderPrice_(item.item_total),
                         base_price: item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : undefined,
                         form: (item.form || '').toString().trim() || getFormCategory(item.model || ''),
-                        city: orderCity,
+                        city: (item.city || '').trim() || orderCity,
                         extras: extrasStr,
                         assembly: assemblyStr,
                         options: item.options && typeof item.options === 'object' ? item.options : undefined
