@@ -1,5 +1,13 @@
 # История изменений проекта
 
+## fix: модалка дат — лимит bulk-загрузки delivery_calendar (15.03.2026)
+
+- **Общий баг:** bulk-загрузка delivery_calendar для модалки «Актуальные даты доставки» обрезалась на 1000 строках (дефолт Supabase).
+- **Следствие:** для части городов и дат записи не попадали в stateMap → «future unknown» ошибочно становился «available» (зелёный вместо красного).
+- **Фикс:** `.range(0, 9999)` в запросе loadDeliveryDatesModalData — загружаются все строки окна ~95 дней × все города.
+
+---
+
 ## Docs / source of truth sync (14.03.2026)
 
 - **Edit calendar source-of-truth:** confirmed. Календарь в edit existing order использует приоритет orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Manual confirmed: заказ 8e803d39-db87-4da1-b420-4325a29e0dfb (Жирнов Сергей, orders.city=МСК) — календарь показывает ограничения Москвы, а не все даты зелёными.
