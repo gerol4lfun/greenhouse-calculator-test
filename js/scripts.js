@@ -5313,6 +5313,10 @@ function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     if (cellISO <= todayISO) return 'past';
     var meta = stateMap[cellISO];
     if (!meta) return 'available';
+    var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
+    if (rs === 'ДС') return 'available';
+    if (rs === 'Д') return 'only-delivery';
+    if (rs === 'X' || rs === 'С') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
     return 'blocked';
@@ -5333,7 +5337,7 @@ async function loadDeliveryDatesModalData() {
     var datesQ = supabaseClient.from('delivery_dates').select('city_name, delivery_date, assembly_date, restrictions').order('city_name');
     var calQ = supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(0, 9999);
     var res = await Promise.all([datesQ, calQ]);
-    var data = res[0].data;
+    var data = res[0].data || [];
     var error = res[0].error;
     var calData = res[1].data || [];
     if (error && error.code === '42703') {
@@ -5343,13 +5347,17 @@ async function loadDeliveryDatesModalData() {
             error = null;
         }
     }
-    if (error || !data || data.length === 0) {
-        listEl.innerHTML = '<div class="no-data">Нет данных о городах.</div>';
-        return;
+    var calByCity = {};
+    for (var c = 0; c < calData.length; c++) {
+        var row = calData[c];
+        var cn = cleanDeliveryCityName(row.city_name);
+        var nn = normalizeCityName(cn);
+        if (!calByCity[nn]) calByCity[nn] = [];
+        calByCity[nn].push(row);
     }
-    var canonical = data.filter(function (i) { return !/ доставки$/i.test(i.city_name); });
     var normalizedMap = {};
     var deliveryDatesByCity = {};
+    var canonical = data.filter(function (i) { return !/ доставки$/i.test(i.city_name); });
     for (var i = 0; i < canonical.length; i++) {
         var item = canonical[i];
         var cleaned = cleanDeliveryCityName(item.city_name);
@@ -5359,7 +5367,16 @@ async function loadDeliveryDatesModalData() {
         normalizedMap[key] = { city_name: name };
         deliveryDatesByCity[name] = { delivery_date: item.delivery_date, assembly_date: item.assembly_date };
     }
+    for (var nnKey in calByCity) {
+        if (normalizedMap[nnKey]) continue;
+        var calCityName = standardCityNames[nnKey] || (nnKey.charAt(0).toUpperCase() + nnKey.slice(1).toLowerCase());
+        normalizedMap[nnKey] = { city_name: calCityName };
+    }
     var cityList = Object.keys(normalizedMap).map(function (k) { return normalizedMap[k].city_name; });
+    if (cityList.length === 0) {
+        listEl.innerHTML = '<div class="no-data">Нет данных о городах.</div>';
+        return;
+    }
     cityList.sort(function (a, b) {
         var ca = (a || '').toLowerCase().trim();
         var cb = (b || '').toLowerCase().trim();
@@ -5369,14 +5386,6 @@ async function loadDeliveryDatesModalData() {
         if (cb === 'санкт-петербург') return 1;
         return ca.localeCompare(cb, 'ru');
     });
-    var calByCity = {};
-    for (var c = 0; c < calData.length; c++) {
-        var row = calData[c];
-        var cn = cleanDeliveryCityName(row.city_name);
-        var nn = normalizeCityName(cn);
-        if (!calByCity[nn]) calByCity[nn] = [];
-        calByCity[nn].push(row);
-    }
     _deliveryModalCitySummary = [];
     _deliveryModalStateMapCache = {};
     var fmt = function (iso) {
