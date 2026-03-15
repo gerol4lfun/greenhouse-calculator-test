@@ -7178,10 +7178,10 @@ function buildOrderPayloadFromEditModal() {
         client_phone: _clientPhoneForPayload,
         delivery_date: dateForDb,
         delivery_address: fullAddress,
-        warehouse_city_key: warehouseCityKey || null,
         source: source,
         comment: comment
     };
+    // warehouse_city_key omitted: PGRST204 if column absent in schema cache. After migration + NOTIFY pgrst, 'reload schema' — restore.
 
     var giftEl = document.getElementById('edit-order-gift');
     var giftValue = giftEl ? (giftEl.value || '').trim() : '';
@@ -14654,7 +14654,6 @@ function buildOrderPayloadFromFormAndCart() {
         client_phone: normalizePhone(clientPhone),
         delivery_date: deliveryDate && deliveryDate.includes('-') ? formatDateRu(deliveryDate) : deliveryDate,
         delivery_address: fullAddress,
-        warehouse_city_key: warehouseCityKey || null,
         city: extractCityFromAddress(fullAddress) || extractCityFromAddress((effectiveCalc && effectiveCalc.address) || '') || (effectiveCalc && effectiveCalc.city) || '',
         model: effectiveCalc.model,
         width: String(effectiveCalc.width || ''),
