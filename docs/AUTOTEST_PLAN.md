@@ -43,11 +43,15 @@
 
 **Предусловия для integration:** BASE_URL (или localhost:3000), Supabase доступен (insert/update orders), TEST_LOGIN, TEST_PASSWORD, тестовые телефоны (79000000001 …) для создания заказов.
 
+**Local operator route для existing-order edit proof-run:** base URL `http://localhost:3000`, deep link `/?editPhone=<phone>`. Сначала логин, затем переход по deep link. GitHub Pages / неверный base URL для этого сценария не использовать.
+
 **Статус на localhost:** integration-тесты **not verified** — без работающего Supabase падают на waitOrderSuccess (submit не завершается). На тестовом стенде с Supabase — целевой прогон.
 
 **gifts restore в edit-модалке:** подтверждён **ручной проверкой** (заказ 70000000019, «2 дополнительные форточки», «Капельный полив механический»). Не объявлять закрытым через e2e, пока gifts-save-reopen не зелёный на стенде.
 
 **existing-order update:** подтверждён **ручной проверкой** на заказе 70000000019 без создания нового заказа. Менялось только поле `delivery_date`; после reopen в калькуляторе новая дата сохранилась, обновление дошло в Google Sheets, в Telegram пришло сообщение «Заказ изменён» с корректным diff по дате (старая → новая). Это manual confirmed, не auto verified.
+
+**Подтверждённый proof-run кейс (15.03.2026):** phone `79000000018`, id `ced4fafd-1602-4aae-874d-70f0f97150e3`. Before: delivery_date `19.03.2026`, updated_at `2026-03-14T13:35:11.610827+00:00`. After: delivery_date `16.03.2026`, updated_at `2026-03-15T09:35:06.334595+00:00`. **orders.updated_at change-signal:** подтверждён — edit existing order реально обновляет `orders.updated_at` в Supabase.
 
 **Multi-item:** не объявлять закрытым. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). create-order-line-items автотест flaky/unsafe, не считать рабочим.
 **Cancel flow:** manual confirmed на заказе 79000000066 (status→cancelled; comment дописка; quantity/line_items/delivery_date/commercial_offer не уехали; edit-path блокируется). Race: при раннем клике — «Ошибка: заказ не выбран».
@@ -59,6 +63,9 @@
 ### 2.4. Legacy / отдельно
 
 - **edit-order.spec.js** — один большой тест «этапы 1–9», зависимость от TEST_PHONE и наличия заказов; sleep-ориентированный. Не входит в обязательный local-safe/integration набор.
+
+**Existing-order regression (edit-order.spec.js):**
+- **existing-order-paid-extra** — заказ 70000000019, изменение платного допа «Доп. форточка» (0↔1), save → reopen по orderId. Покрывает: сохранение допа, отсутствие побочных изменений (дата, address-part1, comment, gift, source, состав, gift slots). Не покрывает: TG, downstream, Supabase diff, warehouse_city_key. **Статус:** added but unstable / not gate. **Source of truth:** localhost; GitHub Pages / hosted не использовать для этого path. Запуск: `npx playwright test e2e/edit-order.spec.js --project=edit-order-legacy -g "existing-order-paid-extra"`.
 
 ### Consciously deferred
 
@@ -86,9 +93,16 @@
 | **Test user** | Отдельный пользователь в Supabase `users` (например `e2e_test`). Логин/пароль только в .env. |
 | **Test phone** | Новые test create-заказы сейчас не основной режим. Для live/manual edit использовать уже существующие тестовые заказы. |
 | **Test comment** | В каждом тестовом заказе: `ТЕСТОВЫЙ ЗАКАЗ АВТОСИНКА — НЕ ПЕРЕНОСИТЬ!!!` |
-| **Search phone / order** | Для поиска существующего заказа: `78883339999`. Для ручного existing-order update подтверждён заказ `70000000019`. Не использовать случайные номера. |
+| **Search phone / order** | Для поиска: `78883339999`. Для ручного existing-order edit proof-run: `70000000019`, `79000000018` (подтверждённый кейс 15.03.2026). Не использовать случайные номера. |
 | **TG-уведомления** | Калькулятор пишет в Supabase. TG-бот читает оттуда. Варианты: (a) тестовый Supabase project; (b) в тг боте — игнорировать заказы с comment «ТЕСТОВЫЙ ЗАКАЗ АВТОСИНКА»; (c) принять, что тестовые заказы могут вызвать уведомления — минимизировать количество. |
 | **Боевые данные** | Не трогать. Новые тестовые заказы без отдельного шага не создавать; существующие тестовые заказы не отменять в обычном цикле проверки. |
+
+### Live-прогоны в боевом контуре
+
+- В рабочее время не запускать live create-flow тесты в боевом контуре.
+- Для proof-run использовать только уже существующие тестовые заказы.
+- create / new order testing — только после рабочего дня или в отдельном тестовом контуре.
+- existing-order edit proof-run допустим только по согласованному тестовому заказу.
 
 ---
 
@@ -99,7 +113,7 @@
 | `TEST_LOGIN` | Логин test user (e2e_test). |
 | `TEST_PASSWORD` | Пароль. Только в .env. |
 | `TEST_PHONE` | Для поиска существующего заказа: `78883339999`. Для ручного existing-order update использовать уже существующий заказ `70000000019`. |
-| `BASE_URL` | http://localhost:3000 (или тестовый стенд). |
+| `BASE_URL` | http://localhost:3000 (или тестовый стенд). Для existing-order edit proof-run — localhost:3000; deep link `/?editPhone=<phone>`. |
 
 ---
 
@@ -127,6 +141,7 @@
 
 ### e2e/edit-order.spec.js
 - Один большой тест «этапы 1–9».
+- **existing-order-paid-extra** — existing-order regression: 70000000019, Доп. форточка 0↔1, save/reopen, verify preserved + no side effects.
 - Логин через fill + click (до auth-hotfix).
 - Много `waitForTimeout` (2000, 1200, 800 и т.д.) — хрупко.
 - Использует TEST_PHONE из orders — может не быть заказов.

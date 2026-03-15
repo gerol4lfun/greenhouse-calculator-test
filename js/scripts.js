@@ -441,6 +441,7 @@ function resolveRegionToCanonicalCity_(text) {
 function normalizeCityAlias_(cityRaw) {
     if (!cityRaw || typeof cityRaw !== 'string') return cityRaw || null;
     var lower = cityRaw.trim().toLowerCase().replace(/ё/g, 'е');
+    lower = lower.replace(/^(г\.\s*|город\s+)/, '').trim();
     var aliasMap = {
         'мск': 'Москва', 'msk': 'Москва', 'москва': 'Москва',
         'спб': 'Санкт-Петербург', 'spb': 'Санкт-Петербург',
@@ -453,25 +454,44 @@ function normalizeCityAlias_(cityRaw) {
 }
 
 /**
+ * Канонический warehouse city key для create-flow delivery readers.
+ * Priority: city dropdown -> lastCalculation.city.
+ */
+function resolveCreateWarehouseCityKey_() {
+    var citySelect = document.getElementById('city');
+    var c1 = (citySelect && citySelect.value) ? citySelect.value.trim() : '';
+    if (c1) return normalizeCityAlias_(c1);
+    var c2 = (typeof lastCalculation !== 'undefined' && lastCalculation && lastCalculation.city) ? String(lastCalculation.city).trim() : '';
+    if (c2) return normalizeCityAlias_(c2);
+    return null;
+}
+
+/**
  * Приоритетный выбор canonical city для edit calendar existing order.
- * 1) orders.city (сохранённый при расчёте/создании заказа) — primary source of truth
- * 2) первый ненулевой line_items[].city из editOrderComposition — надёжный fallback
- * 3) derive from DOM address — legacy/recovery fallback
+ * 1) orders.warehouse_city_key — source of truth для delivery readers
+ * 2) orders.city (сохранённый при расчёте/создании заказа) — legacy/display field
+ * 3) первый ненулевой line_items[].city из editOrderComposition — надёжный fallback
+ * 4) derive from DOM address — legacy/recovery fallback
  */
 function resolveEditOrderCalendarCity_() {
-    // Priority 1: saved orders.city
+    // Priority 1: saved orders.warehouse_city_key
+    if (_editOrderLoadedWarehouseCityKey) {
+        var c0 = normalizeCityAlias_(_editOrderLoadedWarehouseCityKey);
+        if (c0) return c0;
+    }
+    // Priority 2: saved orders.city
     if (_editOrderLoadedCityRaw) {
         var c1 = normalizeCityAlias_(_editOrderLoadedCityRaw);
         if (c1) return c1;
     }
-    // Priority 2: first line_items[].city
+    // Priority 3: first line_items[].city
     if (Array.isArray(editOrderComposition) && editOrderComposition.length > 0) {
         for (var i = 0; i < editOrderComposition.length; i++) {
             var c2 = (editOrderComposition[i].city || '').trim();
             if (c2) return normalizeCityAlias_(c2);
         }
     }
-    // Priority 3: derive from DOM address (legacy/recovery fallback)
+    // Priority 4: derive from DOM address (legacy/recovery fallback)
     var part1 = document.getElementById('edit-order-address-part1');
     var part2 = document.getElementById('edit-order-address-part2');
     var part3 = document.getElementById('edit-order-address-part3');
@@ -515,7 +535,12 @@ function isRegionMatchByKeywords(text) {
 }
 
 /** Асинхронная проверка строки адреса через геокодер: доставляем ли в этот регион. Возвращает Promise<{ inRegion: boolean, errorMessage?: string }>. */
-function checkAddressInDeliveryRegion(addressString) {
+function checkAddressInDeliveryRegion(addressString, warehouseCityKey) {
+    var key = (warehouseCityKey && typeof warehouseCityKey === 'string') ? warehouseCityKey.trim() : '';
+    if (key) {
+        var normalizedKey = (typeof normalizeCityAlias_ === 'function') ? (normalizeCityAlias_(key) || key) : key;
+        if (isRegionMatchByKeywords(normalizedKey)) return Promise.resolve({ inRegion: true });
+    }
     var trimmed = (addressString && typeof addressString === 'string') ? addressString.trim() : '';
     if (!trimmed) return Promise.resolve({ inRegion: true });
     if (isRegionMatchByKeywords(trimmed)) return Promise.resolve({ inRegion: true });
@@ -800,6 +825,8 @@ let _editOrderGiftTouchedByUser = false;
 let _editOrderGiftTierAtOpen = 0;
 /** Сохранённый orders.city на момент открытия заказа. Primary source of truth для edit calendar. null = не установлен. */
 let _editOrderLoadedCityRaw = null;
+/** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
+let _editOrderLoadedWarehouseCityKey = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -2859,7 +2886,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
     const withAssembly = !!document.getElementById('assembly')?.checked;
     if (SHOW_DELIVERY_DATE_IN_OFFER) {
         if (!currentDeliveryDate) {
-            const selectedCity = document.getElementById("city").value;
+            const selectedCity = (typeof resolveCreateWarehouseCityKey_ === 'function' ? (resolveCreateWarehouseCityKey_() || '') : '') || document.getElementById("city").value;
             if (selectedCity) {
                 await loadDeliveryDate(selectedCity);
             }
@@ -6153,6 +6180,7 @@ function fillEditOrderForm(order) {
     var orderCity = (order.city || '').trim() || (parsedAddr.part1 || '').trim();
     // primary source of truth для edit calendar
     _editOrderLoadedCityRaw = (order.city || '').trim() || null;
+    _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
     editOrderDeliveryCost = parseOrderPrice_(order.delivery_cost);
@@ -7035,6 +7063,7 @@ function clearEditOrderForm() {
     if (typeof currentOrderCreatedAtForEdit !== 'undefined') currentOrderCreatedAtForEdit = null;
     editOrderGiftSlotsPrev = -1;
     _editOrderLoadedCityRaw = null;
+    _editOrderLoadedWarehouseCityKey = null;
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
     showEditOrderStep(1);
@@ -7129,6 +7158,7 @@ function buildOrderPayloadFromEditModal() {
 
     var fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var dateForDb = deliveryDate && deliveryDate.indexOf('-') !== -1 ? formatDateRu(deliveryDate) : deliveryDate;
+    var warehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
 
     // raw-preserve: решаем по фактическому value, а не только по touched-flag
     // (touched flag ненадёжен: listener мог не сработать при программном вводе)
@@ -7148,6 +7178,7 @@ function buildOrderPayloadFromEditModal() {
         client_phone: _clientPhoneForPayload,
         delivery_date: dateForDb,
         delivery_address: fullAddress,
+        warehouse_city_key: warehouseCityKey || null,
         source: source,
         comment: comment
     };
@@ -7535,7 +7566,8 @@ function initEditOrderModal() {
             var editAddr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
             var isOldOrder = currentOrderCreatedAtForEdit && String(currentOrderCreatedAtForEdit).slice(0, 10) < '2026-03-09';
             if (editAddr1 && typeof checkAddressInDeliveryRegion === 'function' && !isOldOrder) {
-                var regionCheck = await checkAddressInDeliveryRegion(editAddr1);
+                var editWarehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
+                var regionCheck = await checkAddressInDeliveryRegion(editAddr1, editWarehouseCityKey);
                 if (!regionCheck.inRegion) {
                     setEditOrderFieldError_('eo-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
                     if (hintEl) {
@@ -13663,8 +13695,7 @@ function populateOrderDeliveryDate() {
     var dateStr = currentDeliveryDate;
 
     if (!dateStr) {
-        var citySelect = document.getElementById('city');
-        var city = (citySelect && citySelect.value) ? citySelect.value.trim() : '';
+        var city = typeof resolveCreateWarehouseCityKey_ === 'function' ? (resolveCreateWarehouseCityKey_() || '') : '';
         if (!city) {
             display.value = '';
             display.placeholder = '— Выберите город —';
@@ -14556,6 +14587,7 @@ function buildOrderPayloadFromFormAndCart() {
 
     const fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
     var effectiveCalc = orderCart[0];
+    var warehouseCityKey = (effectiveCalc && effectiveCalc.city) ? String(effectiveCalc.city).trim() : '';
     const client = { name: clientName, phone: normalizePhone(clientPhone), deliveryDate: deliveryDate, manager: manager, address: fullAddress };
     const commercialOffer = generateFullOrderTemplate(effectiveCalc, client, orderCart);
     const giftsText = (typeof getGiftsTextForOrder === 'function' ? getGiftsTextForOrder() : (typeof getGiftsText === 'function' ? getGiftsText() : '')) || '';
@@ -14622,6 +14654,7 @@ function buildOrderPayloadFromFormAndCart() {
         client_phone: normalizePhone(clientPhone),
         delivery_date: deliveryDate && deliveryDate.includes('-') ? formatDateRu(deliveryDate) : deliveryDate,
         delivery_address: fullAddress,
+        warehouse_city_key: warehouseCityKey || null,
         city: extractCityFromAddress(fullAddress) || extractCityFromAddress((effectiveCalc && effectiveCalc.address) || '') || (effectiveCalc && effectiveCalc.city) || '',
         model: effectiveCalc.model,
         width: String(effectiveCalc.width || ''),
@@ -14728,7 +14761,8 @@ async function submitOrder() {
     }
 
     if (addr1 && typeof checkAddressInDeliveryRegion === 'function') {
-        var regionCheck = await checkAddressInDeliveryRegion(addr1);
+        var createWarehouseCityKey = (typeof resolveCreateWarehouseCityKey_ === 'function') ? (resolveCreateWarehouseCityKey_() || '') : '';
+        var regionCheck = await checkAddressInDeliveryRegion(addr1, createWarehouseCityKey);
         if (!regionCheck.inRegion) {
             setOrderFieldError_('of-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
             resultDiv.textContent = '❌ ' + (regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');

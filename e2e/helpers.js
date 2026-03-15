@@ -24,8 +24,10 @@ async function loginIfNeeded(page, login, password) {
   if (!(await auth.isVisible())) return;
   await page.locator('#login').fill(login);
   await page.locator('#password').fill(password);
-  await page.locator('button:has-text("Войти")').click();
-  await page.waitForSelector('#auth-container.hidden', { timeout: 15000 });
+  const loginBtn = page.locator('#auth-container button:has-text("Войти")');
+  await loginBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await loginBtn.click();
+  await page.waitForSelector('#auth-container', { state: 'hidden', timeout: 15000 });
 }
 
 /**
@@ -178,6 +180,9 @@ async function openEditOrderByPhoneAndGetOrderId(page, phone) {
   }
   await editBtn.click();
   await page.locator('#edit-order-modal-body[data-step="2"]').waitFor({ state: 'visible', timeout: 5000 });
+  // Wait for fetchOrderById to fully resolve (renderEditOrderCompositionList) so that
+  // the 2nd showEditOrderStep(2) has already run; otherwise it may close the item panel later.
+  await page.locator('.edit-order-composition-item').first().waitFor({ state: 'visible', timeout: 10000 });
   return orderId;
 }
 

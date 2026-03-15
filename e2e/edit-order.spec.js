@@ -2,6 +2,12 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
+const {
+  loginIfNeeded,
+  openEditOrderByPhoneAndGetOrderId,
+  openEditOrderById,
+  saveEditOrder,
+} = require('./helpers');
 
 function randomPhone() {
   return '79' + String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
@@ -339,5 +345,67 @@ test.describe('Редактирование заказа', () => {
     ['3.3','3.5','4.1','4.2','4.3','4.4','4.5','5.1','5.2','5.3','5.4','5.5','7.1','7.2','7.3','7.4','8.2','8.3','8.4','8.5','9.1','9.2','9.3'].forEach(id => record(id, true, 'Ручная проверка'));
 
     writeResults();
+  });
+
+  test('existing-order-paid-extra: 70000000019 -> change additional window -> save -> reopen', async ({ page }) => {
+    const phone = '70000000019';
+    const login = process.env.TEST_LOGIN;
+    const password = process.env.TEST_PASSWORD;
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await loginIfNeeded(page, login, password);
+
+    const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
+    await page.locator('.edit-order-composition-item__btn--edit').first().click();
+    await page.locator('#edit-order-add-item-panel:not(.hidden)').waitFor({ state: 'visible', timeout: 5000 });
+    const qtySelect = page.locator('#edit-order-add-additional-window-qty');
+    await qtySelect.waitFor({ state: 'visible', timeout: 10000 });
+    // Wait for city data to load (form select populated) before selectOption,
+    // so that the triggered recalculation succeeds and savePosBtn stays visible.
+    await page.waitForFunction(
+      () => {
+        const sel = document.getElementById('edit-order-add-form');
+        return sel && sel.value && sel.value.trim().length > 0;
+      },
+      { timeout: 10000 }
+    );
+
+    const beforeQty = await qtySelect.inputValue();
+    test.skip(beforeQty !== '0' && beforeQty !== '1', 'Safe one-step change supports only 0->1 or 1->0.');
+
+    const afterQty = beforeQty === '0' ? '1' : '0';
+    const beforeDate = await page.locator('#edit-order-delivery-date-display').inputValue();
+    const beforeAddress1 = await page.locator('#edit-order-address-part1').inputValue();
+    const beforeComment = await page.locator('#edit-order-comment').inputValue();
+    const beforeGift = await page.locator('#edit-order-gift').inputValue();
+    const beforeSource = await page.locator('#edit-order-source').inputValue();
+    const beforeItemCount = await page.locator('.edit-order-composition-item').count();
+    const beforeTotal = await page.locator('#edit-order-composition-total').textContent();
+    const beforeGiftSlots = await page.locator('#edit-order-gifts-selection .edit-order-gift-select').count();
+
+    await qtySelect.selectOption(afterQty);
+    await page.locator('#edit-order-save-position-btn:not(.hidden)').waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator('#edit-order-save-position-btn').click();
+    await page.locator('#edit-order-add-item-panel').waitFor({ state: 'hidden', timeout: 5000 });
+    await saveEditOrder(page);
+
+    await openEditOrderById(page, orderId);
+    await page.locator('.edit-order-composition-item__btn--edit').first().click();
+    await page.locator('#edit-order-add-item-panel:not(.hidden)').waitFor({ state: 'visible', timeout: 5000 });
+    await expect(page.locator('#edit-order-add-additional-window-qty')).toHaveValue(afterQty);
+    await expect(page.locator('#edit-order-delivery-date-display')).toHaveValue(beforeDate);
+    await expect(page.locator('#edit-order-address-part1')).toHaveValue(beforeAddress1);
+    await expect(page.locator('#edit-order-comment')).toHaveValue(beforeComment);
+    await expect(page.locator('#edit-order-gift')).toHaveValue(beforeGift);
+    await expect(page.locator('#edit-order-source')).toHaveValue(beforeSource);
+
+    const afterItemCount = await page.locator('.edit-order-composition-item').count();
+    const afterGiftSlots = await page.locator('#edit-order-gifts-selection .edit-order-gift-select').count();
+    const afterTotal = await page.locator('#edit-order-composition-total').textContent();
+
+    expect(afterItemCount).toBe(beforeItemCount);
+    expect(afterGiftSlots).toBe(beforeGiftSlots);
+    expect((afterTotal || '').trim()).not.toBe((beforeTotal || '').trim());
   });
 });

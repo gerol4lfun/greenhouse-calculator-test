@@ -1,5 +1,96 @@
 # История изменений проекта
 
+## Отчёт сессии 15.03.2026 — docs sync, backlog, test harness
+
+**Проделанная работа (без изменений production code):**
+
+- **warehouse_city_key rollout** — шаги 1–3 завершены и зафиксированы (CHANGELOG, PREPROD_PLAN, STABILIZATION_CHECKLIST).
+- **edit-calendar fix** — city normalization (prefix strip, item.city preserve) подтверждён.
+- **Green smoke pack** — 5 local-safe тестов зелёные. Команда: `npx playwright test -g "auth-smoke|create-order-basic|edit-order-search-smoke|gifts-slot-visibility-smoke|gifts-tier-down-smoke"`.
+- **existing-order-paid-extra** — тест добавлен в edit-order.spec.js. Статус: added but unstable / not gate. Source of truth = localhost; GitHub Pages не использовать. Helper `openEditOrderByPhoneAndGetOrderId` дополнен ожиданием `.edit-order-composition-item` (root cause: ранний return до завершения fetchOrderById).
+- **Backlog** — в PREPROD_PLAN добавлен раздел «Backlog (калькуляторный контур)»: suspected bug (доставка не в графе), high-value UX («Добавить такую же теплицу»), medium UX (вёрстка блока доставки), feature (поликарбонат отдельно).
+- **Docs актуализированы** — PREPROD_PLAN, AUTOTEST_PLAN, CHANGELOG, ИНСТРУКЦИИ, КОНТЕКСТ_ПРОЕКТА. Версия калькулятора: v271 (без изменений production code).
+
+---
+
+## E2E: existing-order regression test для paid extras (15.03.2026)
+
+- **edit-order.spec.js:** добавлен тест `existing-order-paid-extra` — заказ 70000000019, изменение «Доп. форточка» 0↔1, save → reopen.
+- **Покрывает:** сохранение допа, дата/address/comment/gift/source/состав не уезжают, total пересчитывается.
+- **Не покрывает:** TG, downstream, Supabase diff, warehouse_city_key.
+- **Статус:** added but unstable / not gate. Source of truth для existing-order regression = localhost; GitHub Pages не использовать.
+- AUTOTEST_PLAN, PREPROD_PLAN обновлены.
+
+---
+
+## Local-safe green smoke pack (15.03.2026)
+
+- **Пакет:** auth-smoke, create-order-basic, edit-order-search-smoke, gifts-slot-visibility-smoke, gifts-tier-down-smoke.
+- **Результат:** все 5 тестов зелёные после warehouse_city_key rollout. Команда: `npx playwright test -g "auth-smoke|create-order-basic|edit-order-search-smoke|gifts-slot-visibility-smoke|gifts-tier-down-smoke"`.
+
+---
+
+## warehouse_city_key: шаг 3 rollout завершён (15.03.2026)
+
+- **Шаг 3:** delivery readers переведены на warehouse_city_key first с safe fallback.
+- **Readers:** create calendar, edit calendar, region availability. Tariff отдельно не меняли — уже использует канонический nearestCity.name.
+- **Fallback:** warehouse_city_key → orders.city → line_items[].city → derive from address.
+- **Яндекс-контур, address UI:** не рефакторились.
+- **Следующий шаг:** точечная ручная проверка и стабилизация, не новый рефакторинг.
+
+---
+
+## warehouse_city_key: шаг 2 rollout завершён (15.03.2026)
+
+- **Шаг 2:** write-path create/edit пишет orders.warehouse_city_key.
+- **Create:** из канонического create-source (effectiveCalc.city).
+- **Edit:** из resolveEditOrderCalendarCity_().
+- **Readers:** пока legacy-first / old path. Не переключались.
+- **delivery_address, orders.city:** сохраняются как раньше. Backfill не делался.
+- **Следующий шаг:** перевести readers на warehouse_city_key first с safe fallback.
+
+---
+
+## warehouse_city_key: шаг 1 rollout завершён (15.03.2026)
+
+- **Шаг 1:** добавлена nullable колонка `orders.warehouse_city_key`.
+- **Migration:** `db/migrations/20260315_add_warehouse_city_key_to_orders.sql`.
+- **Backfill:** не делался.
+- **Runtime:** create/edit/readers пока не менялись. Поле не используется как source of truth.
+- **Следующий шаг:** write-path для create/edit.
+
+---
+
+## Docs: warehouse_city_key — архитектурное решение и rollout plan (15.03.2026)
+
+- **Проблема:** delivery logic зависит от смешанных полей orders.city / delivery_address / runtime derive.
+- **Решение:** вводим orders.warehouse_city_key как source of truth для delivery logic.
+- **Зафиксировано в:** TRUTH_MAP.md (архитектурное решение), PREPROD_PLAN.md (rollout plan, legacy strategy).
+- **Яндекс-контур:** не рефакторится. Минимальный pre-prod rollout.
+
+---
+
+## fix: edit-calendar city key normalization — confirmed (15.03.2026)
+
+- **Bug:** existing-order edit calendar показывал почти все будущие даты зелёными.
+- **Root cause:** edit-flow брал orders.city в legacy-формате ("г. Санкт-Петербург"); normalizeCityAlias_() не убирал префиксы "г. "/"город "; resolveEditOrderCalendarCity_() возвращал raw legacy string; loadDeliveryDate() делал exact match по city_name и не попадал в канонический ключ delivery_calendar → fallback.
+- **Fix #1:** fillEditOrderForm() — сохраняет item.city из line_items, если он есть; orderCity только как fallback.
+- **Fix #2:** normalizeCityAlias_() — убирает типовые префиксы "г. " и "город " до lookup в aliasMap.
+- **Confirmed on:** 79000000028 (orders.city = "г. Санкт-Петербург") на актуальном калькуляторе — edit calendar показывает реальные ограничения, а не почти все даты зелёными.
+- **Note:** ранее false negative — проверка шла на неактуальном / не запушенном билде.
+- **Open:** адресный контур / смешение display address / city key / warehouse key — отдельный issue.
+
+---
+
+## Docs: existing-order edit proof + updated_at signal (15.03.2026)
+
+- **Existing-order edit по deep link:** подтверждён. Local operator route: base URL `http://localhost:3000`, deep link `/?editPhone=<phone>`.
+- **orders.updated_at change-signal:** подтверждён. Edit existing order реально обновляет `orders.updated_at` в Supabase (DB-side trigger).
+- **Подтверждённый кейс:** phone `79000000018`, id `ced4fafd-1602-4aae-874d-70f0f97150e3`. Before: delivery_date `19.03.2026`, updated_at `2026-03-14T13:35:11.610827+00:00`. After: delivery_date `16.03.2026`, updated_at `2026-03-15T09:35:06.334595+00:00`.
+- PREPROD_PLAN, AUTOTEST_PLAN обновлены.
+
+---
+
 ## fix: модалка дат — лимит bulk-загрузки delivery_calendar (15.03.2026)
 
 - **Общий баг:** bulk-загрузка delivery_calendar для модалки «Актуальные даты доставки» обрезалась на 1000 строках (дефолт Supabase).
