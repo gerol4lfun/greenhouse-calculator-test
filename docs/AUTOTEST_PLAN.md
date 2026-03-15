@@ -51,6 +51,8 @@
 
 **existing-order update:** подтверждён **ручной проверкой** на заказе 70000000019 без создания нового заказа. Менялось только поле `delivery_date`; после reopen в калькуляторе новая дата сохранилась, обновление дошло в Google Sheets, в Telegram пришло сообщение «Заказ изменён» с корректным diff по дате (старая → новая). Это manual confirmed, не auto verified.
 
+**PGRST204 incident (15.03.2026):** existing order save падал; root cause — колонка warehouse_city_key отсутствовала в prod. Ops recovery (миграция + NOTIFY pgrst) восстановил save. **Open:** MOVE_DATE e2e — запрос «28 марта», в diff ушло 27.03; suspected date mismatch — проверить первым делом завтра.
+
 **Подтверждённый proof-run кейс (15.03.2026):** phone `79000000018`, id `ced4fafd-1602-4aae-874d-70f0f97150e3`. Before: delivery_date `19.03.2026`, updated_at `2026-03-14T13:35:11.610827+00:00`. After: delivery_date `16.03.2026`, updated_at `2026-03-15T09:35:06.334595+00:00`. **orders.updated_at change-signal:** подтверждён — edit existing order реально обновляет `orders.updated_at` в Supabase.
 
 **Multi-item:** не объявлять закрытым. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). create-order-line-items автотест flaky/unsafe, не считать рабочим.

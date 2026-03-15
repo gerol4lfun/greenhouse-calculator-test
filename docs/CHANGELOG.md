@@ -1,5 +1,27 @@
 # История изменений проекта
 
+## End-of-day closeout 15.03.2026 — PGRST204 incident, ops recovery, open issues
+
+**Broken:** existing order save падал с PGRST204 / «Could not find the 'warehouse_city_key' column of 'orders' in the schema cache».
+
+**Root cause (подтверждено руками):** в prod Supabase реально отсутствовала колонка `orders.warehouse_city_key`. Миграция `db/migrations/20260315_add_warehouse_city_key_to_orders.sql` не была применена на prod.
+
+**Prod ops (выполнено):**
+1. Колонка добавлена вручную в prod (ALTER TABLE orders ADD COLUMN IF NOT EXISTS warehouse_city_key TEXT DEFAULT NULL).
+2. Выполнен `NOTIFY pgrst, 'reload schema'` в Supabase SQL Editor.
+3. После этого сохранение existing order прошло успешно.
+
+**Rejected:** кодовый rollback warehouse_city_key из payload НЕ принимался и НЕ считается решением. Проблема была в prod schema / PostgREST cache / environment, а не в идее warehouse_city_key rollout. Rollout не откатываем. Payload не урезаем.
+
+**Open issue (на завтра):** в e2e цепочке MOVE_DATE запрос был «перенести на 28 марта», а в «Заказ изменён» ушло 17.03 → 27.03. Неясно: менеджер реально сохранил 27.03 или есть рассинхрон выбора/сохранения даты. Не закрывать догадками — проверить отдельно.
+
+**Текущий status:**
+- existing-order save: восстановлен после ops recovery.
+- warehouse_city_key rollout: не откатываем, payload полный.
+- MOVE_DATE e2e path (калькулятор): save работает; suspected date mismatch 28→27 — open.
+
+---
+
 ## Отчёт сессии 15.03.2026 — docs sync, backlog, test harness
 
 **Проделанная работа (без изменений production code):**

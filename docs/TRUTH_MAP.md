@@ -79,6 +79,8 @@
 
 **Rollout plan и legacy strategy:** см. docs/PREPROD_PLAN.md, раздел «warehouse_city_key rollout».
 
+**PGRST204 incident (15.03.2026):** проблема была в prod schema (колонка не применена) и PostgREST cache, не в rollout. Решение — ops (миграция + NOTIFY pgrst). Rollback warehouse_city_key из payload отвергнут. Rollout не откатываем; payload не урезаем.
+
 ---
 
 ## Связанные проекты

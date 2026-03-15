@@ -36,6 +36,7 @@
 
 ## Open issues / suspected issues
 
+- **Date mismatch 28→27 (15.03.2026):** в e2e MOVE_DATE запрос был «перенести на 28 марта», в «Заказ изменён» ушло 17.03 → 27.03. Неясно: менеджер сохранил 27.03 или рассинхрон выбора/сохранения даты. Проверить первым делом завтра. Не закрывать догадками.
 - **Phone scope:** dual-phone UI не реализован. Legacy untouched raw-preserve подтверждён. Explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера — не подтверждены, future step. См. TRUTH_MAP.md.
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.
@@ -45,6 +46,13 @@
 - **Cancel flow race:** при слишком раннем нажатии «Отменить заказ» возможна «Ошибка: заказ не выбран».
 - **Обычный sync:** не всегда даёт чистую проверку без lock contention
 - **Auth migration** всех рабочих калькуляторов ещё не завершена
+
+---
+
+## Tomorrow first-check (16.03.2026)
+
+1. **Date mismatch 28→27:** проверить — менеджер реально сохранил 27.03 или есть рассинхрон выбора/сохранения даты в MOVE_DATE e2e path. Запрос был «28 марта», в «Заказ изменён» ушло 17.03 → 27.03.
+2. **Existing-order save:** smoke — edit по телефону, смена даты, save. Должно проходить без PGRST204.
 
 ---
 

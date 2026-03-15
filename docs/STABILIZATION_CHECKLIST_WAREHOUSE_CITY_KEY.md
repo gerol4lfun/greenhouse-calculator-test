@@ -2,7 +2,7 @@
 
 **Контекст:** rollout шагов 1–3 завершён. Колонка добавлена, write-path пишет, readers (create/edit calendar, region availability) читают warehouse_city_key first с safe fallback. Новые заказы не создаём.
 
-**PGRST204 workaround (15.03.2026):** Если при save existing order возникает «Could not find the 'warehouse_city_key' column of 'orders' in the schema cache» — колонка отсутствует в schema cache PostgREST. Причины: миграция не применена на prod ИЛИ schema cache не обновлён. **Минимальный фикс в коде:** warehouse_city_key временно исключён из payload (scripts.js). Чтобы восстановить запись warehouse_city_key: 1) применить `db/migrations/20260315_add_warehouse_city_key_to_orders.sql` на prod; 2) в Supabase SQL Editor выполнить `NOTIFY pgrst, 'reload schema'`; 3) вернуть warehouse_city_key в payload в buildOrderPayloadFromEditModal и buildOrderPayloadFromFormAndCart.
+**PGRST204 incident (15.03.2026) — resolved via ops:** existing order save падал с «Could not find the 'warehouse_city_key' column of 'orders' in the schema cache». Root cause: колонка отсутствовала в prod Supabase (миграция не была применена). **Решение (не rollback payload):** 1) колонка добавлена вручную в prod; 2) `NOTIFY pgrst, 'reload schema'` в Supabase SQL Editor; 3) save восстановлен. Rollback warehouse_city_key из payload отвергнут — проблема была в prod schema / PostgREST cache, не в rollout. См. CHANGELOG end-of-day closeout 15.03.2026.
 
 **Цель:** прогон существующими e2e/manual-safe сценариями для проверки стабильности.
 
