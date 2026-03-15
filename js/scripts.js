@@ -5316,9 +5316,11 @@ function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return 'only-delivery';
-    if (rs === 'X' || rs === 'С') return 'blocked';
+    if (rs === 'С') return 'only-assembly';
+    if (rs === 'X' || rs === 'Х') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
+    if (!meta.withoutAssembly && meta.withAssembly) return 'only-assembly';
     return 'blocked';
 }
 
@@ -5335,11 +5337,20 @@ async function loadDeliveryDatesModalData() {
     var endD = new Date(dd.getTime() + 95 * 86400000);
     var endStr = endD.getFullYear() + '-' + String(endD.getMonth() + 1).padStart(2, '0') + '-' + String(endD.getDate()).padStart(2, '0');
     var datesQ = supabaseClient.from('delivery_dates').select('city_name, delivery_date, assembly_date, restrictions').order('city_name');
-    var calQ = supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(0, 9999);
-    var res = await Promise.all([datesQ, calQ]);
-    var data = res[0].data || [];
-    var error = res[0].error;
-    var calData = res[1].data || [];
+    var datesRes = await datesQ;
+    var data = datesRes.data || [];
+    var error = datesRes.error;
+    var calData = [];
+    var calPage = 0;
+    var calPageSize = 1000;
+    while (true) {
+        var calRes = await supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(calPage * calPageSize, (calPage + 1) * calPageSize - 1);
+        if (calRes.error) throw calRes.error;
+        if (!calRes.data || calRes.data.length === 0) break;
+        calData = calData.concat(calRes.data);
+        if (calRes.data.length < calPageSize) break;
+        calPage++;
+    }
     if (error && error.code === '42703') {
         var fb = await supabaseClient.from('delivery_dates').select('city_name, delivery_date').order('city_name');
         if (!fb.error && fb.data) {
@@ -5557,6 +5568,7 @@ function renderDeliveryModalCalendar() {
         if (state === 'past') btn.classList.add('past');
         else if (state === 'available') btn.classList.add('available');
         else if (state === 'only-delivery') btn.classList.add('only-delivery');
+        else if (state === 'only-assembly') btn.classList.add('only-assembly');
         else btn.classList.add('blocked');
         grid.appendChild(btn);
     }
