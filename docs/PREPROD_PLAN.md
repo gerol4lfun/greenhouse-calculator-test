@@ -45,23 +45,26 @@
 | 1 | **Edit-calendar city resolve bug** | canonicalCity=1 fixed; numeric candidate reject; Ivan case manual confirmed |
 | 2 | **canonicalCity=1** | resolveEditOrderCalendarCity_ теперь отбрасывает "1"/"64"/"2" и использует resolveRegionToCanonicalCity_(p1) |
 | 3 | **Ivan case** | edit-calendar показывает ограничения (не all-green); withAssembly=true; stateMapCountForMonth>0 |
+| 4 | **all-green fix** | verified |
+| 5 | **Wrong save path guard** | main form submit blocked when edit modal open; Ivan case verified |
+| 6 | **Ivan dual-phone preserve** | verified |
+| 7 | **Legacy composition/title phantom diff fix** | verified on Svetlana (change only date → diff only date in TG) |
+| 8 | **Passive mutation major branches** | contained |
 
 ---
 
-## STILL OPEN
+## UNDER DOUBT / NOT REPRODUCED
 
 | # | Что | Статус |
 |---|-----|--------|
-| 1 | **Passive mutation of legacy orders** | Не подтверждено безопасно |
-| 2 | **Dual-phone / untouched phone preserve** | Не подтверждено safe end-to-end |
-| 3 | **Phantom diff по составу/названию legacy позиции** | Возможны ложные изменения в diff |
-| 4 | **Date mismatch 28→27** | Under doubt; не закрыто до проверки |
+| 1 | **Date mismatch 28→27** | Audit показал: syncEditOrderCalendarSlotsWithMode может заменять выбранную дату на getNearestAvailableDate при «недоступной» дате для режима. Живой воспроизводимый кейс не подтверждён → code fix не вносился. |
+| 2 | **Rare legacy scenarios** | вне уже проверенных кейсов |
 
 ---
 
 ## Open issues / suspected issues
 
-- **Date mismatch 28→27 (15.03.2026) — under doubt:** кейс «перенести на 28 марта» → в «Заказ изменён» фигурировала 27.03. Пока не зафиксировано: ошибка UI/календаря/save path или реально сохранённое значение пользователем. Не считать закрытым до отдельной проверки.
+- **Date mismatch 28→27 (15.03.2026) — under doubt:** кейс «перенести на 28 марта» → в «Заказ изменён» фигурировала 27.03. Аудит выявил потенциально опасное место: syncEditOrderCalendarSlotsWithMode при «недоступной» дате для режима сборки заменяет выбранную дату на getNearestAvailableDate. Живой воспроизводимый кейс не подтверждён → code fix не вносился.
 - **Phone scope:** dual-phone UI и search реализованы и приняты. См. TRUTH_MAP.md «Phone scope» и CHANGELOG «Dual-phone UI + untouched legacy (doc-only)».
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.

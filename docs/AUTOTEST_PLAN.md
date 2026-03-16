@@ -53,9 +53,13 @@
 
 **existing-order update:** подтверждён **ручной проверкой** на заказе 70000000019 без создания нового заказа. Менялось только поле `delivery_date`; после reopen в калькуляторе новая дата сохранилась, обновление дошло в Google Sheets, в Telegram пришло сообщение «Заказ изменён» с корректным diff по дате (старая → новая). Это manual confirmed, не auto verified.
 
-**PGRST204 incident (15.03.2026):** Confirmed: prod-schema; колонка отсутствовала; ops recovery восстановил save; rollback rejected. **Open/under doubt:** MOVE_DATE e2e — «28 марта»→27.03 в diff; не зафиксировано (UI/save path или пользователь); не считать закрытым до проверки.
+**PGRST204 incident (15.03.2026):** Confirmed: prod-schema; колонка отсутствовала; ops recovery восстановил save; rollback rejected.
 
 **Edit-calendar city resolve (15.03.2026) — RESOLVED:** canonicalCity=1 bug fixed. Ivan case manual confirmed: edit-calendar с адресом «регион, участок, улица» теперь canonicalCity=Москва, календарь показывает ограничения. Автотест не добавлен.
+
+**Post-fix cleanup (15.03.2026) — RESOLVED:** edit-calendar canonicalCity=1, all-green fix, wrong save path guard, Ivan dual-phone preserve, legacy composition/title phantom diff fix (Svetlana case), passive mutation branches contained.
+
+**28→27 (15.03.2026) — UNDER DOUBT:** Аудит показал потенциально опасное место в syncEditOrderCalendarSlotsWithMode (selected-date auto-snap: при «недоступной» дате для режима выбранная дата заменяется на getNearestAvailableDate). Живой воспроизводимый кейс не подтверждён → code fix не вносился.
 
 **Подтверждённый proof-run кейс (15.03.2026):** phone `79000000018`, id `ced4fafd-1602-4aae-874d-70f0f97150e3`. Before: delivery_date `19.03.2026`, updated_at `2026-03-14T13:35:11.610827+00:00`. After: delivery_date `16.03.2026`, updated_at `2026-03-15T09:35:06.334595+00:00`. **orders.updated_at change-signal:** подтверждён — edit existing order реально обновляет `orders.updated_at` в Supabase.
 

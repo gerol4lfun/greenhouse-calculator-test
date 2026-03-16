@@ -1,5 +1,30 @@
 # История изменений проекта
 
+## Doc-only closeout (15.03.2026) — финальная волна фиксов
+
+**Код не менялся.** Обновлены docs: TRUTH_MAP, PREPROD_PLAN, CHANGELOG, AUTOTEST_PLAN.
+
+**RESOLVED (подтверждено руками):**
+- edit-calendar canonicalCity=1 bug — resolved
+- Ivan case: all-green fixed, dual-phone preserve verified, save через edit modal path
+- wrong save path / main form submit guard — resolved
+- Svetlana case: phantom diff по legacy composition/title не воспроизвёлся после фикса; при date-only update в уведомлении только дата
+- passive mutation major branches contained
+
+**UNDER DOUBT / NOT REPRODUCED:**
+- 28→27 case — аудит показал потенциально опасное место в selected-date auto-snap logic (syncEditOrderCalendarSlotsWithMode заменяет выбранную дату на getNearestAvailableDate при «недоступной» дате для режима). Живой воспроизводимый кейс не подтверждён → code fix не вносился.
+- rare legacy scenarios вне уже проверенных кейсов
+
+---
+
+## Post-fix cleanup (15.03.2026)
+
+**Удалено:** временные [phone-debug] логи из js/scripts.js (fillEditOrderForm, buildOrderPayloadFromEditModal, buildOrderPayloadFromFormAndCart, submitOrder, phone touch listeners).
+
+**Docs обновлены:** TRUTH_MAP, PREPROD_PLAN, CHANGELOG, AUTOTEST_PLAN — разделение RESOLVED / UNDER DOUBT.
+
+---
+
 ## fix: edit-calendar city resolve — canonicalCity=1 (15.03.2026)
 
 **Проблема:** edit-calendar для existing order с адресом «регион, участок, улица» показывал all-green. Root cause: `resolveEditOrderCalendarCity_()` возвращал `"1"` (номер участка из `extractCityFromAddress` parts[1]) вместо города. delivery_calendar с city="1" не находил данные → stateMap пустой → все даты available.

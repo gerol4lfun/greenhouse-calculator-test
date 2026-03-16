@@ -91,7 +91,19 @@
 
 **Rollout plan и legacy strategy:** см. docs/PREPROD_PLAN.md, раздел «warehouse_city_key rollout».
 
-**PGRST204 incident (15.03.2026) — truth freeze:** Confirmed: prod-schema проблема; колонка отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected. Open/under doubt: кейс «28 марта»→27.03 в diff; не считать закрытым до проверки.
+**PGRST204 incident (15.03.2026) — truth freeze:** Confirmed: prod-schema проблема; колонка отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected.
+
+**Post-fix cleanup (15.03.2026) — RESOLVED:**
+- edit-calendar canonicalCity=1 — fixed, Ivan case verified
+- all-green fix — verified
+- wrong save path guard — main form submit blocked when edit modal open
+- Ivan dual-phone preserve — verified
+- legacy composition/title phantom diff fix — verified on Svetlana (change only date → diff only date)
+- passive mutation major branches contained
+
+**UNDER DOUBT / NOT REPRODUCED:**
+- 28→27 case — audit показал потенциально опасное место в `syncEditOrderCalendarSlotsWithMode()` (selected-date auto-snap: при «недоступной» дате для режима сборки выбранная дата заменяется на `getNearestAvailableDate`). Живой воспроизводимый кейс не подтверждён → code fix не вносился.
+- rare legacy scenarios вне уже проверенных кейсов
 
 ---
 

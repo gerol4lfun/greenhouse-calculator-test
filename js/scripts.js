@@ -838,6 +838,8 @@ let _editOrderOriginalPhoneRaw = null;
 let _editOrderOriginalAddressRaw = null;
 /** Пользователь явно редактировал поле телефона в текущей сессии редактирования. */
 let _editOrderPhoneTouchedByUser = false;
+/** Менеджер явно нажал «Сохранить позицию» — иначе при «Сохранить изменения» не перезаписывать legacy composition canonical'ом из расчёта (phantom diff fix). */
+let _editOrderPositionExplicitlySaved = false;
 /** Пользователь явно редактировал поля адреса (part1/part2/part3/noPlot) в текущей сессии. */
 let _editOrderAddressTouchedByUser = false;
 /** Пользователь явно выбирал подарки в селектах модалки в текущей сессии редактирования. */
@@ -6804,6 +6806,7 @@ function renderEditOrderAddBreakdown(data) {
 
 function openEditOrderAddPanel(index) {
     editOrderEditingIndex = index;
+    _editOrderPositionExplicitlySaved = false;
     var panel = document.getElementById('edit-order-add-item-panel');
     var confirmBtn = document.getElementById('edit-order-add-confirm-btn');
     var savePosBtn = document.getElementById('edit-order-save-position-btn');
@@ -6919,6 +6922,7 @@ function openEditOrderAddPanel(index) {
 
 function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
+    _editOrderPositionExplicitlySaved = false;
     lastModalCalculationResult = null;
     clearEditOrderAddBreakdown();
     var panel = document.getElementById('edit-order-add-item-panel');
@@ -7241,7 +7245,6 @@ function buildOrderPayloadFromEditModal() {
     } else {
         _clientPhoneForPayload = combinePhonesForPayload_(phone1, phone2) || '';
     }
-
     var payload = {
         client_name: name,
         client_phone: _clientPhoneForPayload,
@@ -7663,10 +7666,9 @@ function initEditOrderModal() {
                     return;
                 }
             }
-            // Если суб-панель редактирования позиции открыта и есть несохранённый расчёт —
-            // автоматически применяем его к составу перед сохранением (баг: пользователь нажал
-            // «Рассчитать» но не нажал «Сохранить позицию», а сразу «Сохранить изменения»).
-            if (lastModalCalculationResult && editOrderEditingIndex != null &&
+            // Перезаписывать позицию из lastModalCalculationResult только если менеджер явно нажал «Сохранить позицию».
+            // Иначе legacy composition не трогаем — phantom diff fix (canonical из расчёта не перезаписывает untouched legacy).
+            if (_editOrderPositionExplicitlySaved && lastModalCalculationResult && editOrderEditingIndex != null &&
                 editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
                 editOrderComposition[editOrderEditingIndex] = {
                     model: lastModalCalculationResult.model,
@@ -7806,8 +7808,12 @@ function initEditOrderModal() {
         ['edit-order-client-phone', 'edit-order-client-phone-2'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) {
-                el.addEventListener('input', function () { _editOrderPhoneTouchedByUser = true; });
-                el.addEventListener('change', function () { _editOrderPhoneTouchedByUser = true; });
+                el.addEventListener('input', function () {
+                    _editOrderPhoneTouchedByUser = true;
+                });
+                el.addEventListener('change', function () {
+                    _editOrderPhoneTouchedByUser = true;
+                });
             }
         });
     })();
@@ -7986,6 +7992,7 @@ function initEditOrderModal() {
     if (savePosBtn) {
         savePosBtn.addEventListener('click', function () {
             if (editOrderEditingIndex == null || !lastModalCalculationResult) return;
+            _editOrderPositionExplicitlySaved = true;
             var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
             editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
             editOrderStateRedoSample = null;
