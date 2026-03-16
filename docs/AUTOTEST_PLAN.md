@@ -29,6 +29,8 @@
 
 **edit-order-comment:** в order-flow помечен local-safe, но сохранение comment в Supabase не проходит (RLS/триггер). UI-шаги и reopen по id проверяются при наличии заказа по SEARCH_PHONE; persistence — не verified.
 
+**Dual-phone (15.03.2026):** manual check — поиск по первому/второму номеру dual-phone заказа; create с "79211234567 / 79112223344"; deep link по второму номеру. Автотест — не добавлен.
+
 ### 2.2. Integration-required (нужен работающий Supabase и успешный submit)
 
 | # | Тест | Цель |
@@ -51,7 +53,7 @@
 
 **existing-order update:** подтверждён **ручной проверкой** на заказе 70000000019 без создания нового заказа. Менялось только поле `delivery_date`; после reopen в калькуляторе новая дата сохранилась, обновление дошло в Google Sheets, в Telegram пришло сообщение «Заказ изменён» с корректным diff по дате (старая → новая). Это manual confirmed, не auto verified.
 
-**PGRST204 incident (15.03.2026):** existing order save падал; root cause — колонка warehouse_city_key отсутствовала в prod. Ops recovery (миграция + NOTIFY pgrst) восстановил save. **Open:** MOVE_DATE e2e — запрос «28 марта», в diff ушло 27.03; suspected date mismatch — проверить первым делом завтра.
+**PGRST204 incident (15.03.2026):** Confirmed: prod-schema; колонка отсутствовала; ops recovery восстановил save; rollback rejected. **Open/under doubt:** MOVE_DATE e2e — «28 марта»→27.03 в diff; не зафиксировано (UI/save path или пользователь); не считать закрытым до проверки.
 
 **Подтверждённый proof-run кейс (15.03.2026):** phone `79000000018`, id `ced4fafd-1602-4aae-874d-70f0f97150e3`. Before: delivery_date `19.03.2026`, updated_at `2026-03-14T13:35:11.610827+00:00`. After: delivery_date `16.03.2026`, updated_at `2026-03-15T09:35:06.334595+00:00`. **orders.updated_at change-signal:** подтверждён — edit existing order реально обновляет `orders.updated_at` в Supabase.
 

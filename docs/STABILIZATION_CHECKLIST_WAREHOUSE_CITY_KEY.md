@@ -2,7 +2,9 @@
 
 **Контекст:** rollout шагов 1–3 завершён. Колонка добавлена, write-path пишет, readers (create/edit calendar, region availability) читают warehouse_city_key first с safe fallback. Новые заказы не создаём.
 
-**PGRST204 incident (15.03.2026) — resolved via ops:** existing order save падал с «Could not find the 'warehouse_city_key' column of 'orders' in the schema cache». Root cause: колонка отсутствовала в prod Supabase (миграция не была применена). **Решение (не rollback payload):** 1) колонка добавлена вручную в prod; 2) `NOTIFY pgrst, 'reload schema'` в Supabase SQL Editor; 3) save восстановлен. Rollback warehouse_city_key из payload отвергнут — проблема была в prod schema / PostgREST cache, не в rollout. См. CHANGELOG end-of-day closeout 15.03.2026.
+**PGRST204 incident (15.03.2026) — resolved via ops. Truth freeze:**
+- **Confirmed:** ошибка была prod-schema; колонка отсутствовала; добавлена вручную; NOTIFY pgrst выполнен; save восстановлен; rollback payload rejected.
+- **Open / under doubt:** кейс «28 марта» → в diff ушло 27.03; не закрыто до отдельной проверки (UI/календарь/save path vs реальное значение пользователя).
 
 **Цель:** прогон существующими e2e/manual-safe сценариями для проверки стабильности.
 

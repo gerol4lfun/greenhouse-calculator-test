@@ -1,24 +1,57 @@
 # История изменений проекта
 
-## End-of-day closeout 15.03.2026 — PGRST204 incident, ops recovery, open issues
+## Dual-phone support (15.03.2026)
 
-**Broken:** existing order save падал с PGRST204 / «Could not find the 'warehouse_city_key' column of 'orders' in the schema cache».
+**Цель:** поиск по любому номеру, create с dual-phone, без потери legacy. Storage: client_phone = "num1 / num2".
 
-**Root cause (подтверждено руками):** в prod Supabase реально отсутствовала колонка `orders.warehouse_city_key`. Миграция `db/migrations/20260315_add_warehouse_city_key_to_orders.sql` не была применена на prod.
+**Изменения:**
+- **extractOnePhoneForSearch(raw)** — извлечение первого валидного 11-значного номера из single или "num1 / num2".
+- **searchOrdersByPhone:** whole phone token: eq, "N / %", "% / N" (без fuzzy).
+- **Search validation:** extractOnePhoneForSearch вместо normalizePhone.
+- **deep link ?editPhone=:** extractOnePhoneForSearch.
+- **create order:** validation — isValidPhoneForSave_, payload — sanitizePhoneForSave_.
+- **checkSimilarOrderWarning:** whole token search.
+- **refresh after cancel:** extractOnePhoneForSearch.
 
-**Prod ops (выполнено):**
-1. Колонка добавлена вручную в prod (ALTER TABLE orders ADD COLUMN IF NOT EXISTS warehouse_city_key TEXT DEFAULT NULL).
-2. Выполнен `NOTIFY pgrst, 'reload schema'` в Supabase SQL Editor.
-3. После этого сохранение existing order прошло успешно.
+**Файлы:** js/scripts.js. Docs: TRUTH_MAP, PREPROD_PLAN, CHANGELOG, AUTOTEST_PLAN.
 
-**Rejected:** кодовый rollback warehouse_city_key из payload НЕ принимался и НЕ считается решением. Проблема была в prod schema / PostgREST cache / environment, а не в идее warehouse_city_key rollout. Rollout не откатываем. Payload не урезаем.
+---
 
-**Open issue (на завтра):** в e2e цепочке MOVE_DATE запрос был «перенести на 28 марта», а в «Заказ изменён» ушло 17.03 → 27.03. Неясно: менеджер реально сохранил 27.03 или есть рассинхрон выбора/сохранения даты. Не закрывать догадками — проверить отдельно.
+## Phantom diff fix: untouched legacy fields (15.03.2026)
 
-**Текущий status:**
+**Проблема:** при edit existing order менеджер менял только дату; в «Заказ изменён» показывались ложные изменения: адрес якобы изменился (пересобран/нормализован), из dual-phone исчез второй номер.
+
+**Фикс:**
+- **delivery_address:** добавлены _editOrderOriginalAddressRaw, _editOrderAddressTouchedByUser. При untouched — payload использует original literally, без parse/reassemble.
+- **client_phone:** при !_editOrderPhoneTouchedByUser всегда используем _editOrderOriginalPhoneRaw (защита от потери второго номера).
+- **Валидация:** при untouched phone пропускаем валидацию.
+
+**Файлы:** js/scripts.js (buildOrderPayloadFromEditModal, fillEditOrderForm, validateEditOrderModal, clearEditOrderForm, address/phone touch listeners).
+
+---
+
+## End-of-day closeout 15.03.2026 — PGRST204 incident, ops recovery, truth freeze
+
+### Confirmed truths (зафиксировано)
+
+1. Ошибка PGRST204 / «warehouse_city_key column not found» была реальной prod-schema проблемой.
+2. В prod таблице `orders` колонка `warehouse_city_key` реально отсутствовала.
+3. Колонка добавлена вручную в prod (ALTER TABLE orders ADD COLUMN IF NOT EXISTS warehouse_city_key TEXT DEFAULT NULL).
+4. Выполнен `NOTIFY pgrst, 'reload schema'` в Supabase SQL Editor.
+5. После этого save existing order снова работает.
+6. Rollback warehouse_city_key из payload rejected и не считается решением. Rollout не откатываем. Payload не урезаем.
+
+### Open issues / under doubt (не закрыто)
+
+1. Кейс «перенести на 28 марта» → в «Заказ изменён» фигурировала дата 27.03.
+2. Пока не зафиксировано: это ошибка UI/календаря/save path или реально сохранённое значение пользователем.
+3. Не считать этот кейс закрытым до отдельной проверки.
+
+### Текущий status
+
 - existing-order save: восстановлен после ops recovery.
 - warehouse_city_key rollout: не откатываем, payload полный.
-- MOVE_DATE e2e path (калькулятор): save работает; suspected date mismatch 28→27 — open.
+- MOVE_DATE e2e path (калькулятор): save работает; date mismatch 28→27 — open, under doubt.
 
 ---
 

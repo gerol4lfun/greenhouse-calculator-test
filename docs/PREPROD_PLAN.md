@@ -29,15 +29,18 @@
 - **Existing cancel flow:** manual confirmed на заказе 79000000066. status: synced → cancelled; comment получил дописку с причиной отмены; quantity, delivery_date, line_items, commercial_offer не изменились; обычный edit-path после cancel блокируется. Manual confirmed, не auto verified.
 - **Восстановление подарков в edit-модалке:** баг исправлен. Причина — parseGiftTextToSelected не распознавал текст вида «2 дополнительные форточки» и не разворачивал количество в слоты (id=window). Ручная проверка на заказе 70000000019: после reopen Подарок 1 и Подарок 2 = Дополнительная форточка. Gifts consistency в целом по-прежнему partial — integration e2e gifts-save-reopen не verified в локальном окружении (зависимость от Supabase/waitOrderSuccess).
 - **Gifts raw-preserve на legacy existing order:** manual confirmed на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (client_phone 79266302494, Жирнов Сергей). Меняли только delivery_date; gift остался literally «форточка 1 шт.» — legacy gift не переписывается в канонический формат при edit другого поля.
+- **Phantom diff fix (15.03.2026):** при edit existing order, если менеджер менял только дату — diff только по дате. delivery_address и client_phone (dual-phone) не пересобираются, не нормализуются; untouched legacy fields сохраняются literally. Реализовано: _editOrderOriginalAddressRaw, _editOrderAddressTouchedByUser; phone — при !touched всегда original.
+- **Dual-phone support (15.03.2026):** поиск по любому номеру (whole token: eq, "N / %", "% / N"), create с dual-phone, deep link, checkSimilarOrderWarning, refresh after cancel. extractOnePhoneForSearch, sanitizePhoneForSave_ в create payload.
 - **Edit calendar source-of-truth:** manual confirmed. Календарь в edit existing order использует приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve) и fix #2 (prefix strip) внесены. Кейсы: 8e803d39 (orders.city=МСК); 79000000028 (orders.city="г. Санкт-Петербург") — на актуальном калькуляторе календарь показывает реальные ограничения. Ранее false negative — проверка на неактуальном билде.
+- **PGRST204 incident (15.03.2026) — confirmed:** prod-schema проблема; колонка warehouse_city_key отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected.
 - **Логика дат доставки:** Москва в основной форме; Набережные Челны в edit modal со сборкой — подтверждены вручную. Логика основной формы и edit modal выровнена (канонический city key в обоих).
 
 ---
 
 ## Open issues / suspected issues
 
-- **Date mismatch 28→27 (15.03.2026):** в e2e MOVE_DATE запрос был «перенести на 28 марта», в «Заказ изменён» ушло 17.03 → 27.03. Неясно: менеджер сохранил 27.03 или рассинхрон выбора/сохранения даты. Проверить первым делом завтра. Не закрывать догадками.
-- **Phone scope:** dual-phone UI не реализован. Legacy untouched raw-preserve подтверждён. Explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера — не подтверждены, future step. См. TRUTH_MAP.md.
+- **Date mismatch 28→27 (15.03.2026) — under doubt:** кейс «перенести на 28 марта» → в «Заказ изменён» фигурировала 27.03. Пока не зафиксировано: ошибка UI/календаря/save path или реально сохранённое значение пользователем. Не считать закрытым до отдельной проверки.
+- **Phone scope:** dual-phone search/create реализованы. Отдельное поле второго номера — future step. См. TRUTH_MAP.md.
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.
 - **Gifts consistency end-to-end** не закрыт полностью

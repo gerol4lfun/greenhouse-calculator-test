@@ -54,7 +54,8 @@
 
 - **gifts = slots.** Fixed bundles не источник истины. См. GIFT_TRUTH.md.
 - **Gifts raw-preserve:** legacy gift на existing order не должен автоматически переписываться в канонический формат при edit другого поля. Подтверждено на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (gift «форточка 1 шт.» сохранился при смене только delivery_date).
-- **Phone scope:** legacy dual-phone slash-format («79128974834 /79085842934») — два номера одного клиента. Подтверждён только fix data-loss для existing untouched order (phone field не трогали → raw-preserve literally). Не реализовано и не считать подтверждённым: ввод dual-phone через UI, explicit edit dual-phone, поиск по dual-phone, отдельное поле второго номера. Future step — отдельный UX/поле для второго номера.
+- **Phone scope:** legacy dual-phone slash-format («79128974834 / 79085842934») — два номера одного клиента. Реализовано: поиск по любому номеру (extractOnePhoneForSearch, whole token: eq, "N / %", "% / N"), create с dual-phone (isValidPhoneForSave_, sanitizePhoneForSave_), deep link, checkSimilarOrderWarning, refresh after cancel. existing-order edit: untouched raw-preserve сохраняет dual-phone. Storage: client_phone = "num1 / num2" (совместимо с legacy). Отдельное поле второго номера — future step.
+- **Existing-order edit: untouched legacy fields:** delivery_address и client_phone, которые менеджер не трогал при edit, должны сохраняться literally. Не нормализовать, не пересобирать, не включать в phantom diff. При смене только даты — diff только по дате. Реализовано: _editOrderOriginalAddressRaw, _editOrderOriginalPhoneRaw, touched-флаги; payload использует original при untouched.
 - **Edit calendar source-of-truth:** confirmed. Приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve) и fix #2 (prefix strip) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург") — на актуальном калькуляторе календарь показывает реальные ограничения. Принято: вводим orders.warehouse_city_key как source of truth для delivery logic (см. ниже).
 - **cancelled** — не редактируется. UI + проверка перед save.
 - **Платные допы** — не должны пропадать из long КП из-за логики подарков.
@@ -79,7 +80,7 @@
 
 **Rollout plan и legacy strategy:** см. docs/PREPROD_PLAN.md, раздел «warehouse_city_key rollout».
 
-**PGRST204 incident (15.03.2026):** проблема была в prod schema (колонка не применена) и PostgREST cache, не в rollout. Решение — ops (миграция + NOTIFY pgrst). Rollback warehouse_city_key из payload отвергнут. Rollout не откатываем; payload не урезаем.
+**PGRST204 incident (15.03.2026) — truth freeze:** Confirmed: prod-schema проблема; колонка отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected. Open/under doubt: кейс «28 марта»→27.03 в diff; не считать закрытым до проверки.
 
 ---
 
