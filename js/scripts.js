@@ -863,6 +863,7 @@ function getEditOrderStateSnapshot() {
 function getEditOrderFormSnapshot() {
     var nameEl = document.getElementById('edit-order-client-name');
     var phoneEl = document.getElementById('edit-order-client-phone');
+    var phone2El = document.getElementById('edit-order-client-phone-2');
     var dateEl = document.getElementById('edit-order-delivery-date');
     var addr1 = document.getElementById('edit-order-address-part1');
     var addr2 = document.getElementById('edit-order-address-part2');
@@ -873,6 +874,7 @@ function getEditOrderFormSnapshot() {
     return {
         name: nameEl ? (nameEl.value || '').trim() : '',
         phone: phoneEl ? (phoneEl.value || '').trim() : '',
+        phone2: phone2El ? (phone2El.value || '').trim() : '',
         deliveryDate: dateEl ? (dateEl.value || '').trim() : '',
         addr1: addr1 ? (addr1.value || '').trim() : '',
         addr2: addr2 ? (addr2.value || '').trim() : '',
@@ -4817,7 +4819,7 @@ function initCharCounters() {
     }
     // Обновление «Текст заказа» при изменении полей формы заказа
     const refreshClientOffer = () => updateClientOfferFromShort();
-    const orderIds = ['order-client-name', 'order-client-phone', 'order-manager', 'order-address-part1', 'order-address-part2', 'order-address-part3', 'order-no-plot'];
+    const orderIds = ['order-client-name', 'order-client-phone', 'order-client-phone-2', 'order-manager', 'order-address-part1', 'order-address-part2', 'order-address-part3', 'order-no-plot'];
     orderIds.forEach(function (id) {
         const el = document.getElementById(id);
         if (el) {
@@ -5793,14 +5795,16 @@ function requestCloseEditOrderModal() {
     return true;
 }
 
-/** Поиск заказов в Supabase по телефону. Поддерживает single и dual-phone. Whole phone token: eq, "N / %", "% / N". */
+/** Поиск заказов в Supabase по телефону. Поддерживает single и dual-phone. Whole phone token: eq, like-паттерны для dual-phone. */
 async function searchOrdersByPhone(phone) {
     var n = extractOnePhoneForSearch(phone);
     if (!n || n.length !== 11) return [];
+    var q = '"';
+    var orFilter = 'client_phone.eq.' + n + ',client_phone.like.' + q + n + ' / *' + q + ',client_phone.like.' + q + '* / ' + n + q + ',client_phone.like.*/' + n;
     var list = await supabaseClient
         .from('orders')
         .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly, delivery_cost')
-        .or('client_phone.eq.' + n + ',client_phone.like.' + n + ' / %,client_phone.like.% / ' + n)
+        .or(orFilter)
         .order('created_at', { ascending: false })
         .limit(30);
     if (list.error) throw list.error;
@@ -6144,8 +6148,15 @@ function fillEditOrderForm(order) {
     lastEditOrderManager = (order.manager || '').trim();
     lastLoadedOrderCommercialOffer = (order.commercial_offer || '').trim();
     setEditOrderFieldValue('edit-order-client-name', order.client_name || '');
-    setEditOrderFieldValue('edit-order-client-phone', order.client_phone || '');
-    // raw-preserve: сохранить оригинальный телефон до любых изменений пользователем
+    var phoneParts = parsePhoneToParts_(order.client_phone || '');
+    setEditOrderFieldValue('edit-order-client-phone', phoneParts.part1 || '');
+    setEditOrderFieldValue('edit-order-client-phone-2', phoneParts.part2 || '');
+    var phone2Wrap = document.getElementById('eo-phone2');
+    var addPhone2Row = document.getElementById('edit-order-phone2-add-row');
+    if (phone2Wrap && addPhone2Row) {
+        if (phoneParts.part2) { phone2Wrap.classList.remove('hidden'); addPhone2Row.classList.add('hidden'); }
+        else { phone2Wrap.classList.add('hidden'); addPhone2Row.classList.remove('hidden'); }
+    }
     _editOrderOriginalPhoneRaw = order.client_phone != null ? String(order.client_phone) : '';
     _editOrderPhoneTouchedByUser = false;
     var deliveryStr = (order.delivery_date || '').trim();
@@ -7048,6 +7059,11 @@ function setEditOrderFieldValue(id, value) {
 function clearEditOrderForm() {
     setEditOrderFieldValue('edit-order-client-name', '');
     setEditOrderFieldValue('edit-order-client-phone', '');
+    setEditOrderFieldValue('edit-order-client-phone-2', '');
+    var phone2Wrap = document.getElementById('eo-phone2');
+    var addPhone2Row = document.getElementById('edit-order-phone2-add-row');
+    if (phone2Wrap) phone2Wrap.classList.add('hidden');
+    if (addPhone2Row) addPhone2Row.classList.remove('hidden');
     setEditOrderFieldValue('edit-order-delivery-date', '');
     setEditOrderFieldValue('edit-order-delivery-date-display', '');
     _editOrderCalSelected = '';
@@ -7154,7 +7170,9 @@ function buildOrderPayloadFromEditModal() {
         if (typeof onEditOrderGiftSelectChange === 'function') onEditOrderGiftSelectChange();
     }
     var name = (document.getElementById('edit-order-client-name') && document.getElementById('edit-order-client-name').value) ? document.getElementById('edit-order-client-name').value.trim() : '';
-    var phone = (document.getElementById('edit-order-client-phone') && document.getElementById('edit-order-client-phone').value) ? document.getElementById('edit-order-client-phone').value.trim() : '';
+    var phone1 = (document.getElementById('edit-order-client-phone') && document.getElementById('edit-order-client-phone').value) ? document.getElementById('edit-order-client-phone').value.trim() : '';
+    var phone2 = (document.getElementById('edit-order-client-phone-2') && document.getElementById('edit-order-client-phone-2').value) ? document.getElementById('edit-order-client-phone-2').value.trim() : '';
+    var phone = combinePhonesForPayload_(phone1, phone2) || (phone1 || '');
     var dateInput = document.getElementById('edit-order-delivery-date');
     var deliveryDate = dateInput ? dateInput.value.trim() : '';
     var addr1 = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
@@ -7173,14 +7191,15 @@ function buildOrderPayloadFromEditModal() {
     var warehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
 
     // raw-preserve: при untouched — всегда original (защита от потери второго номера и phantom diff)
-    // при touched — по value: если совпадает с original, тоже original; иначе канонизируем
+    // при touched — combine из двух полей и канонизируем
+    var _phoneCombined = combinePhonesForPayload_(phone1, phone2);
     var _phoneEffectivelyChanged = _editOrderOriginalPhoneRaw === null
-        || phone.trim() !== _editOrderOriginalPhoneRaw.trim();
+        || (_phoneCombined && _phoneCombined.trim() !== _editOrderOriginalPhoneRaw.trim());
     var _clientPhoneForPayload;
     if (_editOrderOriginalPhoneRaw !== null && (!_editOrderPhoneTouchedByUser || !_phoneEffectivelyChanged)) {
         _clientPhoneForPayload = _editOrderOriginalPhoneRaw;
     } else {
-        _clientPhoneForPayload = sanitizePhoneForSave_(phone);
+        _clientPhoneForPayload = combinePhonesForPayload_(phone1, phone2) || '';
     }
 
     var payload = {
@@ -7268,7 +7287,9 @@ function buildOrderPayloadFromEditModal() {
 function validateEditOrderModal() {
     var errors = [];
     var name = document.getElementById('edit-order-client-name') ? document.getElementById('edit-order-client-name').value.trim() : '';
-    var phone = document.getElementById('edit-order-client-phone') ? document.getElementById('edit-order-client-phone').value.trim() : '';
+    var phone1 = document.getElementById('edit-order-client-phone') ? document.getElementById('edit-order-client-phone').value.trim() : '';
+    var phone2 = document.getElementById('edit-order-client-phone-2') ? document.getElementById('edit-order-client-phone-2').value.trim() : '';
+    var phoneCombined = phone2 ? (phone1 + ' / ' + phone2) : phone1;
     var dateInput = document.getElementById('edit-order-delivery-date');
     var deliveryDate = dateInput ? dateInput.value.trim() : '';
     var addr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
@@ -7278,11 +7299,11 @@ function validateEditOrderModal() {
     var source = document.getElementById('edit-order-source') ? document.getElementById('edit-order-source').value : '';
 
     if (!name) errors.push('имя клиента');
-    // raw-preserve: пропускаем валидацию если phone не трогали (используем original) или value совпадает
+    // raw-preserve: пропускаем валидацию если phone не трогали (используем original)
     var _phoneChangedForValidation = _editOrderOriginalPhoneRaw === null
-        || (_editOrderPhoneTouchedByUser && phone.trim() !== _editOrderOriginalPhoneRaw.trim());
+        || (_editOrderPhoneTouchedByUser && (combinePhonesForPayload_(phone1, phone2) || '') !== (_editOrderOriginalPhoneRaw || '').trim());
     if (_phoneChangedForValidation) {
-        if (!isValidPhoneForSave_(phone)) errors.push('телефон: 11 цифр, с 7 (или формат 79111111111 / 79222222222)');
+        if (!isValidPhoneForSave_(phoneCombined)) errors.push('телефон: 11 цифр, с 7 (второй номер опционален)');
     }
     if (!deliveryDate) errors.push('дата доставки');
     if (typeof isOrderFormAddressRequired === 'function' && isOrderFormAddressRequired()) {
@@ -7690,8 +7711,9 @@ function initEditOrderModal() {
                 if (typeof showToast === 'function') showToast('Заказ отменён. Уведомления отправятся поставщику и ответственному менеджеру.', 'success');
                 var phoneToRefresh = lastEditOrderSearchedPhone || '';
                 if (!phoneToRefresh) {
-                    var phoneInput = document.getElementById('edit-order-client-phone');
-                    if (phoneInput) phoneToRefresh = (phoneInput.value || '').trim();
+                    var p1 = document.getElementById('edit-order-client-phone') ? (document.getElementById('edit-order-client-phone').value || '').trim() : '';
+                    var p2 = document.getElementById('edit-order-client-phone-2') ? (document.getElementById('edit-order-client-phone-2').value || '').trim() : '';
+                    phoneToRefresh = combinePhonesForPayload_(p1, p2) || p1;
                 }
                 if (phoneToRefresh && typeof extractOnePhoneForSearch === 'function') phoneToRefresh = extractOnePhoneForSearch(phoneToRefresh);
                 if (phoneToRefresh && String(phoneToRefresh).length >= 11 && typeof searchOrdersByPhone === 'function') {
@@ -7717,8 +7739,8 @@ function initEditOrderModal() {
     (function initEditOrderFieldErrorReset() {
         var step2 = document.getElementById('edit-order-step2');
         if (!step2) return;
-        var ids = [
-            'edit-order-client-name', 'edit-order-client-phone', 'edit-order-delivery-date',
+        var         ids = [
+            'edit-order-client-name', 'edit-order-client-phone', 'edit-order-client-phone-2', 'edit-order-delivery-date',
             'edit-order-address-part1', 'edit-order-address-part2', 'edit-order-address-part3',
             'edit-order-no-plot', 'edit-order-source', 'edit-order-comment'
         ];
@@ -7739,12 +7761,39 @@ function initEditOrderModal() {
         });
     })();
 
-    // raw-preserve: фиксируем явное редактирование поля телефона пользователем
+    // raw-preserve: фиксируем явное редактирование полей телефона пользователем
     (function () {
-        var phoneFieldForTouch = document.getElementById('edit-order-client-phone');
-        if (phoneFieldForTouch) {
-            phoneFieldForTouch.addEventListener('input', function () { _editOrderPhoneTouchedByUser = true; });
-            phoneFieldForTouch.addEventListener('change', function () { _editOrderPhoneTouchedByUser = true; });
+        ['edit-order-client-phone', 'edit-order-client-phone-2'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', function () { _editOrderPhoneTouchedByUser = true; });
+                el.addEventListener('change', function () { _editOrderPhoneTouchedByUser = true; });
+            }
+        });
+    })();
+
+    (function () {
+        var addBtn = document.getElementById('edit-order-add-phone2-btn');
+        var addRow = document.getElementById('edit-order-phone2-add-row');
+        var phone2Wrap = document.getElementById('eo-phone2');
+        if (addBtn && phone2Wrap) {
+            addBtn.addEventListener('click', function () {
+                phone2Wrap.classList.remove('hidden');
+                if (addRow) addRow.classList.add('hidden');
+                _editOrderPhoneTouchedByUser = true;
+                var inp = document.getElementById('edit-order-client-phone-2');
+                if (inp) inp.focus();
+            });
+        }
+        var removeBtn = document.getElementById('edit-order-remove-phone2-btn');
+        if (removeBtn && phone2Wrap && addRow) {
+            removeBtn.addEventListener('click', function () {
+                var inp = document.getElementById('edit-order-client-phone-2');
+                if (inp) inp.value = '';
+                phone2Wrap.classList.add('hidden');
+                addRow.classList.remove('hidden');
+                _editOrderPhoneTouchedByUser = true;
+            });
         }
     })();
 
@@ -13451,6 +13500,26 @@ function sanitizePhoneForSave_(raw) {
     return normalizePhone(trimmed);
 }
 
+/** Разбить client_phone на part1/part2 для отображения в двух полях. */
+function parsePhoneToParts_(raw) {
+    if (!raw || typeof raw !== 'string') return { part1: '', part2: '' };
+    var t = raw.trim();
+    var slashIdx = t.indexOf('/');
+    if (slashIdx !== -1) {
+        return { part1: t.slice(0, slashIdx).trim(), part2: t.slice(slashIdx + 1).trim() };
+    }
+    return { part1: t, part2: '' };
+}
+
+/** Собрать client_phone из двух полей. Возвращает "num1" или "num1 / num2". */
+function combinePhonesForPayload_(phone1, phone2) {
+    var p1 = phone1 ? normalizePhone(String(phone1).trim()) : '';
+    var p2 = phone2 ? normalizePhone(String(phone2).trim()) : '';
+    if (!p1 || p1.length !== 11) return '';
+    if (!p2 || p2.length !== 11) return p1;
+    return p1 + ' / ' + p2;
+}
+
 /** Формат телефона для отображения в КП клиенту */
 function formatPhoneDisplay(storedPhone) {
     if (!storedPhone) return '';
@@ -14193,10 +14262,13 @@ function isOrderFormAddressRequired() {
 
 /** Проверить по Supabase, есть ли заказы с этим телефоном за последние 90 дней. Показать неблокирующее предупреждение под полем телефона. Whole phone token: eq, "N / %", "% / N". */
 function checkSimilarOrderWarning() {
-    var phoneEl = document.getElementById('order-client-phone');
+    var phone1El = document.getElementById('order-client-phone');
+    var phone2El = document.getElementById('order-client-phone-2');
     var warnEl = document.getElementById('order-similar-order-warning');
-    if (!phoneEl || !warnEl) return;
-    var raw = (phoneEl.value || '').trim();
+    if (!phone1El || !warnEl) return;
+    var p1 = (phone1El.value || '').trim();
+    var p2 = (phone2El && phone2El.value) ? (phone2El.value || '').trim() : '';
+    var raw = combinePhonesForPayload_(p1, p2) || p1;
     var n = typeof extractOnePhoneForSearch === 'function' ? extractOnePhoneForSearch(raw) : '';
     if (!n || n.length !== 11) {
         warnEl.classList.add('hidden');
@@ -14210,7 +14282,9 @@ function checkSimilarOrderWarning() {
         warnEl.classList.add('hidden');
         return;
     }
-    supabaseClient.from('orders').select('id').or('client_phone.eq.' + n + ',client_phone.like.' + n + ' / %,client_phone.like.% / ' + n).gte('created_at', fromIso).limit(1).then(function (res) {
+    var q = '"';
+    var orFilter = 'client_phone.eq.' + n + ',client_phone.like.' + q + n + ' / *' + q + ',client_phone.like.' + q + '* / ' + n + q + ',client_phone.like.*/' + n;
+    supabaseClient.from('orders').select('id').or(orFilter).gte('created_at', fromIso).limit(1).then(function (res) {
         if (res.error) return;
         var count = (res.data && res.data.length) ? 1 : 0;
         if (count > 0) {
@@ -14249,7 +14323,7 @@ function markOrderFieldError_(fieldId) {
 
 (function initOrderFieldAutoReset() {
     const ids = [
-        'order-client-name', 'order-client-phone', 'order-delivery-date-display',
+        'order-client-name', 'order-client-phone', 'order-client-phone-2', 'order-delivery-date-display',
         'order-address-part1', 'order-address-part2', 'order-address-part3',
         'order-source', 'order-manager'
     ];
@@ -14270,16 +14344,38 @@ function markOrderFieldError_(fieldId) {
             }
         });
         // Телефон: только цифры, ровно до 11 (формат 79211234567). 8 в начале → 7.
-        const phoneInput = document.getElementById('order-client-phone');
-        if (phoneInput) {
-            phoneInput.addEventListener('input', function() {
-                let digits = this.value.replace(/\D/g, '').slice(0, 11);
-                if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
-                if (digits.length === 10 && digits[0] !== '7') digits = '7' + digits;
-                this.value = digits;
+        ['order-client-phone', 'order-client-phone-2'].forEach(function (id) {
+            const phoneInput = document.getElementById(id);
+            if (phoneInput) {
+                phoneInput.addEventListener('input', function() {
+                    let digits = this.value.replace(/\D/g, '').slice(0, 11);
+                    if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+                    if (digits.length === 10 && digits[0] !== '7') digits = '7' + digits;
+                    this.value = digits;
+                });
+                phoneInput.addEventListener('blur', function () {
+                    if (typeof checkSimilarOrderWarning === 'function') checkSimilarOrderWarning();
+                });
+            }
+        });
+        var addPhone2Btn = document.getElementById('order-add-phone2-btn');
+        var addPhone2Row = document.getElementById('order-phone2-add-row');
+        var ofPhone2 = document.getElementById('of-phone2');
+        if (addPhone2Btn && ofPhone2) {
+            addPhone2Btn.addEventListener('click', function () {
+                ofPhone2.classList.remove('hidden');
+                if (addPhone2Row) addPhone2Row.classList.add('hidden');
+                var inp = document.getElementById('order-client-phone-2');
+                if (inp) inp.focus();
             });
-            phoneInput.addEventListener('blur', function () {
-                if (typeof checkSimilarOrderWarning === 'function') checkSimilarOrderWarning();
+        }
+        var removePhone2Btn = document.getElementById('order-remove-phone2-btn');
+        if (removePhone2Btn && ofPhone2 && addPhone2Row) {
+            removePhone2Btn.addEventListener('click', function () {
+                var inp = document.getElementById('order-client-phone-2');
+                if (inp) inp.value = '';
+                ofPhone2.classList.add('hidden');
+                addPhone2Row.classList.remove('hidden');
             });
         }
         updateOrderCartUI();
@@ -14616,7 +14712,9 @@ function updateOrderTotalDisplay_() {
  */
 function buildOrderPayloadFromFormAndCart() {
     const clientName = document.getElementById('order-client-name').value.trim();
-    const clientPhone = document.getElementById('order-client-phone').value.trim();
+    const clientPhone1 = document.getElementById('order-client-phone').value.trim();
+    const clientPhone2 = (document.getElementById('order-client-phone-2') && document.getElementById('order-client-phone-2').value) ? document.getElementById('order-client-phone-2').value.trim() : '';
+    const clientPhone = combinePhonesForPayload_(clientPhone1, clientPhone2) || clientPhone1;
     const deliveryDate = document.getElementById('order-delivery-date').value;
     const addr1 = document.getElementById('order-address-part1')?.value?.trim() || '';
     const addr2 = document.getElementById('order-address-part2')?.value?.trim() || '';
@@ -14730,7 +14828,9 @@ async function submitOrder() {
     }
 
     const clientName = document.getElementById('order-client-name').value.trim();
-    const clientPhone = document.getElementById('order-client-phone').value.trim();
+    const clientPhone1 = document.getElementById('order-client-phone').value.trim();
+    const clientPhone2 = (document.getElementById('order-client-phone-2') && document.getElementById('order-client-phone-2').value) ? document.getElementById('order-client-phone-2').value.trim() : '';
+    const clientPhone = combinePhonesForPayload_(clientPhone1, clientPhone2) || clientPhone1;
     const deliveryDate = document.getElementById('order-delivery-date').value;
     const addr1 = document.getElementById('order-address-part1')?.value?.trim() || '';
     const addr2 = document.getElementById('order-address-part2')?.value?.trim() || '';
@@ -14749,9 +14849,9 @@ async function submitOrder() {
         hasErrors = true;
     }
 
-    if (!isValidPhoneForSave_(clientPhone)) {
-        setOrderFieldError_('of-phone', 'Введите 11 цифр, с 7 (или формат 79211234567 / 79112223344)');
-        errors.push('телефон: 11 цифр, с 7 (или формат 79211234567 / 79112223344)');
+    if (!clientPhone1 || !isValidPhoneForSave_(clientPhone2 ? (clientPhone1 + ' / ' + clientPhone2) : clientPhone1)) {
+        setOrderFieldError_('of-phone', 'Введите 11 цифр, с 7 (второй номер опционален)');
+        errors.push('телефон: 11 цифр, с 7');
         hasErrors = true;
     }
 
@@ -14857,7 +14957,7 @@ async function submitOrder() {
         if (btn) { btn.textContent = 'Оформить заказ'; btn.disabled = false; }
         var editBtn = resultDiv.querySelector('.order-result-edit-btn');
         if (editBtn && typeof openEditOrderModalWithPhone === 'function') {
-            var submittedPhone = phone;
+            var submittedPhone = clientPhone;
             editBtn.onclick = function () { openEditOrderModalWithPhone(submittedPhone); };
         }
 
@@ -14870,6 +14970,12 @@ async function submitOrder() {
         clearingFormAfterSubmit = true;
         document.getElementById('order-client-name').value = '';
         document.getElementById('order-client-phone').value = '';
+        var phone2El = document.getElementById('order-client-phone-2');
+        if (phone2El) { phone2El.value = ''; }
+        var ofPhone2 = document.getElementById('of-phone2');
+        var addPhone2Row = document.getElementById('order-phone2-add-row');
+        if (ofPhone2) ofPhone2.classList.add('hidden');
+        if (addPhone2Row) addPhone2Row.classList.remove('hidden');
         var similarWarn = document.getElementById('order-similar-order-warning');
         if (similarWarn) { similarWarn.classList.add('hidden'); similarWarn.textContent = ''; }
         var dateHidden = document.getElementById('order-delivery-date');

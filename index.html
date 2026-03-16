@@ -102,6 +102,16 @@
               <div class="edit-order-field" id="eo-phone">
                 <label for="edit-order-client-phone">Телефон *</label>
                 <input type="text" id="edit-order-client-phone" placeholder="7 921 123-45-67" autocomplete="off" tabindex="2">
+                <div class="order-phone2-add-row" id="edit-order-phone2-add-row">
+                  <button type="button" id="edit-order-add-phone2-btn" class="order-phone2-toggle-btn" title="Добавить дополнительный номер">+ Добавить доп. номер</button>
+                </div>
+                <div class="order-phone2-panel hidden" id="eo-phone2">
+                  <div class="order-phone2-panel-head">
+                    <span class="order-phone2-panel-label">Доп. телефон</span>
+                    <button type="button" id="edit-order-remove-phone2-btn" class="order-phone2-remove-btn" title="Убрать дополнительный номер">Убрать</button>
+                  </div>
+                  <input type="text" id="edit-order-client-phone-2" placeholder="79112223344" autocomplete="off" tabindex="2">
+                </div>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
             </section>
@@ -526,6 +536,16 @@
                   <div class="order-field" id="of-phone">
                     <label for="order-client-phone">Телефон клиента *</label>
                     <input type="tel" id="order-client-phone" placeholder="79211234567" inputmode="tel" maxlength="18" title="11 цифр, начинается с 7 (79211234567)" tabindex="2">
+                    <div class="order-phone2-add-row" id="order-phone2-add-row">
+                      <button type="button" id="order-add-phone2-btn" class="order-phone2-toggle-btn" title="Добавить дополнительный номер">+ Добавить доп. номер</button>
+                    </div>
+                    <div class="order-phone2-panel hidden" id="of-phone2">
+                      <div class="order-phone2-panel-head">
+                        <span class="order-phone2-panel-label">Доп. телефон</span>
+                        <button type="button" id="order-remove-phone2-btn" class="order-phone2-remove-btn" title="Убрать дополнительный номер">Убрать</button>
+                      </div>
+                      <input type="tel" id="order-client-phone-2" placeholder="79112223344" inputmode="tel" maxlength="18" title="11 цифр, с 7" tabindex="2">
+                    </div>
                     <span class="order-validation-msg" aria-live="polite"></span>
                   </div>
                   <div id="order-similar-order-warning" class="order-similar-order-warning hidden" role="status" aria-live="polite"></div>

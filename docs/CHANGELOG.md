@@ -1,19 +1,14 @@
 # История изменений проекта
 
-## Dual-phone support (15.03.2026)
+## Dual-phone UI + preserve (15.03.2026)
 
-**Цель:** поиск по любому номеру, create с dual-phone, без потери legacy. Storage: client_phone = "num1 / num2".
+**Цель:** UI для второго номера, сохранение "num1 / num2", untouched raw-preserve. Legacy не backfill.
 
 **Изменения:**
-- **extractOnePhoneForSearch(raw)** — извлечение первого валидного 11-значного номера из single или "num1 / num2".
-- **searchOrdersByPhone:** whole phone token: eq, "N / %", "% / N" (без fuzzy).
-- **Search validation:** extractOnePhoneForSearch вместо normalizePhone.
-- **deep link ?editPhone=:** extractOnePhoneForSearch.
-- **create order:** validation — isValidPhoneForSave_, payload — sanitizePhoneForSave_.
-- **checkSimilarOrderWarning:** whole token search.
-- **refresh after cancel:** extractOnePhoneForSearch.
-
-**Файлы:** js/scripts.js. Docs: TRUTH_MAP, PREPROD_PLAN, CHANGELOG, AUTOTEST_PLAN.
+- **Create form:** основное поле + «+ Доп. номер» → второе поле. combinePhonesForPayload_, validation.
+- **Edit form:** основное + доп. поле, parsePhoneToParts_ при загрузке. «+» показывает второе поле.
+- **Save:** create — combinePhonesForPayload_; edit — untouched → original, touched → combine.
+- **Файлы:** index.html, css/styles.css, js/scripts.js (parsePhoneToParts_, combinePhonesForPayload_, fillEditOrderForm, buildOrderPayloadFromEditModal, buildOrderPayloadFromFormAndCart, submitOrder, clearEditOrderForm, validateEditOrderModal, init).
 
 ---
 
