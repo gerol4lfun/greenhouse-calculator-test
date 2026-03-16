@@ -1,11 +1,30 @@
 # История изменений проекта
 
+## Dual-phone UI + untouched legacy (doc-only фиксация, 15.03.2026)
+
+**Цель:** Зафиксировать принятую реализацию dual-phone UI и логики untouched legacy fields. Код не менялся.
+
+**Confirmed truths:**
+- Create: по умолчанию второе поле скрыто; «+ Добавить доп. номер» — компактное вторичное действие; раскрытие по клику.
+- Edit: один номер → второе поле скрыто; два номера → второе поле раскрыто и заполнено.
+- UI create/edit единый, компактный, reveal-on-demand.
+- Storage: "num1" или "num1 / num2".
+- Untouched phone block → raw сохраняется literally.
+- Поиск по второму номеру для dual-phone записей.
+- Legacy не backfill.
+
+**Intentionally not solved:** backfill legacy orders; автоматическая нормализация; новый редизайн.
+
+**Manual checks:** create с одним/двумя; edit с одним/двумя; edit only date → phone untouched; поиск по второму номеру; после submit/reset второе поле скрыто.
+
+---
+
 ## Dual-phone UI + preserve (15.03.2026)
 
 **Цель:** UI для второго номера, сохранение "num1 / num2", untouched raw-preserve. Legacy не backfill.
 
 **Изменения:**
-- **Create form:** основное поле + «+ Доп. номер» → второе поле. combinePhonesForPayload_, validation.
+- **Create form:** основное поле + «+ Добавить доп. номер» → второе поле. combinePhonesForPayload_, validation.
 - **Edit form:** основное + доп. поле, parsePhoneToParts_ при загрузке. «+» показывает второе поле.
 - **Save:** create — combinePhonesForPayload_; edit — untouched → original, touched → combine.
 - **Файлы:** index.html, css/styles.css, js/scripts.js (parsePhoneToParts_, combinePhonesForPayload_, fillEditOrderForm, buildOrderPayloadFromEditModal, buildOrderPayloadFromFormAndCart, submitOrder, clearEditOrderForm, validateEditOrderModal, init).

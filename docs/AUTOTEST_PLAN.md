@@ -29,7 +29,7 @@
 
 **edit-order-comment:** в order-flow помечен local-safe, но сохранение comment в Supabase не проходит (RLS/триггер). UI-шаги и reopen по id проверяются при наличии заказа по SEARCH_PHONE; persistence — не verified.
 
-**Dual-phone (15.03.2026):** manual check — create с двумя номерами; edit: добавить второй номер; edit: только дата → phone не меняется; поиск по первому/второму номеру. Автотест — не добавлен.
+**Dual-phone (15.03.2026):** Принятая реализация: UI reveal-on-demand, untouched raw-preserve. **Manual checks:** create с одним номером (второе поле скрыто); create с двумя (раскрыть → сохранить); edit с одним (второе скрыто); edit с двумя (второе раскрыто и заполнено); edit only date → phone untouched; поиск по первому/второму номеру; после submit/reset второе поле скрыто. Автотест — не добавлен.
 
 ### 2.2. Integration-required (нужен работающий Supabase и успешный submit)
 

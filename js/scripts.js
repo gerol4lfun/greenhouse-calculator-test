@@ -286,8 +286,9 @@ function normalizeCityName(cityName) {
     
     const normalized = cityName.trim().toLowerCase().replace(/ё/g, "е").replace(/Ё/g, "Е");
     
-    // Маппинг альтернативных названий на стандартные
+    // Маппинг альтернативных названий на стандартные (для fuzzy match delivery_calendar)
     const cityMap = {
+        'мск': 'москва', 'msk': 'москва', 'москва': 'москва',
         'питер': 'санкт-петербург',
         'петербург': 'санкт-петербург',
         'спб': 'санкт-петербург',
@@ -505,7 +506,7 @@ function resolveEditOrderCalendarCity_() {
         : cityCandidate;
     if (c3 && typeof resolveRegionToCanonicalCity_ === 'function') {
         var resolved = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(c3);
-        if (resolved) c3 = resolved;
+        if (resolved) c3 = (typeof normalizeCityAlias_ === 'function' ? normalizeCityAlias_(resolved) : null) || resolved;
     }
     return c3 || null;
 }
@@ -1348,12 +1349,35 @@ function syncOrderCalendarSlotsWithMode() {
 
 function syncEditOrderCalendarSlotsWithMode() {
     if (!deliveryDatesFromCalendar) return false;
-    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
-    var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
+    var withAssemblyEdit = getEditOrderCalendarAssemblyMode_();
     var todayISO = getTodayMoscowISO();
     if (_editOrderCalSelected && isDateAvailableForMode(_editOrderCalSelected, withAssemblyEdit, todayISO)) return true;
     selectEditOrderCalDate(getNearestAvailableDate(withAssemblyEdit) || '');
     return true;
+}
+
+/**
+ * Режим сборки для edit-calendar:
+ * - если открыта панель редактирования позиции, берём состояние её чекбокса;
+ * - иначе используем факт сборки из состава существующего заказа.
+ */
+function getEditOrderCalendarAssemblyMode_() {
+    var panel = document.getElementById('edit-order-add-item-panel');
+    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
+    if (panel && assemblyEditEl && !panel.classList.contains('hidden')) {
+        return !!assemblyEditEl.checked;
+    }
+    if (Array.isArray(editOrderComposition)) {
+        for (var i = 0; i < editOrderComposition.length; i++) {
+            var item = editOrderComposition[i] || {};
+            if (item.options && typeof item.options === 'object' && !!item.options.assembly) return true;
+            if (typeof deriveOptionsFromExtrasAssembly === 'function') {
+                var derived = deriveOptionsFromExtrasAssembly(item.extras || '', item.assembly || '');
+                if (derived && derived.assembly) return true;
+            }
+        }
+    }
+    return false;
 }
 
 function applyDeliveryCalendarRows(rows, todayMoscow) {
@@ -6196,7 +6220,7 @@ function fillEditOrderForm(order) {
 
     var orderCity = (order.city || '').trim() || (parsedAddr.part1 || '').trim();
     // primary source of truth для edit calendar
-    _editOrderLoadedCityRaw = (order.city || '').trim() || null;
+    _editOrderLoadedCityRaw = (order.city || '').trim() || (parsedAddr.part1 || '').trim() || null;
     _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
@@ -14155,8 +14179,7 @@ function renderEditOrderCalendar() {
     var firstDay = new Date(y, m, 1);
     var startDow = (firstDay.getDay() + 6) % 7;
     var daysInMonth = new Date(y, m + 1, 0).getDate();
-    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
-    var withAssemblyEdit = assemblyEditEl ? assemblyEditEl.checked : false;
+    var withAssemblyEdit = getEditOrderCalendarAssemblyMode_();
 
     grid.innerHTML = '';
     for (var blank = 0; blank < startDow; blank++) {

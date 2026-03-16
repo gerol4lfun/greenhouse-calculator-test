@@ -54,7 +54,18 @@
 
 - **gifts = slots.** Fixed bundles не источник истины. См. GIFT_TRUTH.md.
 - **Gifts raw-preserve:** legacy gift на existing order не должен автоматически переписываться в канонический формат при edit другого поля. Подтверждено на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (gift «форточка 1 шт.» сохранился при смене только delivery_date).
-- **Phone scope:** legacy dual-phone slash-format («79128974834 / 79085842934») — два номера одного клиента. Реализовано: UI двух полей (основной + «+ Доп. номер»), create/edit с dual-phone, поиск по любому номеру, untouched raw-preserve. Storage: client_phone = "num1" или "num1 / num2". Legacy: не backfill, не нормализуем автоматически.
+- **Phone scope:** legacy dual-phone slash-format («79128974834 / 79085842934») — два номера одного клиента. **Принятая реализация (15.03.2026):** UI reveal-on-demand (основное поле + компактное «+ Добавить доп. номер»), create/edit единый паттерн; второе поле скрыто по умолчанию, раскрывается по клику или при двух номерах в edit; storage: client_phone = "num1" или "num1 / num2"; поиск по любому номеру; untouched raw-preserve. Legacy: не backfill, не нормализуем автоматически.
+
+**Dual-phone UI + untouched legacy (подробно):**
+
+| Аспект | Подтверждённая истина |
+|--------|------------------------|
+| **Confirmed truths** | Create: второе поле скрыто по умолчанию; «+ Добавить доп. номер» — компактное вторичное действие; раскрытие по клику. Edit: один номер → второе поле скрыто; два номера → второе поле раскрыто и заполнено. Storage: "num1" или "num1 / num2". Untouched phone block → сохраняем raw literally. Поиск по второму номеру для dual-phone записей. |
+| **Intentionally not solved** | Backfill legacy orders; автоматическая нормализация старых форматов; отдельный редизайн UI. |
+| **Manual checks** | Create с одним/двумя номерами; edit с одним/двумя; edit only date → phone untouched; поиск по второму номеру; после submit/reset второе поле скрыто. |
+| **UI create** | Основное поле «Телефон клиента *»; под ним «+ Добавить доп. номер»; после клика — второе поле + «Убрать». |
+| **UI edit** | Один номер: второе поле скрыто, видна «+ Добавить доп. номер». Два номера: второе поле раскрыто и заполнено, «Убрать» рядом. |
+
 - **Existing-order edit: untouched legacy fields:** delivery_address и client_phone, которые менеджер не трогал при edit, должны сохраняться literally. Не нормализовать, не пересобирать, не включать в phantom diff. При смене только даты — diff только по дате. Реализовано: _editOrderOriginalAddressRaw, _editOrderOriginalPhoneRaw, touched-флаги; payload использует original при untouched.
 - **Edit calendar source-of-truth:** confirmed. Приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve) и fix #2 (prefix strip) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург") — на актуальном калькуляторе календарь показывает реальные ограничения. Принято: вводим orders.warehouse_city_key как source of truth для delivery logic (см. ниже).
 - **cancelled** — не редактируется. UI + проверка перед save.
