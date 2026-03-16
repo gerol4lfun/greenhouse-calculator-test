@@ -467,6 +467,12 @@ function resolveCreateWarehouseCityKey_() {
     return null;
 }
 
+/** Отбросить numeric-only кандидаты (участок, дом): "1", "64", "2" не может быть city. */
+function isRejectableNumericCityCandidate_(s) {
+    if (!s || typeof s !== 'string') return true;
+    return /^\d+$/.test(s.trim());
+}
+
 /**
  * Приоритетный выбор canonical city для edit calendar existing order.
  * 1) orders.warehouse_city_key — source of truth для delivery readers
@@ -478,18 +484,21 @@ function resolveEditOrderCalendarCity_() {
     // Priority 1: saved orders.warehouse_city_key
     if (_editOrderLoadedWarehouseCityKey) {
         var c0 = normalizeCityAlias_(_editOrderLoadedWarehouseCityKey);
-        if (c0) return c0;
+        if (c0 && !isRejectableNumericCityCandidate_(c0)) return c0;
     }
     // Priority 2: saved orders.city
     if (_editOrderLoadedCityRaw) {
         var c1 = normalizeCityAlias_(_editOrderLoadedCityRaw);
-        if (c1) return c1;
+        if (c1 && !isRejectableNumericCityCandidate_(c1)) return c1;
     }
     // Priority 3: first line_items[].city
     if (Array.isArray(editOrderComposition) && editOrderComposition.length > 0) {
         for (var i = 0; i < editOrderComposition.length; i++) {
             var c2 = (editOrderComposition[i].city || '').trim();
-            if (c2) return normalizeCityAlias_(c2);
+            if (c2) {
+                c2 = normalizeCityAlias_(c2);
+                if (c2 && !isRejectableNumericCityCandidate_(c2)) return c2;
+            }
         }
     }
     // Priority 4: derive from DOM address (legacy/recovery fallback)
@@ -507,6 +516,13 @@ function resolveEditOrderCalendarCity_() {
     if (c3 && typeof resolveRegionToCanonicalCity_ === 'function') {
         var resolved = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(c3);
         if (resolved) c3 = (typeof normalizeCityAlias_ === 'function' ? normalizeCityAlias_(resolved) : null) || resolved;
+    }
+    if (c3 && isRejectableNumericCityCandidate_(c3)) {
+        if (p1 && typeof resolveRegionToCanonicalCity_ === 'function') {
+            var fromPart1 = resolveRegionToCanonicalCity_(p1);
+            if (fromPart1 && !isRejectableNumericCityCandidate_(fromPart1)) return normalizeCityAlias_(fromPart1) || fromPart1;
+        }
+        return null;
     }
     return c3 || null;
 }
@@ -1375,6 +1391,7 @@ function getEditOrderCalendarAssemblyMode_() {
                 var derived = deriveOptionsFromExtrasAssembly(item.extras || '', item.assembly || '');
                 if (derived && derived.assembly) return true;
             }
+            if (typeof parseExtrasAssemblySum === 'function' && parseExtrasAssemblySum(item.extras || '', item.assembly || '') > 0) return true;
         }
     }
     return false;
@@ -7196,7 +7213,6 @@ function buildOrderPayloadFromEditModal() {
     var name = (document.getElementById('edit-order-client-name') && document.getElementById('edit-order-client-name').value) ? document.getElementById('edit-order-client-name').value.trim() : '';
     var phone1 = (document.getElementById('edit-order-client-phone') && document.getElementById('edit-order-client-phone').value) ? document.getElementById('edit-order-client-phone').value.trim() : '';
     var phone2 = (document.getElementById('edit-order-client-phone-2') && document.getElementById('edit-order-client-phone-2').value) ? document.getElementById('edit-order-client-phone-2').value.trim() : '';
-    var phone = combinePhonesForPayload_(phone1, phone2) || (phone1 || '');
     var dateInput = document.getElementById('edit-order-delivery-date');
     var deliveryDate = dateInput ? dateInput.value.trim() : '';
     var addr1 = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
@@ -14847,6 +14863,11 @@ async function submitOrder() {
         resultDiv.textContent = '❌ Добавьте теплицу в заказ: нажмите «Добавить в заказ» (после расчёта в блоке «Стоимость теплицы»).';
         resultDiv.className = 'error';
         resultDiv.style.display = '';
+        return;
+    }
+
+    if (currentOrderIdForEdit) {
+        if (typeof showToast === 'function') showToast('Используйте кнопку «Сохранить изменения» в форме редактирования', 'error');
         return;
     }
 

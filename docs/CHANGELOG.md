@@ -1,5 +1,20 @@
 # История изменений проекта
 
+## fix: edit-calendar city resolve — canonicalCity=1 (15.03.2026)
+
+**Проблема:** edit-calendar для existing order с адресом «регион, участок, улица» показывал all-green. Root cause: `resolveEditOrderCalendarCity_()` возвращал `"1"` (номер участка из `extractCityFromAddress` parts[1]) вместо города. delivery_calendar с city="1" не находил данные → stateMap пустой → все даты available.
+
+**Фикс:**
+- Добавлен `isRejectableNumericCityCandidate_(s)` — отбрасывает numeric-only кандидаты ("1", "64", "2").
+- Во всех приоритетах resolveEditOrderCalendarCity_ не возвращать numeric как city.
+- Priority 4: при numeric c3 — попытка `resolveRegionToCanonicalCity_(p1)` (город/регион из part1); иначе null.
+
+**Подтверждено руками (Ivan case):** canonicalCity=Москва, withAssembly=true, stateMapCountForMonth>0, календарь показывает ограничения (не all-green).
+
+**Файлы:** js/scripts.js (resolveEditOrderCalendarCity_, isRejectableNumericCityCandidate_).
+
+---
+
 ## Dual-phone UI + untouched legacy (doc-only фиксация, 15.03.2026)
 
 **Цель:** Зафиксировать принятую реализацию dual-phone UI и логики untouched legacy fields. Код не менялся.

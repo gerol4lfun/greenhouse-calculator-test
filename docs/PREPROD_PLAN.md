@@ -34,6 +34,28 @@
 - **Edit calendar source-of-truth:** manual confirmed. Календарь в edit existing order использует приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve) и fix #2 (prefix strip) внесены. Кейсы: 8e803d39 (orders.city=МСК); 79000000028 (orders.city="г. Санкт-Петербург") — на актуальном калькуляторе календарь показывает реальные ограничения. Ранее false negative — проверка на неактуальном билде.
 - **PGRST204 incident (15.03.2026) — confirmed:** prod-schema проблема; колонка warehouse_city_key отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected.
 - **Логика дат доставки:** Москва в основной форме; Набережные Челны в edit modal со сборкой — подтверждены вручную. Логика основной формы и edit modal выровнена (канонический city key в обоих).
+- **Edit-calendar city resolve fix (15.03.2026):** canonicalCity=1 bug исправлен. Root cause: numeric candidate ("1" — номер участка) из address fallback. Фикс: isRejectableNumericCityCandidate_, fallback resolveRegionToCanonicalCity_(p1). Ivan case manual confirmed: canonicalCity=Москва, withAssembly=true, stateMapCountForMonth>0, календарь не all-green.
+
+---
+
+## RESOLVED (15.03.2026)
+
+| # | Что | Подтверждение |
+|---|-----|---------------|
+| 1 | **Edit-calendar city resolve bug** | canonicalCity=1 fixed; numeric candidate reject; Ivan case manual confirmed |
+| 2 | **canonicalCity=1** | resolveEditOrderCalendarCity_ теперь отбрасывает "1"/"64"/"2" и использует resolveRegionToCanonicalCity_(p1) |
+| 3 | **Ivan case** | edit-calendar показывает ограничения (не all-green); withAssembly=true; stateMapCountForMonth>0 |
+
+---
+
+## STILL OPEN
+
+| # | Что | Статус |
+|---|-----|--------|
+| 1 | **Passive mutation of legacy orders** | Не подтверждено безопасно |
+| 2 | **Dual-phone / untouched phone preserve** | Не подтверждено safe end-to-end |
+| 3 | **Phantom diff по составу/названию legacy позиции** | Возможны ложные изменения в diff |
+| 4 | **Date mismatch 28→27** | Under doubt; не закрыто до проверки |
 
 ---
 

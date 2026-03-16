@@ -67,7 +67,7 @@
 | **UI edit** | Один номер: второе поле скрыто, видна «+ Добавить доп. номер». Два номера: второе поле раскрыто и заполнено, «Убрать» рядом. |
 
 - **Existing-order edit: untouched legacy fields:** delivery_address и client_phone, которые менеджер не трогал при edit, должны сохраняться literally. Не нормализовать, не пересобирать, не включать в phantom diff. При смене только даты — diff только по дате. Реализовано: _editOrderOriginalAddressRaw, _editOrderOriginalPhoneRaw, touched-флаги; payload использует original при untouched.
-- **Edit calendar source-of-truth:** confirmed. Приоритет: orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve) и fix #2 (prefix strip) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург") — на актуальном калькуляторе календарь показывает реальные ограничения. Принято: вводим orders.warehouse_city_key как source of truth для delivery logic (см. ниже).
+- **Edit calendar source-of-truth:** confirmed. Приоритет: warehouse_city_key → orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve), fix #2 (prefix strip), fix #3 (numeric city candidate reject — 15.03.2026) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург"); Ivan case (адрес «регион, участок, улица») — canonicalCity=Москва, календарь показывает реальные ограничения. Принято: orders.warehouse_city_key как source of truth (см. ниже).
 - **cancelled** — не редактируется. UI + проверка перед save.
 - **Платные допы** — не должны пропадать из long КП из-за логики подарков.
 - **slot count** — зависит только от total / preview total.
