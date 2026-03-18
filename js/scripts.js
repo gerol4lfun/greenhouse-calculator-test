@@ -1485,7 +1485,8 @@ async function loadDeliveryDate(cityName) {
                     });
                     var isMoscowWithRegion = function(s) { return /москва\s+и\s+м\.?о\.?/i.test((s || '').trim()); };
                     var reqWithRegion = isMoscowWithRegion(cityName);
-                    matchedRows = matchedRows.filter(function(r) { return isMoscowWithRegion(cleanDeliveryCityName(r.city_name)) === reqWithRegion; });
+                    var moscowFiltered = matchedRows.filter(function(r) { return isMoscowWithRegion(cleanDeliveryCityName(r.city_name)) === reqWithRegion; });
+                    if (moscowFiltered.length > 0) matchedRows = moscowFiltered;
                     if (matchedRows.length > 0) {
                         applyDeliveryCalendarRows(matchedRows, todayMoscow);
                         return currentDeliveryDate;
