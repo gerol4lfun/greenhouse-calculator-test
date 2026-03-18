@@ -1468,7 +1468,8 @@ async function loadDeliveryDate(cityName) {
             var calAltRes = await supabaseClient
                 .from('delivery_calendar')
                 .select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status')
-                .limit(1000);
+                .ilike('city_name', '%' + cityName + '%')
+                .order('delivery_date');
 
             if (!calAltRes.error && calAltRes.data && calAltRes.data.length > 0) {
                 var matchedRow = calAltRes.data.find(function(item) {
