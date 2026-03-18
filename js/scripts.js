@@ -1483,6 +1483,9 @@ async function loadDeliveryDate(cityName) {
                     var matchedRows = calAltRes.data.filter(function(item) {
                         return normalizeCityName(cleanDeliveryCityName(item.city_name)) === matchedNormalizedCity;
                     });
+                    var isMoscowWithRegion = function(s) { return /москва\s+и\s+м\.?о\.?/i.test((s || '').trim()); };
+                    var reqWithRegion = isMoscowWithRegion(cityName);
+                    matchedRows = matchedRows.filter(function(r) { return isMoscowWithRegion(cleanDeliveryCityName(r.city_name)) === reqWithRegion; });
                     if (matchedRows.length > 0) {
                         applyDeliveryCalendarRows(matchedRows, todayMoscow);
                         return currentDeliveryDate;
@@ -5385,6 +5388,12 @@ function getNearestFromStateMap(stateMap, todayISO, withAssembly) {
     return null;
 }
 
+function getModalCityGroupKey(cn) {
+    var s = (cn || '').trim().toLowerCase().replace(/ё/g, 'е');
+    if (/москва\s+и\s+м\.?о\.?/.test(s)) return 'москва и мо';
+    return normalizeCityName(cn);
+}
+
 function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     if (cellISO <= todayISO) return 'past';
     var meta = stateMap[cellISO];
@@ -5404,7 +5413,7 @@ async function loadDeliveryDatesModalData() {
     var listEl = document.getElementById('delivery-dates-city-list');
     if (!listEl) return;
     var standardCityNames = {
-        'санкт-петербург': 'Санкт-Петербург', 'москва': 'Москва', 'нижний новгород': 'Нижний Новгород',
+        'санкт-петербург': 'Санкт-Петербург', 'москва': 'Москва', 'москва и мо': 'Москва и МО', 'нижний новгород': 'Нижний Новгород',
         'набережные челны': 'Набережные Челны', 'великий новгород': 'Великий Новгород',
         'йошкар-ола': 'Йошкар-Ола', 'орёл': 'Орёл'
     };
@@ -5438,7 +5447,7 @@ async function loadDeliveryDatesModalData() {
     for (var c = 0; c < calData.length; c++) {
         var row = calData[c];
         var cn = cleanDeliveryCityName(row.city_name);
-        var nn = normalizeCityName(cn);
+        var nn = getModalCityGroupKey(cn);
         if (!calByCity[nn]) calByCity[nn] = [];
         calByCity[nn].push(row);
     }
@@ -5448,7 +5457,7 @@ async function loadDeliveryDatesModalData() {
     for (var i = 0; i < canonical.length; i++) {
         var item = canonical[i];
         var cleaned = cleanDeliveryCityName(item.city_name);
-        var key = normalizeCityName(cleaned);
+        var key = getModalCityGroupKey(cleaned);
         if (normalizedMap[key]) continue;
         var name = standardCityNames[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase());
         normalizedMap[key] = { city_name: name };
@@ -5484,7 +5493,7 @@ async function loadDeliveryDatesModalData() {
         var nw = null;
         var naw = null;
         var stateMap = null;
-        var calRows = calByCity[normalizeCityName(city)];
+        var calRows = calByCity[getModalCityGroupKey(city)];
         if (calRows && calRows.length > 0) {
             stateMap = buildStateMapFromRows(calRows, todayISO);
             nw = getNearestFromStateMap(stateMap, todayISO, false);
