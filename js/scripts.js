@@ -1351,7 +1351,7 @@ function getNearestAvailableDate(withAssembly) {
 function getDeliveryCalendarCellState(cellISO, withAssembly, todayISO) {
     if (cellISO <= todayISO) return 'past';
     var meta = currentDeliveryDateStateMap[cellISO];
-    if (!meta) return 'available';
+    if (!meta) return 'blocked';
     return withAssembly ? (meta.withAssembly ? 'available' : 'blocked') : (meta.withoutAssembly ? 'available' : 'blocked');
 }
 
@@ -5397,7 +5397,7 @@ function getModalCityGroupKey(cn) {
 function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     if (cellISO <= todayISO) return 'past';
     var meta = stateMap[cellISO];
-    if (!meta) return 'available';
+    if (!meta) return 'blocked';
     var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return 'only-delivery';
