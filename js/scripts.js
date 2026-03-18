@@ -13988,6 +13988,18 @@ function renderOrderCalendar() {
     var titleEl = document.getElementById('order-cal-title');
     if (!grid || !titleEl || !_orderCalMonth) return;
     var todayISO = getTodayMoscowISO();
+    var cityResolved = typeof resolveCreateWarehouseCityKey_ === 'function' ? (resolveCreateWarehouseCityKey_() || '') : '';
+    var source = deliveryDatesFromCalendar ? 'calendar' : 'slots';
+    var stateSize = currentDeliveryDateStateMap ? Object.keys(currentDeliveryDateStateMap).length : 0;
+    var dbg = document.getElementById('order-cal-debug');
+    if (dbg) dbg.textContent = 'source=' + source + ' city=' + (cityResolved || '-') + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateSize=' + stateSize + ' currentDeliveryDate=' + (currentDeliveryDate || '-');
+    else if (grid && grid.parentNode) {
+        dbg = document.createElement('div');
+        dbg.id = 'order-cal-debug';
+        dbg.style.cssText = 'font-size:10px;color:#888;margin:2px 0;font-family:monospace;';
+        dbg.textContent = 'source=' + source + ' city=' + (cityResolved || '-') + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateSize=' + stateSize + ' currentDeliveryDate=' + (currentDeliveryDate || '-');
+        grid.parentNode.insertBefore(dbg, grid);
+    }
 
     var y = _orderCalMonth.year;
     var m = _orderCalMonth.month;
@@ -14199,6 +14211,18 @@ function renderEditOrderCalendar() {
     var titleEl = document.getElementById('edit-order-cal-title');
     if (!grid || !titleEl || !_editOrderCalMonth) return;
     var todayISO = getTodayMoscowISO();
+    var cityResolved = typeof resolveEditOrderCalendarCity_ === 'function' ? (resolveEditOrderCalendarCity_() || '') : '';
+    var source = deliveryDatesFromCalendar ? 'calendar' : 'slots';
+    var stateSize = currentDeliveryDateStateMap ? Object.keys(currentDeliveryDateStateMap).length : 0;
+    var dbg = document.getElementById('edit-order-cal-debug');
+    if (dbg) dbg.textContent = 'source=' + source + ' city=' + (cityResolved || '-') + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateSize=' + stateSize + ' currentDeliveryDate=' + (currentDeliveryDate || '-');
+    else if (grid && grid.parentNode) {
+        dbg = document.createElement('div');
+        dbg.id = 'edit-order-cal-debug';
+        dbg.style.cssText = 'font-size:10px;color:#888;margin:2px 0;font-family:monospace;';
+        dbg.textContent = 'source=' + source + ' city=' + (cityResolved || '-') + ' fromCalendar=' + deliveryDatesFromCalendar + ' stateSize=' + stateSize + ' currentDeliveryDate=' + (currentDeliveryDate || '-');
+        grid.parentNode.insertBefore(dbg, grid);
+    }
     var editCityVal = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
     var slots = _editOrderCalSlots || [];
     var slotsSet = {};
