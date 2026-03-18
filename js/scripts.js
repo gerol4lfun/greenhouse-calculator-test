@@ -2667,115 +2667,103 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
     updateOrderCartUI();
 }
 
-async function calculateDelivery() {
-    // Защита от параллельных запросов
-    if (isCalculatingDelivery) {
-        return; // Уже идет расчет, пропускаем
-    }
-
-    const addressInput = document.getElementById("address");
-    const address = addressInput.value.trim().toLowerCase();
-
-    if (!address) {
-        document.getElementById('result').innerText = "Введите адрес!";
-        return;
-    }
-
-    // Устанавливаем флаг, что идет расчет
-    isCalculatingDelivery = true;
-
-    if (typeof ymaps === 'undefined') {
-        isCalculatingDelivery = false;
-        document.getElementById('result').innerText = "Яндекс.Карты недоступны. Проверьте интернет и перезагрузите страницу.";
-        return;
-    }
+/**
+ * Боевой расчёт стоимости доставки по адресу (Yandex geocode + route).
+ * Используется в create flow и edit flow.
+ * @param {string} address - адрес для геокодирования
+ * @returns {Promise<{ ok: true, cost: number, nearestCity: Object, route: Object } | { ok: false, error: string }>}
+ */
+async function calculateDeliveryCostFromAddress(address) {
+    var addr = (address || '').trim();
+    if (!addr) return { ok: false, error: 'Адрес не указан' };
+    if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
 
     try {
-        const res = await ymaps.geocode(address, { results: 1 });
-        const geoObject = res.geoObjects.get(0);
+        var res = await ymaps.geocode(addr, { results: 1 });
+        var geoObject = res.geoObjects.get(0);
+        if (!geoObject) return { ok: false, error: 'Адрес не найден' };
 
-        if (!geoObject) {
-            document.getElementById('result').innerText = "Адрес не найден!";
-            return;
-        }
-
-        // Извлекаем населённые пункты и административные области (нижний регистр)
-        let localities = geoObject.getLocalities().map(loc => loc.toLowerCase());
-        let administrativeAreas = geoObject.getAdministrativeAreas().map(area => area.toLowerCase());
-
+        var localities = geoObject.getLocalities().map(function (loc) { return loc.toLowerCase(); });
+        var administrativeAreas = geoObject.getAdministrativeAreas().map(function (area) { return area.toLowerCase(); });
         if (!isAddressInDeliveryRegionByLocality(localities, administrativeAreas)) {
-            document.getElementById('result').innerText = "Доставка в этот регион не осуществляется.";
-            return;
+            return { ok: false, error: 'Доставка в этот регион не осуществляется' };
         }
 
-        const coords = geoObject.geometry.getCoordinates();
-        const destinationLat = coords[0];
-        const destinationLon = coords[1];
+        var coords = geoObject.geometry.getCoordinates();
+        var destinationLat = coords[0];
+        var destinationLon = coords[1];
 
-        let cityDistances = [];
+        var cityDistances = [];
+        citiesForMap.forEach(function (city) {
+            var geoDistance = ymaps.coordSystem.geo.getDistance(city.coords, [destinationLat, destinationLon]) / 1000;
+            cityDistances.push({ city: city, geoDistance: geoDistance });
+        });
+        cityDistances.sort(function (a, b) { return a.geoDistance - b.geoDistance; });
+        var topCities = cityDistances.slice(0, 5);
 
-// Шаг 1: Вычисляем прямые расстояния до всех городов
-citiesForMap.forEach(city => {
-    const geoDistance = ymaps.coordSystem.geo.getDistance(city.coords, [destinationLat, destinationLon]) / 1000; // расстояние в км
-    cityDistances.push({ city: city, geoDistance: geoDistance });
-});
+        var routePromises = topCities.map(function (entry) {
+            return ymaps.route([entry.city.coords, [destinationLat, destinationLon]]).then(function (route) {
+                var routeDistance = route.getLength() / 1000;
+                return { city: entry.city, distance: routeDistance, route: route };
+            }).catch(function () { return null; });
+        });
+        var routeResults = await Promise.all(routePromises);
 
-// Сортируем города по прямому расстоянию и берём топ-5 ближайших
-cityDistances.sort((a, b) => a.geoDistance - b.geoDistance);
-const topCities = cityDistances.slice(0, 5); // Берём 5 ближайших городов
+        var nearestCity = null;
+        var minRouteDistance = Infinity;
+        var winningRoute = null;
+        for (var i = 0; i < routeResults.length; i++) {
+            var r = routeResults[i];
+            if (r && r.distance < minRouteDistance) {
+                minRouteDistance = r.distance;
+                nearestCity = r.city;
+                winningRoute = r.route;
+            }
+        }
+        if (!nearestCity || !winningRoute) return { ok: false, error: 'Ближайший город не найден' };
 
-// Шаг 2: Теперь строим маршруты для этих 5 городов ПАРАЛЛЕЛЬНО и выбираем наименьший
-let nearestCity = null;
-let minRouteDistance = Infinity;
+        var distanceInKm = winningRoute.getLength() / 1000;
+        var distanceFromBoundary = Math.max(distanceInKm - nearestCity.boundaryDistance, 0);
+        var rate = nearestCity.pricePerKm != null ? nearestCity.pricePerKm : 50;
+        var cost = Math.max(1000, rate * distanceFromBoundary);
+        var roundedCost = Math.ceil(cost / 50) * 50;
 
-// Делаем запросы параллельно вместо последовательно для ускорения
-const routePromises = topCities.map(async (entry) => {
+        return { ok: true, cost: roundedCost, nearestCity: nearestCity, route: winningRoute };
+    } catch (e) {
+        return { ok: false, error: (e && e.message) ? e.message : 'Ошибка при расчёте' };
+    }
+}
+
+async function calculateDelivery() {
+    if (isCalculatingDelivery) return;
+    var addressInput = document.getElementById('address');
+    var address = addressInput ? addressInput.value.trim().toLowerCase() : '';
+    if (!address) {
+        document.getElementById('result').innerText = 'Введите адрес!';
+        return;
+    }
+    isCalculatingDelivery = true;
     try {
-        const route = await ymaps.route([entry.city.coords, [destinationLat, destinationLon]]);
-        const routeDistance = route.getLength() / 1000; // расстояние по дорогам в км
-        return { city: entry.city, distance: routeDistance, route: route };
-    } catch (error) {
-        // Маршрут для части складов может не строиться (ограничения API) — используем успешные
-        if (DEBUG) console.warn("Маршрут для", entry.city.name, "не построен, берём другие склады:", error?.message || error);
-        return null;
-    }
-});
-
-// Ждем все запросы параллельно
-const routeResults = await Promise.all(routePromises);
-
-// Находим ближайший город
-for (const result of routeResults) {
-    if (result && result.distance < minRouteDistance) {
-        minRouteDistance = result.distance;
-        nearestCity = result.city;
-    }
-}
-
-// Проверяем, нашёлся ли ближайший город
-if (!nearestCity) {
-    document.getElementById('result').innerText = "Ошибка: ближайший город не найден.";
-    return;
-}
+        var result = await calculateDeliveryCostFromAddress(address);
+        if (!result.ok) {
+            document.getElementById('result').innerText = result.error || 'Ошибка при расчёте';
+            return;
+        }
+        var nearestCity = result.nearestCity;
+        var route = result.route;
+        deliveryCost = result.cost;
 
         if (mapInstance) mapInstance.setCenter(nearestCity.coords, 7);
-
-        // Автоматически установить найденный город в выпадающем списке "Город"
-        // Используем нормализованное сравнение для поиска правильного названия
-        const cityDropdown = document.getElementById('city');
-        const foundCityName = findCityInDropdown(nearestCity.name);
-        
+        var cityDropdown = document.getElementById('city');
+        var foundCityName = findCityInDropdown(nearestCity.name);
         if (foundCityName) {
             cityDropdown.value = foundCityName;
-            await onCityChange(); // Ждем загрузки данных города, включая дату доставки
+            await onCityChange();
         } else {
-            // Если не найдено, пытаемся установить напрямую
             cityDropdown.value = nearestCity.name;
-            // Загружаем дату доставки для найденного города (даже если он не в списке)
             await loadDeliveryDate(nearestCity.name);
-            // Пробуем снова через небольшую задержку (на случай, если список ещё загружается)
-            setTimeout(async () => {
-                const foundAfterDelay = findCityInDropdown(nearestCity.name);
+            setTimeout(async function () {
+                var foundAfterDelay = findCityInDropdown(nearestCity.name);
                 if (foundAfterDelay) {
                     cityDropdown.value = foundAfterDelay;
                     await onCityChange();
@@ -2783,37 +2771,17 @@ if (!nearestCity) {
             }, 300);
         }
 
-        if (mapInstance && currentRoute) {
-            mapInstance.geoObjects.remove(currentRoute);
-        }
+        if (mapInstance && currentRoute) mapInstance.geoObjects.remove(currentRoute);
+        currentRoute = route;
+        if (mapInstance) mapInstance.geoObjects.add(route);
 
-        try {
-            const route = await ymaps.route([nearestCity.coords, [destinationLat, destinationLon]]);
-            currentRoute = route;
-            if (mapInstance) mapInstance.geoObjects.add(route);
-
-            const distanceInKm = route.getLength() / 1000;
-            const distanceFromBoundary = Math.max(distanceInKm - nearestCity.boundaryDistance, 0);
-            const rate = nearestCity.pricePerKm ?? 50; // тариф руб/км от склада (один тариф — всегда как со сборкой)
-            const cost = Math.max(1000, rate * distanceFromBoundary);
-
-            const roundedCost = Math.ceil(cost / 50) * 50;
-
-            deliveryCost = roundedCost; // сохраняем стоимость доставки в глобальной переменной
-
-            const deliveryDate = await loadDeliveryDate(nearestCity.name);
-            
-            var costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(roundedCost) + ' рублей (' + nearestCity.name + ')</div>';
-            var dateData = getDeliveryDateBlockForUI();
-            document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
-        } catch (routeError) {
-            document.getElementById('result').innerText = "Ошибка при расчёте маршрута.";
-        }
-
-    } catch (geocodeError) {
-        document.getElementById('result').innerText = "Ошибка при расчёте. Попробуйте снова.";
+        await loadDeliveryDate(nearestCity.name);
+        var costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + nearestCity.name + ')</div>';
+        var dateData = getDeliveryDateBlockForUI();
+        document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
+    } catch (e) {
+        document.getElementById('result').innerText = 'Ошибка при расчёте. Попробуйте снова.';
     } finally {
-        // Снимаем флаг после завершения (успешного или с ошибкой)
         isCalculatingDelivery = false;
     }
 }
@@ -7933,6 +7901,22 @@ function initEditOrderModal() {
             lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText, height: data.height, snowLoad: data.snowLoad, horizontalTies: data.horizontalTies, equipment: data.equipment };
             if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(itemTotal) : itemTotal) + ' ₽';
             renderEditOrderAddBreakdown(data);
+            var addr1 = document.getElementById('edit-order-address-part1') ? (document.getElementById('edit-order-address-part1').value || '').trim() : '';
+            var addr2 = document.getElementById('edit-order-address-part2') ? (document.getElementById('edit-order-address-part2').value || '').trim() : '';
+            var addr3 = document.getElementById('edit-order-address-part3') ? (document.getElementById('edit-order-address-part3').value || '').trim() : '';
+            var noPlot = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
+            var fullAddr = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
+            if (fullAddr && typeof calculateDeliveryCostFromAddress === 'function') {
+                try {
+                    var delResult = await calculateDeliveryCostFromAddress(fullAddr);
+                    if (delResult.ok) {
+                        editOrderDeliveryCost = delResult.cost;
+                        if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
+                    } else if (typeof showToast === 'function') showToast(delResult.error || 'Доставка не рассчитана', 'error');
+                } catch (delErr) {
+                    if (typeof showToast === 'function') showToast('Ошибка расчёта доставки: ' + (delErr.message || 'попробуйте снова'), 'error');
+                }
+            }
             if (typeof updateEditOrderGiftsBlock === 'function') updateEditOrderGiftsBlock(getEditOrderCompositionTotalWithPreview(), true);
             if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length) {
                 if (savePosBtn) savePosBtn.classList.remove('hidden');
