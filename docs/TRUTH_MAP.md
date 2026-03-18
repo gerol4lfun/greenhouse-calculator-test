@@ -68,6 +68,9 @@
 
 - **Existing-order edit: untouched legacy fields:** delivery_address и client_phone, которые менеджер не трогал при edit, должны сохраняться literally. Не нормализовать, не пересобирать, не включать в phantom diff. При смене только даты — diff только по дате. Реализовано: _editOrderOriginalAddressRaw, _editOrderOriginalPhoneRaw, touched-флаги; payload использует original при untouched.
 - **Edit calendar source-of-truth:** confirmed. Приоритет: warehouse_city_key → orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve), fix #2 (prefix strip), fix #3 (numeric city candidate reject — 15.03.2026) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург"); Ivan case (адрес «регион, участок, улица») — canonicalCity=Москва, календарь показывает реальные ограничения. Принято: orders.warehouse_city_key как source of truth (см. ниже).
+- **Create flow orders.city (18.03.2026):** source of truth — effectiveCalc.city, fallback addr1. Numeric-only ("7", "1") не сохраняются. Root cause fix: extractCityFromAddress(fullAddress) больше не приоритет.
+- **Edit flow line_items[].city (18.03.2026):** после create-flow fix найден оставшийся риск — line_items[].city мог протаскивать исторический numeric-only мусор при save. Фикс применён: isRejectableNumericCityCandidate_ в buildOrderPayloadFromEditModal; numeric-only не пишутся в payload.
+- **Исторические bad rows (city="7" closeout 18.03.2026):** 1 боевой 79778829506; остальные numeric-only — тестовые; 3 строки empty city + address отдельно. Blind mass cleanup не нужен. 79778829506 — ручная коррекция; historical — later review. TG не виноват.
 - **cancelled** — не редактируется. UI + проверка перед save.
 - **Платные допы** — не должны пропадать из long КП из-за логики подарков.
 - **slot count** — зависит только от total / preview total.

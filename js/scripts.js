@@ -7301,7 +7301,7 @@ function buildOrderPayloadFromEditModal() {
                 extras: (item.extras != null ? String(item.extras) : '').trim(),
                 assembly: (item.assembly != null ? String(item.assembly) : '').trim(),
                 form: item.form || '',
-                city: item.city || ''
+                city: (item.city && typeof isRejectableNumericCityCandidate_ === 'function' && !isRejectableNumericCityCandidate_(String(item.city).trim())) ? String(item.city).trim() : ''
             };
             if (item.base_price != null && !isNaN(Number(item.base_price))) row.base_price = Number(item.base_price);
             if (item.options && typeof item.options === 'object') row.options = item.options;
@@ -14850,7 +14850,12 @@ function buildOrderPayloadFromFormAndCart() {
         client_phone: sanitizePhoneForSave_(clientPhone),
         delivery_date: deliveryDate && deliveryDate.includes('-') ? formatDateRu(deliveryDate) : deliveryDate,
         delivery_address: fullAddress,
-        city: extractCityFromAddress(fullAddress) || extractCityFromAddress((effectiveCalc && effectiveCalc.address) || '') || (effectiveCalc && effectiveCalc.city) || '',
+        city: (function () {
+            var c1 = (effectiveCalc && effectiveCalc.city) ? String(effectiveCalc.city).trim() : '';
+            if (c1 && !isRejectableNumericCityCandidate_(c1)) return c1;
+            var c2 = (addr1 || '').trim();
+            return (c2 && !isRejectableNumericCityCandidate_(c2)) ? c2 : '';
+        })(),
         model: effectiveCalc.model,
         width: String(effectiveCalc.width || ''),
         length: String(effectiveCalc.length || ''),

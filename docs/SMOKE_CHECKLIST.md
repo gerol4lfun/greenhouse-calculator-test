@@ -14,6 +14,7 @@
 - [ ] Рассчитать теплицу, оформить заказ.
 - [ ] Заказ появился в Supabase.
 - [ ] Заказ виден в боте (тг бот заказы теплицы).
+- [ ] orders.city — не numeric ("7"); city/region integrity fixed (create + edit safeguard).
 
 ---
 
@@ -30,6 +31,7 @@
 - [ ] Добавить/удалить позицию в составе.
 - [ ] Save.
 - [ ] Состав обновился. commercial_offer пересобрался.
+- [ ] Edit multi-item заказа с bad city в line_items → Save: numeric-only ("7") не протаскивается в payload.
 
 ---
 

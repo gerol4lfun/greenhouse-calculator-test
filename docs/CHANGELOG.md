@@ -1,5 +1,47 @@
 # История изменений проекта
 
+## city = "7" bug — closeout (18.03.2026)
+
+**A. Fixed:** create flow city source fixed; city больше не сохраняется как numeric-only ("7") при create; edit flow safeguard для line_items[].city.
+
+**B. Root cause:** create flow давал неверный приоритет extractCityFromAddress(fullAddress). TG-контур не виноват.
+
+**C. Database review:** 1 реальный боевой кейс 79778829506 → city="7"; остальные numeric-only — тестовые/тех; 3 старые строки empty city + address отдельно. Blind mass cleanup не нужен.
+
+**D. Open:** 79778829506 — ручная коррекция; historical bad/empty city rows — later review; no blind mass update.
+
+---
+
+## fix: edit flow line_items[].city — numeric garbage propagation (18.03.2026)
+
+**Исправлено:** при edit multi-item заказа line_items[].city мог протаскивать исторический numeric-only мусор ("7", "1") из уже испорченных записей в payload.
+
+**Root cause:** в `buildOrderPayloadFromEditModal()` использовалось `item.city || ''` без проверки — загруженный bad city сохранялся обратно.
+
+**Фикс:** при формировании line_items в payload — если `item.city` numeric-only (isRejectableNumericCityCandidate_), пишем пустую строку вместо него.
+
+**Файл:** js/scripts.js (buildOrderPayloadFromEditModal).
+
+**Open:** исторические bad rows в БД — отдельная очистка (см. cleanup plan).
+
+---
+
+## fix: create flow orders.city — numeric garbage like "7" (18.03.2026)
+
+**Исправлено:** city при создании заказа мог сохраняться как numeric-only ("7", "1" и т.п.) из-за приоритета `extractCityFromAddress(fullAddress)` — функция возвращала parts[1] (улица/участок), а не город.
+
+**Root cause:** неправильный приоритет: extractCityFromAddress(fullAddress) шёл первым.
+
+**Фикс:** в `buildOrderPayloadFromFormAndCart()` приоритет для city: 1) effectiveCalc.city, 2) addr1. Numeric-only отсекаются через `isRejectableNumericCityCandidate_()`.
+
+**Не менялось:** extractCityFromAddress глобально; существующие испорченные записи.
+
+**Open:** исторические строки с bad city требуют отдельной очистки / one-off correction.
+
+**Файл:** js/scripts.js.
+
+---
+
 ## Doc-only closeout (15.03.2026) — финальная волна фиксов
 
 **Код не менялся.** Обновлены docs: TRUTH_MAP, PREPROD_PLAN, CHANGELOG, AUTOTEST_PLAN.
