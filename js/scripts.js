@@ -6303,7 +6303,15 @@ function fillEditOrderForm(order) {
             assembly: (order.assembly != null ? String(order.assembly) : '').trim(),
             options: order.options && typeof order.options === 'object' ? order.options : undefined
         });
-        editOrderDeliveryCost = 0;
+        // Для single-item: при delivery_cost=0 в БД — вывести из total - base_price - extras/assembly (как для line_items).
+        if (editOrderDeliveryCost === 0 && order.total != null && (order.delivery_address || order.delivery_date || '').toString().trim()) {
+            var sumExtras = parseExtrasAssemblySum(order.extras, order.assembly);
+            var basePrice = (flatBasePrice != null && !isNaN(Number(flatBasePrice))) ? Number(flatBasePrice) : 0;
+            if (basePrice > 0) {
+                editOrderDeliveryCost = Math.max(0, parseOrderPrice_(order.total) - basePrice - sumExtras);
+                editOrderComposition[0].item_total = Math.max(0, tot - editOrderDeliveryCost);
+            }
+        }
     }
     setEditOrderFieldValue('edit-order-gift', order.gift || '');
     editOrderEditingIndex = null;
