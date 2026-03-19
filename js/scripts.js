@@ -852,6 +852,8 @@ let _editOrderLoadedCityRaw = null;
 let _editOrderLoadedWarehouseCityKey = null;
 /** Preview доставки из runEditOrderAddPanelCalculation. Применяется в payload только при «Сохранить позицию»/«Добавить в заказ». */
 let _editOrderDeliveryCostPreview = null;
+/** Committed delivery cost на момент открытия панели. Используется в payload при save без «Сохранить позицию» (phantom fix). */
+let _editOrderDeliveryCostAtPanelOpen = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6806,6 +6808,7 @@ function openEditOrderAddPanel(index) {
     editOrderEditingIndex = index;
     _editOrderPositionExplicitlySaved = false;
     _editOrderDeliveryCostPreview = null;
+    _editOrderDeliveryCostAtPanelOpen = editOrderDeliveryCost;
     var panel = document.getElementById('edit-order-add-item-panel');
     var confirmBtn = document.getElementById('edit-order-add-confirm-btn');
     var savePosBtn = document.getElementById('edit-order-save-position-btn');
@@ -6923,6 +6926,7 @@ function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
     _editOrderPositionExplicitlySaved = false;
     _editOrderDeliveryCostPreview = null;
+    _editOrderDeliveryCostAtPanelOpen = null;
     lastModalCalculationResult = null;
     clearEditOrderAddBreakdown();
     var panel = document.getElementById('edit-order-add-item-panel');
@@ -7202,9 +7206,14 @@ function editOrderItemToCalc(item, deliveryCost, isFirstOfMultiple, orderTotalFo
 
 /** Собрать из полей модалки только редактируемые поля для update (частичное обновление). Включает состав и итог (Этап 6). */
 function buildOrderPayloadFromEditModal() {
+    // phantom fix: если панель открыта, есть recalc, но «Сохранить позицию» не нажата — payload из persisted state
+    var usePersistedForPayload = editOrderEditingIndex != null && lastModalCalculationResult && !_editOrderPositionExplicitlySaved && lastPersistedEditOrderState != null;
+    var compositionForPayload = usePersistedForPayload ? lastPersistedEditOrderState.composition : editOrderComposition;
+    var deliveryCostForPayload = usePersistedForPayload && _editOrderDeliveryCostAtPanelOpen != null ? _editOrderDeliveryCostAtPanelOpen : (editOrderDeliveryCost || 0);
+    var totalForPayload = compositionForPayload.reduce(function (s, i) { return s + (i.item_total || 0); }, 0) + deliveryCostForPayload;
     // raw-preserve: решаем, сохранять raw legacy gift или пересобирать в канонический формат
-    var _giftCurrentTier = (typeof getGiftSlotsByTotal === 'function' && typeof getEditOrderCompositionTotal === 'function')
-        ? getGiftSlotsByTotal(getEditOrderCompositionTotal()) : 0;
+    var _giftCurrentTier = (typeof getGiftSlotsByTotal === 'function')
+        ? getGiftSlotsByTotal(totalForPayload) : 0;
     var _giftTierChanged = _editOrderOriginalGiftRaw !== null && _giftCurrentTier !== _editOrderGiftTierAtOpen;
     if (!_editOrderGiftTouchedByUser && !_giftTierChanged && _editOrderOriginalGiftRaw !== null) {
         // Пользователь не трогал gifts и tier не изменился: вернуть оригинальный raw text в поле
@@ -7257,14 +7266,13 @@ function buildOrderPayloadFromEditModal() {
 
     var giftEl = document.getElementById('edit-order-gift');
     var giftValue = giftEl ? (giftEl.value || '').trim() : '';
-    // Финальная граница: если сумма ниже порога — не сохраняем подарок
-    var giftTotal = getEditOrderCompositionTotal ? getEditOrderCompositionTotal() : 0;
+    var total = totalForPayload;
+    var giftTotal = total;
     if (giftTotal < GIFT_THRESHOLDS.slot1) giftValue = '';
     payload.gift = giftValue;
 
-    var total = getEditOrderCompositionTotal();
-    if (editOrderComposition.length === 1) {
-        var one = editOrderComposition[0];
+    if (compositionForPayload.length === 1) {
+        var one = compositionForPayload[0];
         payload.model = one.model;
         payload.width = one.width != null ? String(one.width) : '';
         payload.length = one.length != null ? String(one.length) : '';
@@ -7274,11 +7282,11 @@ function buildOrderPayloadFromEditModal() {
         payload.extras = (one.extras != null ? String(one.extras) : '').trim();
         payload.assembly = (one.assembly != null ? String(one.assembly) : '').trim();
         payload.total = total;
-        payload.delivery_cost = editOrderDeliveryCost || 0;
+        payload.delivery_cost = deliveryCostForPayload;
         if (one.base_price != null && !isNaN(Number(one.base_price))) payload.unit_price = Number(one.base_price);
         payload.line_items = null;
-    } else if (editOrderComposition.length > 1) {
-        payload.line_items = JSON.stringify(editOrderComposition.map(function (item) {
+    } else if (compositionForPayload.length > 1) {
+        payload.line_items = JSON.stringify(compositionForPayload.map(function (item) {
             var row = {
                 model: item.model,
                 width: item.width,
@@ -7299,10 +7307,10 @@ function buildOrderPayloadFromEditModal() {
         payload.extras = '';
         payload.assembly = '';
         payload.total = total;
-        payload.delivery_cost = editOrderDeliveryCost || 0;
+        payload.delivery_cost = deliveryCostForPayload;
     }
-    var orderTotal = getEditOrderCompositionTotal ? getEditOrderCompositionTotal() : total;
-    var editOrderCart = editOrderComposition.map(function (item, i) {
+    var orderTotal = total;
+    var editOrderCart = compositionForPayload.map(function (item, i) {
         var block = getGreenhouseBlockFromOffer(lastLoadedOrderCommercialOffer, i);
         var parsed = parseCatalogFieldsFromOfferBlock(block);
         var catalogOverride = {
@@ -7311,7 +7319,7 @@ function buildOrderPayloadFromEditModal() {
             horizontalTies: (item.horizontalTies && String(item.horizontalTies).trim()) ? String(item.horizontalTies).trim() : (parsed.horizontalTies || ''),
             equipment: (item.equipment && String(item.equipment).trim()) ? String(item.equipment).trim() : (parsed.equipment || '')
         };
-        return editOrderItemToCalc(item, editOrderDeliveryCost, i === 0, editOrderComposition.length === 1 ? orderTotal : null, catalogOverride);
+        return editOrderItemToCalc(item, deliveryCostForPayload, i === 0, compositionForPayload.length === 1 ? orderTotal : null, catalogOverride);
     });
     // dual-phone: commercial_offer получает фактически сохраняемое значение телефона, а не normalizePhone
     var client = {
