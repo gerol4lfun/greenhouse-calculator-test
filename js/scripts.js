@@ -850,6 +850,8 @@ let _editOrderGiftTierAtOpen = 0;
 let _editOrderLoadedCityRaw = null;
 /** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
 let _editOrderLoadedWarehouseCityKey = null;
+/** Preview доставки из runEditOrderAddPanelCalculation. Применяется в payload только при «Сохранить позицию»/«Добавить в заказ». */
+let _editOrderDeliveryCostPreview = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6222,6 +6224,7 @@ function fillEditOrderForm(order) {
     _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
+    _editOrderDeliveryCostPreview = null;
     editOrderDeliveryCost = parseOrderPrice_(order.delivery_cost);
     if (order.line_items && typeof order.line_items === 'string') {
         try {
@@ -6315,18 +6318,24 @@ function getEditOrderCompositionTotal() {
     return sum + (editOrderDeliveryCost || 0);
 }
 
+/** Доставка для отображения: preview из панели (если есть) или committed. Payload всегда использует editOrderDeliveryCost. */
+function getEditOrderDeliveryCostForDisplay() {
+    return _editOrderDeliveryCostPreview != null ? _editOrderDeliveryCostPreview : (editOrderDeliveryCost || 0);
+}
+
 /** Итог с учётом превью из панели «Параметры теплицы»: если есть lastModalCalculationResult, подставляем его item_total вместо текущей позиции (edit) или добавляем к сумме (add). */
 function getEditOrderCompositionTotalWithPreview() {
     if (!lastModalCalculationResult) return getEditOrderCompositionTotal();
     var recalcTotal = lastModalCalculationResult.item_total || 0;
+    var deliveryForPreview = getEditOrderDeliveryCostForDisplay();
     if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
         var sum = 0;
         editOrderComposition.forEach(function (item, idx) {
             sum += (idx === editOrderEditingIndex ? recalcTotal : (item.item_total || 0));
         });
-        return sum + (editOrderDeliveryCost || 0);
+        return sum + deliveryForPreview;
     }
-    return getEditOrderCompositionTotal() + recalcTotal;
+    return getEditOrderCompositionTotal() - (editOrderDeliveryCost || 0) + deliveryForPreview + recalcTotal;
 }
 
 /** По тексту подарков (из заказа) восстановить объект { 'gift-1': id, ... } для предзаполнения селектов в модалке. */
@@ -6618,11 +6627,12 @@ function renderEditOrderCompositionList() {
         closeEditOrderAddPanel();
         resetEditOrderAddPanelOptions();
     }
-    var total = getEditOrderCompositionTotal();
+    var deliveryForDisplay = getEditOrderDeliveryCostForDisplay();
+    var total = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0) + deliveryForDisplay;
     var orderTotal = lastLoadedOrderTotalForDisplay != null ? lastLoadedOrderTotalForDisplay : total;
     var totalExtrasSum = 0;
     editOrderComposition.forEach(function (item) { totalExtrasSum += parseExtrasAssemblySum(item.extras, item.assembly); });
-    var remainder = Math.max(0, orderTotal - (editOrderDeliveryCost || 0) - totalExtrasSum);
+    var remainder = Math.max(0, orderTotal - deliveryForDisplay - totalExtrasSum);
     editOrderComposition.forEach(function (item) {
         if (item.base_price != null && !isNaN(Number(item.base_price))) remainder -= Number(item.base_price);
         else if (item.item_total != null && Number(item.item_total) > 0) {
@@ -6631,7 +6641,7 @@ function renderEditOrderCompositionList() {
         }
     });
     remainder = Math.max(0, remainder);
-    if (remainder === 0 && orderTotal > 0) remainder = Math.max(0, orderTotal - (editOrderDeliveryCost || 0) - totalExtrasSum);
+    if (remainder === 0 && orderTotal > 0) remainder = Math.max(0, orderTotal - deliveryForDisplay - totalExtrasSum);
     var noPriceCount = 0;
     editOrderComposition.forEach(function (item) {
         var hasPrice = (item.base_price != null && !isNaN(Number(item.base_price))) || (item.item_total != null && Number(item.item_total) > 0);
@@ -6652,7 +6662,7 @@ function renderEditOrderCompositionList() {
                 displayPrice = noPriceCount === 1 ? remainder : (noPriceCount > 0 ? Math.round(remainder / noPriceCount) : 0);
             }
         }
-        if (displayPrice === 0 && orderTotal > 0 && editOrderComposition.length === 1) displayPrice = Math.max(0, orderTotal - (editOrderDeliveryCost || 0));
+        if (displayPrice === 0 && orderTotal > 0 && editOrderComposition.length === 1) displayPrice = Math.max(0, orderTotal - deliveryForDisplay);
         var priceFormatted = (displayPrice > 0 && typeof formatPrice === 'function') ? formatPrice(displayPrice) : (displayPrice > 0 ? displayPrice : '');
         var extrasStr = (item.extras || '').trim();
         var assemblyStr = (item.assembly || '').trim();
@@ -6666,8 +6676,8 @@ function renderEditOrderCompositionList() {
         }
         html += buildOrderCompositionItemHtml({ text: text, priceFormatted: priceFormatted, extrasHtml: extrasHtml, index: idx, showEditButton: true, showDeleteButton: true });
     });
-    if (editOrderDeliveryCost > 0) {
-        html += '<div class="edit-order-composition-item"><span class="edit-order-composition-item__text">Доставка</span><span class="edit-order-composition-item__price">' + escapeHtml(typeof formatPrice === 'function' ? formatPrice(editOrderDeliveryCost) : editOrderDeliveryCost) + ' ₽</span></div>';
+    if (deliveryForDisplay > 0) {
+        html += '<div class="edit-order-composition-item"><span class="edit-order-composition-item__text">Доставка</span><span class="edit-order-composition-item__price">' + escapeHtml(typeof formatPrice === 'function' ? formatPrice(deliveryForDisplay) : deliveryForDisplay) + ' ₽</span></div>';
     }
     listEl.innerHTML = html;
     var totalEl = document.getElementById('edit-order-composition-total');
@@ -6769,8 +6779,9 @@ function renderEditOrderAddBreakdown(data) {
     pushLines(data.assemblyText);
     pushLines(data.additionalProductsText);
     pushLines(data.bedsAssemblyText);
-    if (typeof editOrderDeliveryCost === 'number' && editOrderDeliveryCost > 0) {
-        subLines.push('Доставка - ' + fmt(editOrderDeliveryCost) + ' рублей');
+    if (typeof getEditOrderDeliveryCostForDisplay === 'function') {
+        var dispCost = getEditOrderDeliveryCostForDisplay();
+        if (dispCost > 0) subLines.push('Доставка - ' + fmt(dispCost) + ' рублей');
     }
     el.innerHTML = '';
     var title = document.createElement('div');
@@ -6794,6 +6805,7 @@ function renderEditOrderAddBreakdown(data) {
 function openEditOrderAddPanel(index) {
     editOrderEditingIndex = index;
     _editOrderPositionExplicitlySaved = false;
+    _editOrderDeliveryCostPreview = null;
     var panel = document.getElementById('edit-order-add-item-panel');
     var confirmBtn = document.getElementById('edit-order-add-confirm-btn');
     var savePosBtn = document.getElementById('edit-order-save-position-btn');
@@ -6910,6 +6922,7 @@ function openEditOrderAddPanel(index) {
 function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
     _editOrderPositionExplicitlySaved = false;
+    _editOrderDeliveryCostPreview = null;
     lastModalCalculationResult = null;
     clearEditOrderAddBreakdown();
     var panel = document.getElementById('edit-order-add-item-panel');
@@ -7910,7 +7923,7 @@ function initEditOrderModal() {
                 try {
                     var delResult = await calculateDeliveryCostFromAddress(fullAddr);
                     if (delResult.ok) {
-                        editOrderDeliveryCost = delResult.cost;
+                        _editOrderDeliveryCostPreview = delResult.cost;
                         if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
                     } else if (typeof showToast === 'function') showToast(delResult.error || 'Доставка не рассчитана', 'error');
                 } catch (delErr) {
@@ -7961,6 +7974,10 @@ function initEditOrderModal() {
     if (confirmAddBtn) {
         confirmAddBtn.addEventListener('click', function () {
             if (!lastModalCalculationResult) return;
+            if (_editOrderDeliveryCostPreview != null) {
+                editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                _editOrderDeliveryCostPreview = null;
+            }
             var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
             editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
             editOrderStateRedoSample = null;
@@ -7995,6 +8012,10 @@ function initEditOrderModal() {
     if (savePosBtn) {
         savePosBtn.addEventListener('click', function () {
             if (editOrderEditingIndex == null || !lastModalCalculationResult) return;
+            if (_editOrderDeliveryCostPreview != null) {
+                editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                _editOrderDeliveryCostPreview = null;
+            }
             _editOrderPositionExplicitlySaved = true;
             var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
             editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
