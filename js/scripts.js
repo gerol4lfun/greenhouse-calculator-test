@@ -5457,7 +5457,23 @@ async function loadDeliveryDatesModalData() {
         normalizedMap[key] = { city_name: name };
         deliveryDatesByCity[name] = { delivery_date: item.delivery_date, assembly_date: item.assembly_date };
     }
-    var cityList = Object.keys(normalizedMap).map(function (k) { return normalizedMap[k].city_name; });
+    var rawCityList = Object.keys(normalizedMap).map(function (k) { return normalizedMap[k].city_name; });
+    var groupBest = {};
+    for (var r = 0; r < rawCityList.length; r++) {
+        var c = rawCityList[r];
+        var s = (c || '').toLowerCase().trim();
+        var g = (s === 'москва' || s === 'москва и мо') ? 'москва' : ((s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s)) ? 'спб' : null);
+        var prio = (g === 'москва' && s === 'москва и мо') ? 2 : ((g === 'москва' && s === 'москва') ? 1 : ((g === 'спб' && /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s)) ? 2 : ((g === 'спб' && s === 'санкт-петербург') ? 1 : 0)));
+        if (g && (!groupBest[g] || prio > (groupBest[g].prio || 0))) groupBest[g] = { name: c, prio: prio };
+    }
+    var cityList = [];
+    for (var r = 0; r < rawCityList.length; r++) {
+        var c = rawCityList[r];
+        var s = (c || '').toLowerCase().trim();
+        var g = (s === 'москва' || s === 'москва и мо') ? 'москва' : ((s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s)) ? 'спб' : null);
+        if (g && groupBest[g] && groupBest[g].name !== c) continue;
+        cityList.push(c);
+    }
     if (cityList.length === 0) {
         listEl.innerHTML = '<div class="no-data">Нет данных о городах.</div>';
         return;
