@@ -5467,7 +5467,12 @@ async function loadDeliveryDatesModalData() {
         var nw = null;
         var naw = null;
         var stateMap = null;
-        var calRows = calByCity[getModalCityGroupKey(city)];
+        var key = getModalCityGroupKey(city);
+        var calRows = calByCity[key];
+        if (!calRows && key === 'москва') calRows = calByCity['москва и мо'];
+        if (!calRows && key === 'москва и мо') calRows = calByCity['москва'];
+        if (!calRows && key === 'санкт-петербург') calRows = calByCity['санкт-петербург и обл.'] || calByCity['санкт-петербург и ло'];
+        if (!calRows && (key === 'санкт-петербург и обл.' || key === 'санкт-петербург и ло')) calRows = calByCity['санкт-петербург'];
         if (calRows && calRows.length > 0) {
             stateMap = buildStateMapFromRows(calRows, todayISO);
             nw = getNearestFromStateMap(stateMap, todayISO, false);
