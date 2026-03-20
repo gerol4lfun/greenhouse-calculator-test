@@ -4,6 +4,19 @@
 
 ---
 
+## ПРОЕКТНЫЙ РЕЖИМ И ФОКУС (20.03.2026)
+
+**Главный приоритет:** стабилизация рабочей системы, не идеальная нормализация исторической базы. Продукт уже работает; нет времени на exhaustive testing; приоритет — убрать худшие костыли и стабилизировать критичный путь.
+
+**Editing rules (направление):** untouched existing/recent order fields → preserve literally; date-only edit → must not recalc item price or delivery; address-only change → may recalc delivery; changing one extra → must not recalc whole greenhouse by new prices.
+
+**Active bug focus (калькулятор):**
+- phantom delivery +1000
+- inline vs modal delivery date mismatch (separate; not fixed)
+- legacy single-item date-only / comment-only total overwrite — fixed and verified 2026-03-20
+
+---
+
 ## Confirmed working
 
 - **Центр истины:** greenhouse-calculator-main/docs/
@@ -35,6 +48,7 @@
 - **PGRST204 incident (15.03.2026) — confirmed:** prod-schema проблема; колонка warehouse_city_key отсутствовала; добавлена вручную; NOTIFY pgrst; save восстановлен; rollback payload rejected.
 - **Логика дат доставки:** Москва в основной форме; Набережные Челны в edit modal со сборкой — подтверждены вручную. Логика основной формы и edit modal выровнена (канонический city key в обоих).
 - **Edit-calendar city resolve fix (15.03.2026):** canonicalCity=1 bug исправлен. Root cause: numeric candidate ("1" — номер участка) из address fallback. Фикс: isRejectableNumericCityCandidate_, fallback resolveRegionToCanonicalCity_(p1). Ivan case manual confirmed: canonicalCity=Москва, withAssembly=true, stateMapCountForMonth>0, календарь не all-green.
+- **Staging (19.03.2026):** greenhouse-calculator-test на GitHub Pages; staging smoke passed: page load, auth, delivery in-zone (Москва), out-of-zone (Владивосток), map. См. tg_calculator/TEST_HANDOFF_2026-03-19.md.
 
 ---
 
@@ -50,6 +64,9 @@
 | 6 | **Ivan dual-phone preserve** | verified |
 | 7 | **Legacy composition/title phantom diff fix** | verified on Svetlana (change only date → diff only date in TG) |
 | 8 | **Passive mutation major branches** | contained |
+| 9 | **Legacy single-item total double-count (20.03.2026)** | fillEditOrderForm: при delivery_cost>0 item_total = total - delivery_cost; date-only save сохраняет total; retest PASS на safe clone |
+| 10 | **Stale form / mixed order state (verified 2026-03-20)** | Order A open, user searched order B from modal search → old form collapsed correctly; stale form no longer visible |
+| 11 | **Legacy single-item comment-only total overwrite (20.03.2026)** | buildOrderPayloadFromEditModal: use lastLoadedOrderTotalForDisplay when usePersistedForPayload && single-item; retest PASS: comment-only save preserves total=41480, delivery_cost=2500 |
 
 ---
 
@@ -69,7 +86,9 @@
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.
 - **Gifts consistency end-to-end** не закрыт полностью
-- **Multi-item сценарии** не закрыты полностью. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
+- **Multi-item сценарии** не закрыты полностью.
+- **Inline vs modal delivery date mismatch** — отдельный open item; не исправлен.
+- **Broad legacy/recent stabilization** — не равно full legacy support; проверенные кейсы (date-only, comment-only на safe clone) не покрывают все legacy сценарии. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
 - **Auto-sync after edit:** на стороне калькулятора/Supabase change-signal (`orders.updated_at`) подтверждён. Downstream TG/Sheets без ручного /sync — отдельный контур, не входит в scope калькулятора.
 - **Cancel flow race:** при слишком раннем нажатии «Отменить заказ» возможна «Ошибка: заказ не выбран».
 - **Обычный sync:** не всегда даёт чистую проверку без lock contention

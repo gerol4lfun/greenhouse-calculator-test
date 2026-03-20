@@ -1,0 +1,96 @@
+# LIVE INCIDENTS — 2026-03-19 — CALC
+
+**Контур:** greenhouse-calculator-main  
+**Дата:** 2026-03-19  
+**Scope:** только симптомы, связанные с калькулятором. Без предложений по исправлению кода.
+
+---
+
+## Симптомы в scope
+
+- edit existing order — странное поведение при сохранении
+- странные diff по сумме (phantom diff)
+- возможная лишняя доставка / +1000
+- подарок/форточка и цена
+- несоответствие «что видел менеджер в калькуляторе» vs «что попало в таблицу/бот»
+
+---
+
+## INC-001: 79778008067 — edit, шаг 0.65, дата 28.03
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Менеджер менял шаг 0.65 и дату 28.03; по заказу пришло ≥2 уведомлений «Заказ изменён»; суммы на скринах: 31 990 → 33 990, затем 33 990 → 34 990; изменения вели себя непонятно/частично |
+| **Open questions** | Почему два уведомления? Корректна ли цепочка сумм? Сохранился ли шаг 0.65 в payload? |
+| **Evidence needed** | Supabase: orders по client_phone 79778008067 — line_items, arc_step, delivery_date, total, updated_at; payload при каждом save; таблица — строка до/после sync |
+| **Cross-contour** | Diff и уведомления — TG; payload и save — CALC |
+
+---
+
+## INC-002: 79290202519 — подарок «2 форточки», +1000
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Уведомление про подарок «2 дополнительные форточки»; сумма 60 990 → 61 990; подозрение на лишнюю тысячу |
+| **Open questions** | Откуда +1000? Gift не должен добавлять платную составляющую; возможен дубль delivery_cost или другой платный компонент |
+| **Evidence needed** | Supabase: order — gift, delivery_cost, total, base_price, extras, assembly; калькулятор: preview total при выборе «2 форточки»; таблица — разбивка по колонкам |
+| **Cross-contour** | TG строит diff; CALC — источник payload |
+
+---
+
+## INC-003: Кейс 62 900 vs 63 900 (ID не подтверждён)
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Менеджер сообщил: калькулятор показывал ~62 900; в таблицу ушло 63 900; предположение — доставка продублировалась |
+| **Open questions** | Order ID не подтверждён; мог ли дубль delivery_cost попасть в payload? Или ошибка парсинга при sync? |
+| **Evidence needed** | Order ID; Supabase row; скрин калькулятора с итогом; строка таблицы с разбивкой (доставка отдельно) |
+| **Cross-contour** | CALC — payload; TG/Sheets — sync, парсинг |
+
+---
+
+## INC-004: 79106546690 — изменения/расхождение
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Фигурировал в сообщениях как кейс с изменениями/расхождением |
+| **Open questions** | Конкретика по материалам не подтверждена |
+| **Evidence needed** | Полный контекст: что меняли, что ожидали, что получили |
+| **Cross-contour** | Возможен CALC + TG |
+
+---
+
+## INC-007: 79084774012 — добавление теплицы
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Добавили ещё одну теплицу; в таблице изменили по новой цене; бот создал связанный тикет/change-order |
+| **Open questions** | Корректна ли новая цена? Правильно ли пересчитался total? |
+| **Evidence needed** | line_items до/после; total; commercial_offer; аудит бизнес-корректности |
+| **Cross-contour** | CALC — add position, save; TG — тикет, «Заказ изменён» |
+
+---
+
+## Общие open questions (CALC)
+
+1. **Phantom diff (legacy composition):** при «Рассчитать» без «Сохранить позицию» — canonical model перезаписывает legacy; diff в TG показывает «Убрали/Добавили». См. PHANTOM_DIFF_LEGACY_COMPOSITION_AUDIT.md.
+2. **Stale sheet baseline:** oldRows из листа может быть устаревшим → phantom diff. См. PHANTOM_DIFF_FIX.md (snapshot).
+2a. **Stale form / mixed order state (verified 2026-03-20):** scenario: order A open in edit form, user searched order B from search field inside open modal. Old expanded form collapsed correctly; stale form no longer remained visible.
+3. **Delivery_cost при single-item edit:** EOD 18.03 — fix для 79500273936 (delivery_cost = 0). Smoke ещё не подтверждён live.
+4. **Legacy single-item total double-count (20.03.2026) — RESOLVED, verified 2026-03-20:** line_items=null, unit_price=0, delivery_cost>0 при date-only save увеличивал total. Root cause: fillEditOrderForm ставил item_total=order.total; buildOrderPayloadFromEditModal добавлял delivery_cost повторно. Fix: item_total = total - delivery_cost при delivery_cost>0. Retest PASS on safe clone: delivery_date changed, total=41480, delivery_cost=2500, unit_price=0, line_items=null preserved.
+5. **Legacy single-item comment-only total overwrite (20.03.2026) — RESOLVED, verified 2026-03-20:** comment-only save мог перезаписывать total (41480→43980). Fix: use lastLoadedOrderTotalForDisplay when usePersistedForPayload && single-item. Retest PASS on safe clone: comment changed, total=41480, delivery_cost=2500, unit_price=0, line_items=null preserved.
+
+---
+
+## What evidence is still needed from table/Supabase
+
+| Источник | Что проверить |
+|----------|---------------|
+| **Supabase orders** | client_phone, total, delivery_cost, gift, line_items (JSON), arc_step, updated_at |
+| **Google Sheets** | Строки по телефонам — колонки доставки, итога, состава |
+| **Script Properties (GAS)** | fp_*, order_snap_* — для понимания baseline diff |
+| **Скрины калькулятора** | Итог перед save, блок подарков, блок доставки |
+
+---
+
+*Документ создан 2026-03-19. Do not propose fixes. Только симптоматика и evidence.*
