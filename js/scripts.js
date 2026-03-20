@@ -1468,6 +1468,19 @@ async function loadDeliveryDate(cityName) {
         }
 
         if (!calRes.error && calRes.data && calRes.data.length === 0) {
+            var aliasToTry = [];
+            var cn = (cityName || '').trim();
+            if (/^москва$/i.test(cn)) aliasToTry = ['Москва и МО'];
+            else if (/москва\s+и\s+м\.?о\.?/i.test(cn)) aliasToTry = ['Москва'];
+            else if (/^санкт-петербург$/i.test(cn)) aliasToTry = ['Санкт-Петербург и обл.', 'Санкт-Петербург и ЛО'];
+            else if (/санкт-петербург\s+и\s+(обл\.?|ло)/i.test(cn)) aliasToTry = ['Санкт-Петербург'];
+            for (var a = 0; a < aliasToTry.length; a++) {
+                var altRes = await supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').eq('city_name', aliasToTry[a]).order('delivery_date');
+                if (!altRes.error && altRes.data && altRes.data.length > 0) {
+                    applyDeliveryCalendarRows(altRes.data, todayMoscow);
+                    return currentDeliveryDate;
+                }
+            }
             var normalizedCity = normalizeCityName(cityName);
             var calAltRes = await supabaseClient
                 .from('delivery_calendar')
