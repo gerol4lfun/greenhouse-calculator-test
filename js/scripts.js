@@ -5428,6 +5428,10 @@ async function loadDeliveryDatesModalData() {
     }
     var normalizedMap = {};
     var deliveryDatesByCity = {};
+    for (var nnKey in calByCity) {
+        var calCityName = standardCityNames[nnKey] || (nnKey.charAt(0).toUpperCase() + nnKey.slice(1).toLowerCase());
+        normalizedMap[nnKey] = { city_name: calCityName };
+    }
     var canonical = data.filter(function (i) { return !/ доставки$/i.test(i.city_name); });
     for (var i = 0; i < canonical.length; i++) {
         var item = canonical[i];
@@ -5437,11 +5441,6 @@ async function loadDeliveryDatesModalData() {
         var name = standardCityNames[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase());
         normalizedMap[key] = { city_name: name };
         deliveryDatesByCity[name] = { delivery_date: item.delivery_date, assembly_date: item.assembly_date };
-    }
-    for (var nnKey in calByCity) {
-        if (normalizedMap[nnKey]) continue;
-        var calCityName = standardCityNames[nnKey] || (nnKey.charAt(0).toUpperCase() + nnKey.slice(1).toLowerCase());
-        normalizedMap[nnKey] = { city_name: calCityName };
     }
     var cityList = Object.keys(normalizedMap).map(function (k) { return normalizedMap[k].city_name; });
     if (cityList.length === 0) {
