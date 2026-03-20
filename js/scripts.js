@@ -5386,6 +5386,7 @@ function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
 async function loadDeliveryDatesModalData() {
     var listEl = document.getElementById('delivery-dates-city-list');
     if (!listEl) return;
+    var stripLegacyColon = function (s) { return (s || '').replace(/:\s*$/, '').trim() || (s || ''); };
     var standardCityNames = {
         'санкт-петербург': 'Санкт-Петербург', 'москва': 'Москва', 'москва и мо': 'Москва и МО', 'нижний новгород': 'Нижний Новгород',
         'набережные челны': 'Набережные Челны', 'великий новгород': 'Великий Новгород',
@@ -5420,7 +5421,7 @@ async function loadDeliveryDatesModalData() {
     var calByCity = {};
     for (var c = 0; c < calData.length; c++) {
         var row = calData[c];
-        var cn = cleanDeliveryCityName(row.city_name);
+        var cn = stripLegacyColon(cleanDeliveryCityName(row.city_name));
         var nn = getModalCityGroupKey(cn);
         if (!calByCity[nn]) calByCity[nn] = [];
         calByCity[nn].push(row);
@@ -5430,7 +5431,7 @@ async function loadDeliveryDatesModalData() {
     var canonical = data.filter(function (i) { return !/ доставки$/i.test(i.city_name); });
     for (var i = 0; i < canonical.length; i++) {
         var item = canonical[i];
-        var cleaned = cleanDeliveryCityName(item.city_name);
+        var cleaned = stripLegacyColon(cleanDeliveryCityName(item.city_name));
         var key = getModalCityGroupKey(cleaned);
         if (normalizedMap[key]) continue;
         var name = standardCityNames[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase());
