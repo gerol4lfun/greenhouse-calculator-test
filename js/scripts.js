@@ -5451,6 +5451,8 @@ async function loadDeliveryDatesModalData() {
         var cleaned = stripLegacyColon(cleanDeliveryCityName(item.city_name));
         var key = getModalCityGroupKey(cleaned);
         if (normalizedMap[key]) continue;
+        if (key === 'москва' && normalizedMap['москва и мо']) continue;
+        if (key === 'санкт-петербург' && (normalizedMap['санкт-петербург и обл.'] || normalizedMap['санкт-петербург и ло'])) continue;
         var name = standardCityNames[key] || (cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase());
         normalizedMap[key] = { city_name: name };
         deliveryDatesByCity[name] = { delivery_date: item.delivery_date, assembly_date: item.assembly_date };
@@ -5463,10 +5465,14 @@ async function loadDeliveryDatesModalData() {
     cityList.sort(function (a, b) {
         var ca = (a || '').toLowerCase().trim();
         var cb = (b || '').toLowerCase().trim();
-        if (ca === 'москва') return -1;
-        if (cb === 'москва') return 1;
-        if (ca === 'санкт-петербург') return -1;
-        if (cb === 'санкт-петербург') return 1;
+        var aMoscow = ca === 'москва' || ca === 'москва и мо';
+        var bMoscow = cb === 'москва' || cb === 'москва и мо';
+        if (aMoscow) return -1;
+        if (bMoscow) return 1;
+        var aSpb = ca === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(ca);
+        var bSpb = cb === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(cb);
+        if (aSpb) return -1;
+        if (bSpb) return 1;
         return ca.localeCompare(cb, 'ru');
     });
     _deliveryModalCitySummary = [];
@@ -5509,7 +5515,8 @@ async function loadDeliveryDatesModalData() {
     _deliveryModalFilteredSummary = _deliveryModalCitySummary.slice();
     renderDeliveryDatesCityList(_deliveryModalFilteredSummary);
     setupDeliveryDatesModalSearch();
-    var defaultCity = cityList.indexOf('Москва') >= 0 ? 'Москва' : (cityList[0] || null);
+    var moscowOrSpb = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'москва' || s === 'москва и мо' || s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s); });
+    var defaultCity = moscowOrSpb || cityList[0] || null;
     _deliveryModalSelectedCity = defaultCity;
     var now = getMoscowTodayDateObject();
     _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
