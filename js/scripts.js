@@ -5500,14 +5500,19 @@ async function loadDeliveryDatesModalData() {
     _deliveryModalSelectedCity = defaultCity;
     var now = getMoscowTodayDateObject();
     _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
-    if (defaultCity && _deliveryModalStateMapCache[defaultCity]) {
+    var defaultCached = _deliveryModalStateMapCache[defaultCity];
+    if (!defaultCached && defaultCity === 'Москва') defaultCached = _deliveryModalStateMapCache['Москва и МО'];
+    if (!defaultCached && defaultCity === 'Москва и МО') defaultCached = _deliveryModalStateMapCache['Москва'];
+    if (!defaultCached && defaultCity === 'Санкт-Петербург') defaultCached = _deliveryModalStateMapCache['Санкт-Петербург и обл.'] || _deliveryModalStateMapCache['Санкт-петербург и обл.'] || _deliveryModalStateMapCache['Санкт-Петербург и ЛО'] || _deliveryModalStateMapCache['Санкт-петербург и ло'];
+    if (!defaultCached && (defaultCity === 'Санкт-Петербург и обл.' || defaultCity === 'Санкт-петербург и обл.' || defaultCity === 'Санкт-Петербург и ЛО' || defaultCity === 'Санкт-петербург и ло')) defaultCached = _deliveryModalStateMapCache['Санкт-Петербург'];
+    if (defaultCity && defaultCached) {
         var placeholder = document.getElementById('delivery-dates-cal-placeholder');
         var panel = document.getElementById('delivery-dates-cal-panel');
         var cityEl = document.getElementById('delivery-dates-cal-city');
         if (placeholder) placeholder.style.display = 'none';
         if (panel) panel.style.display = 'flex';
         if (cityEl) cityEl.textContent = defaultCity;
-        _deliveryModalCurrentStateMap = _deliveryModalStateMapCache[defaultCity];
+        _deliveryModalCurrentStateMap = defaultCached;
         renderDeliveryModalCalendar();
     } else if (defaultCity) {
         loadDeliveryDate(defaultCity).then(function () {
@@ -5566,6 +5571,10 @@ function deliveryModalSelectCity(city) {
     if (!city) return;
     _deliveryModalSelectedCity = city;
     var cached = _deliveryModalStateMapCache[city];
+    if (!cached && city === 'Москва') cached = _deliveryModalStateMapCache['Москва и МО'];
+    if (!cached && city === 'Москва и МО') cached = _deliveryModalStateMapCache['Москва'];
+    if (!cached && city === 'Санкт-Петербург') cached = _deliveryModalStateMapCache['Санкт-Петербург и обл.'] || _deliveryModalStateMapCache['Санкт-петербург и обл.'] || _deliveryModalStateMapCache['Санкт-Петербург и ЛО'] || _deliveryModalStateMapCache['Санкт-петербург и ло'];
+    if (!cached && (city === 'Санкт-Петербург и обл.' || city === 'Санкт-петербург и обл.' || city === 'Санкт-Петербург и ЛО' || city === 'Санкт-петербург и ло')) cached = _deliveryModalStateMapCache['Санкт-Петербург'];
     if (cached) {
         _deliveryModalCurrentStateMap = cached;
         var now = getMoscowTodayDateObject();
