@@ -9,7 +9,11 @@
     "kb:search": "node scripts/getKnowledgeBase.js",
     "beds:import": "node scripts/load_beds_normalized.js",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:delivery-probe": "playwright test edit-order-delivery-probe.spec.js --project=delivery-probe",
+    "test:core-mechanics": "playwright test core-calculator-mechanics.spec.js --project=core-mechanics",
+    "test:edit-integrity": "playwright test edit-order-integrity.spec.js --project=edit-integrity",
+    "test:edit-order:staging": "BASE_URL=https://gerol4lfun.github.io/greenhouse-calculator-test/ playwright test edit-order.spec.js --project=edit-order-legacy -g \"existing-order-paid-extra|existing-order-date-only-integrity|existing-order-address-change-delivery-integrity\""
   },
   "keywords": [
     "greenhouse",

@@ -6,6 +6,47 @@
 
 ---
 
+## Update 2026-03-21 10:52 MSK
+
+### Бизнес-логика жизни заказа
+
+| Статус | Описание |
+|--------|----------|
+| **active** | Живой рабочий заказ |
+| **review** | В активной массе, но требует разбора / подозрительный / зависший / возможно лишний |
+| **completed** | Подтверждён как выполненный |
+| **archive** | Исторический слой completed-заказов |
+
+### Источники истины по бизнесу (на текущем этапе)
+
+- **Живые заказы:** главная операционная правда = таблица менеджеров.
+- **Закрытые заказы:** правда = таблица выполненных / оплачено.
+- Поставщик важен, но **не** главный source of truth для нашей стороны.
+- Completed подтверждаются **не онлайн**, пачками ~2 раза в месяц.
+- Калькулятор нужен, чтобы изменения по живому заказу быстрее и точнее доезжали в рабочий слой.
+- *Не подтверждено:* Supabase как финальный единый источник истины для всего бизнеса.
+
+### Literal-preserve / price-lock (текущий проектный курс)
+
+- date-only edit → не должен менять цену
+- comment-only edit → не должен менять цену
+- opening existing order → не должно само пересчитывать деньги
+- Менять можно только реально изменённую часть
+- Исторически согласованные деньги — locked snapshot
+
+### Phantom +1000 reopen (21.03.2026)
+
+- Баг **не закрыт.** Новый подтверждённый симптом: 79227144004, date 11.04→12.04, total 46 470→47 470.
+- Root cause **НЕ подтверждён.** Suspected: dirty baseline / delivery baseline / cross-contour — но не confirmed.
+
+### Open (на 21.03.2026)
+
+- phantom +1000 still open; root cause not confirmed
+- `public.orders` — transitional, not final foundation
+- `orders_live_v2` — future direction, not yet switched
+
+---
+
 ## Документация (источники истины)
 
 | Файл | За что отвечает | Когда смотреть |
@@ -13,6 +54,8 @@
 | **docs/CHANGELOG.md** | История изменений, версии, что зафиксировано | Версия, дата, что уже сделано |
 | **docs/context/КОНТЕКСТ_ПРОЕКТА.md** | Карта проекта, инварианты edit flow, подарки, **логика дат доставки и UI календарей** | Потеря контекста, инварианты, delivery_calendar, блок доставки, модалка дат |
 | **docs/GIFT_TRUTH.md** | Бизнес-истина подарков (slot model) | Любые изменения в логике подарков |
+| **docs/AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md** | Phantom delivery probe: not reproduced in checked calculator-side scenarios | Phantom +1000, delivery payload |
+| **docs/AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md** | INC-002 gift audit: gift does not explain +1000 in calculator code path | Gift, +1000, INC-002 |
 | **docs/PREPROD_PLAN.md** | План до прода (красное/жёлтое/зелёное) | Перед релизом |
 | **docs/SMOKE_CHECKLIST.md** | Ручной чек-лист перед выкладкой | Перед релизом |
 | **docs/LEGACY_MAP.md** | Что устарело, что legacy | При сомнениях в FAQ/версиях |
@@ -68,7 +111,8 @@
 
 - **Existing-order edit: untouched legacy fields:** delivery_address и client_phone, которые менеджер не трогал при edit, должны сохраняться literally. Не нормализовать, не пересобирать, не включать в phantom diff. При смене только даты — diff только по дате. Реализовано: _editOrderOriginalAddressRaw, _editOrderOriginalPhoneRaw, touched-флаги; payload использует original при untouched.
 - **Legacy single-item total (20.03.2026):** при date-only save total и delivery_cost не должны пересчитываться. Root cause fix: fillEditOrderForm для delivery_cost>0 ставит item_total = total - delivery_cost (item-only amount), а не полный order.total; иначе buildOrderPayloadFromEditModal добавлял delivery_cost повторно. Retest PASS на safe clone (verified 2026-03-20).
-- **Legacy single-item comment-only total overwrite (20.03.2026):** comment-only save мог перезаписывать total. Fix: buildOrderPayloadFromEditModal использует lastLoadedOrderTotalForDisplay когда usePersistedForPayload && single-item. Retest PASS на safe clone (verified 2026-03-20). Do not claim full legacy edit stability; inline vs modal mismatch separate.
+- **Legacy single-item comment-only total overwrite (20.03.2026):** comment-only save мог перезаписывать total. Fix: buildOrderPayloadFromEditModal использует lastLoadedOrderTotalForDisplay когда usePersistedForPayload && single-item. Retest PASS на safe clone (verified 2026-03-20). Do not claim full legacy edit stability.
+- **Inline vs modal delivery date mismatch (20.03.2026):** resolved for checked edit-order cases. Root cause: inline used order city; modal used default Moscow/SPB. Fix: showDeliveryDatesModal(initialCity); edit-order link «даты по городам» passes order city. Manual PASS 2026-03-20. Remains open: legacy assembly format edge cases; city normalization edge cases; full calendar edge-case coverage not claimed.
 - **Edit calendar source-of-truth:** confirmed. Приоритет: warehouse_city_key → orders.city → line_items[].city → fallback derive from address. Alias (МСК, СПБ, Питер) нормализуется. Fix #1 (item.city preserve), fix #2 (prefix strip), fix #3 (numeric city candidate reject — 15.03.2026) внесены. Кейсы: 8e803d39 (city=МСК); 79000000028 (city="г. Санкт-Петербург"); Ivan case (адрес «регион, участок, улица») — canonicalCity=Москва, календарь показывает реальные ограничения. Принято: orders.warehouse_city_key как source of truth (см. ниже).
 - **Create flow orders.city (18.03.2026):** source of truth — effectiveCalc.city, fallback addr1. Numeric-only ("7", "1") не сохраняются. Root cause fix: extractCityFromAddress(fullAddress) больше не приоритет.
 - **Edit flow line_items[].city (18.03.2026):** после create-flow fix найден оставшийся риск — line_items[].city мог протаскивать исторический numeric-only мусор при save. Фикс применён: isRejectableNumericCityCandidate_ в buildOrderPayloadFromEditModal; numeric-only не пишутся в payload.
@@ -109,6 +153,7 @@
 **UNDER DOUBT / NOT REPRODUCED:**
 - 28→27 case — audit показал потенциально опасное место в `syncEditOrderCalendarSlotsWithMode()` (selected-date auto-snap: при «недоступной» дате для режима сборки выбранная дата заменяется на `getNearestAvailableDate`). Живой воспроизводимый кейс не подтверждён → code fix не вносился.
 - rare legacy scenarios вне уже проверенных кейсов
+- **Phantom delivery +1000 (20.03.2026):** targeted delivery probe on existing order with non-zero delivery passed; payload stable. Phantom delivery leak not reproduced in checked calculator-side probe. Gift «2 дополнительные форточки» does not explain +1000 in checked calculator code path. Calculator-side hypotheses weakened; issue not globally closed. TG/sheets/diff layer remains the more plausible next layer. See AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md, AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md.
 
 ---
 

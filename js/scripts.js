@@ -844,6 +844,8 @@ let _editOrderPositionExplicitlySaved = false;
 let _editOrderAddressTouchedByUser = false;
 /** Пользователь явно выбирал подарки в селектах модалки в текущей сессии редактирования. */
 let _editOrderGiftTouchedByUser = false;
+/** Состав заказа изменён (add/delete/save position/undo/redo). При false — payload берёт composition из lastPersistedEditOrderState (phantom fix). */
+let _editOrderCompositionTouchedByUser = false;
 /** Gift tier (кол-во слотов) на момент открытия заказа. Для определения реального tier change из-за изменения состава. */
 let _editOrderGiftTierAtOpen = 0;
 /** Сохранённый orders.city на момент открытия заказа. Primary source of truth для edit calendar. null = не установлен. */
@@ -5276,7 +5278,7 @@ var _deliveryModalCalMonth = null;
 var _deliveryModalStateMapCache = {};
 var _deliveryModalCurrentStateMap = {};
 
-async function showDeliveryDatesModal() {
+async function showDeliveryDatesModal(initialCity) {
     var modal = document.getElementById('delivery-dates-modal');
     var loadingDiv = document.getElementById('delivery-dates-loading');
     var contentDiv = document.getElementById('delivery-dates-content');
@@ -5297,7 +5299,7 @@ async function showDeliveryDatesModal() {
             loadingDiv.innerHTML = 'Загрузка данных...';
         }
         if (contentDiv) contentDiv.style.display = 'none';
-        await loadDeliveryDatesModalData();
+        await loadDeliveryDatesModalData(initialCity);
         if (loadingDiv) loadingDiv.style.display = 'none';
         if (contentDiv) contentDiv.style.display = 'flex';
     } catch (err) {
@@ -5328,8 +5330,14 @@ async function refreshDeliveryDates() {
     }
 }
 
+function openDeliveryDatesModalFromEditOrder() {
+    var city = typeof resolveEditOrderCalendarCity_ === 'function' ? resolveEditOrderCalendarCity_() : null;
+    showDeliveryDatesModal(city || undefined);
+}
+
 // Убеждаемся, что функция доступна глобально
 window.showDeliveryDatesModal = showDeliveryDatesModal;
+window.openDeliveryDatesModalFromEditOrder = openDeliveryDatesModalFromEditOrder;
 window.closeDeliveryDatesModal = closeDeliveryDatesModal;
 window.refreshDeliveryDates = refreshDeliveryDates;
 window.updateDeliveryResultDate = updateDeliveryResultDate;
@@ -5396,7 +5404,7 @@ function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     return 'blocked';
 }
 
-async function loadDeliveryDatesModalData() {
+async function loadDeliveryDatesModalData(initialCity) {
     var listEl = document.getElementById('delivery-dates-city-list');
     if (!listEl) return;
     var stripLegacyColon = function (s) { return (s || '').replace(/:\s*$/, '').trim() || (s || ''); };
@@ -5533,6 +5541,18 @@ async function loadDeliveryDatesModalData() {
     setupDeliveryDatesModalSearch();
     var moscowOrSpb = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'москва' || s === 'москва и мо' || s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s); });
     var defaultCity = moscowOrSpb || cityList[0] || null;
+    if (initialCity && typeof initialCity === 'string' && (initialCity = initialCity.trim())) {
+        var found = cityList.find(function (c) {
+            var s = (c || '').trim().toLowerCase();
+            var p = initialCity.toLowerCase();
+            if (s === p) return true;
+            if (typeof normalizeCityName === 'function' && normalizeCityName(c) === normalizeCityName(initialCity)) return true;
+            return false;
+        });
+        if (!found && (initialCity === 'москва' || /москва\s+и\s+м\.?о\.?/.test(initialCity))) found = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'москва' || s === 'москва и мо'; });
+        if (!found && (initialCity === 'санкт-петербург' || /санкт-петербург\s+и\s+(обл\.?|ло)/.test(initialCity))) found = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s); });
+        if (found) defaultCity = found;
+    }
     _deliveryModalSelectedCity = defaultCity;
     var now = getMoscowTodayDateObject();
     _deliveryModalCalMonth = { year: now.getFullYear(), month: now.getMonth() };
@@ -5812,6 +5832,7 @@ function closeEditOrderModal() {
         if (typeof populateOrderDeliveryDate === 'function') populateOrderDeliveryDate();
     }
     closeEditOrderCalendar();
+    if (typeof clearEditOrderFormStateOnly === 'function') clearEditOrderFormStateOnly();
     lastPersistedEditOrderState = null;
     lastPersistedEditOrderFormState = null;
     // При любом закрытии модалки сбрасываем id редактируемого заказа, иначе форма «Оформить заказ»
@@ -5871,16 +5892,17 @@ function requestCloseEditOrderModal() {
     return true;
 }
 
-/** Поиск заказов в Supabase по телефону. Поддерживает single и dual-phone. Whole phone token: eq, like-паттерны для dual-phone. */
+/** Поиск заказов в Supabase по телефону. Поддерживает single и dual-phone. Whole phone token: eq, like-паттерны для dual-phone (PostgreSQL wildcard %). Excludes soft-deleted. */
 async function searchOrdersByPhone(phone) {
     var n = extractOnePhoneForSearch(phone);
     if (!n || n.length !== 11) return [];
     var q = '"';
-    var orFilter = 'client_phone.eq.' + n + ',client_phone.like.' + q + n + ' / *' + q + ',client_phone.like.' + q + '* / ' + n + q + ',client_phone.like.*/' + n;
+    var orFilter = 'client_phone.eq.' + n + ',client_phone.like.' + q + n + ' / %' + q + ',client_phone.like.' + q + '% / ' + n + q + ',client_phone.like.' + q + '%/' + n + q;
     var list = await supabaseClient
         .from('orders')
         .select('id, created_at, client_name, client_phone, status, delivery_date, delivery_address, source, manager, comment, model, width, length, total, quantity, unit_price, line_items, extras, assembly, delivery_cost')
         .or(orFilter)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(30);
     if (list.error) throw list.error;
@@ -6043,8 +6065,9 @@ function getOrderStatusDisplay(order) {
     if (raw === 'completed') return { text: 'Выполнен', modifier: '--done' };
     if (raw === 'cancelled' || raw === 'canceled' || raw === 'отмена') return { text: 'Отменён', modifier: '' };
     if (raw === 'duplicate' || raw === 'дубль' || original.toLowerCase().indexOf('дубль') !== -1) return { text: 'Дубль', modifier: '' };
+    if (raw === 'error') return { text: 'Дубль', modifier: '' }; // legacy: GAS used to write 'error' for supplier duplicate
     if (raw === 'in_progress' || raw === 'pending_production' || original.indexOf('на проверке') !== -1) return { text: 'На проверке', modifier: '' };
-    if (raw === 'synced' || raw === 'confirmed' || raw === 'new' || raw === 'error' || !raw) return { text: 'Оформлен', modifier: '--ok' };
+    if (raw === 'synced' || raw === 'confirmed' || raw === 'new' || !raw) return { text: 'Оформлен', modifier: '--ok' };
     return { text: 'Оформлен', modifier: '--ok' };
 }
 
@@ -6191,10 +6214,10 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
-/** Получить полный заказ из Supabase по id (для подстановки в форму). */
+/** Получить полный заказ из Supabase по id (для подстановки в форму). Excludes soft-deleted. */
 async function fetchOrderById(orderId) {
     if (!orderId) return null;
-    var res = await supabaseClient.from('orders').select('*').eq('id', orderId).maybeSingle();
+    var res = await supabaseClient.from('orders').select('*').eq('id', orderId).is('deleted_at', null).maybeSingle();
     if (res.error) throw res.error;
     return res.data;
 }
@@ -6334,6 +6357,8 @@ function fillEditOrderForm(order) {
                 editOrderDeliveryCost = Math.max(0, parseOrderPrice_(order.total) - basePrice - sumExtras);
                 editOrderComposition[0].item_total = Math.max(0, tot - editOrderDeliveryCost);
             }
+        } else if (editOrderDeliveryCost > 0 && order.total != null) {
+            editOrderComposition[0].item_total = Math.max(0, tot - editOrderDeliveryCost);
         }
     }
     setEditOrderFieldValue('edit-order-gift', order.gift || '');
@@ -6351,6 +6376,7 @@ function fillEditOrderForm(order) {
     // raw-preserve: сохранить оригинальный gift text до render-cascade, которая может нормализовать его в текущий формат
     _editOrderOriginalGiftRaw = order.gift != null ? String(order.gift) : '';
     _editOrderGiftTouchedByUser = false;
+    _editOrderCompositionTouchedByUser = false;
     _editOrderGiftTierAtOpen = (typeof getGiftSlotsByTotal === 'function' && typeof getEditOrderCompositionTotal === 'function')
         ? getGiftSlotsByTotal(getEditOrderCompositionTotal()) : 0;
     renderEditOrderCompositionList(); // вызывает updateEditOrderGiftFromTotal → threshold → показ/скрытие блока
@@ -6362,6 +6388,9 @@ function fillEditOrderForm(order) {
     lastSavedEditOrderFormState = getEditOrderFormSnapshot();
     lastPersistedEditOrderState = getEditOrderStateSnapshot();
     lastPersistedEditOrderFormState = getEditOrderFormSnapshot();
+    if (typeof console !== 'undefined' && console.log) {
+        console.log('[edit-save-diagnostic] fillEditOrderForm persisted', { orderId: order && order.id, compLen: editOrderComposition.length });
+    }
 }
 
 /** Итог по составу: сумма позиций + доставка. */
@@ -6757,6 +6786,7 @@ function renderEditOrderCompositionList() {
                     var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
                     editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
                     editOrderStateRedoSample = null;
+                    _editOrderCompositionTouchedByUser = true;
                     editOrderComposition.splice(idx, 1);
                     renderEditOrderCompositionList();
                     lastSavedEditOrderState = getEditOrderStateSnapshot();
@@ -7154,8 +7184,8 @@ function setEditOrderFieldValue(id, value) {
     if (el) el.value = value;
 }
 
-/** Очистить форму редактирования (контакты, состав, подарки). Вызывать при «заказов не найдено», чтобы внизу не висели данные старого заказа. */
-function clearEditOrderForm() {
+/** Очистить форму и edit state без смены шага. Для startEditOrder (до fetch) и close/back. */
+function clearEditOrderFormStateOnly() {
     setEditOrderFieldValue('edit-order-client-name', '');
     setEditOrderFieldValue('edit-order-client-phone', '');
     setEditOrderFieldValue('edit-order-client-phone-2', '');
@@ -7171,8 +7201,8 @@ function clearEditOrderForm() {
     setEditOrderFieldValue('edit-order-address-part1', '');
     setEditOrderFieldValue('edit-order-address-part2', '');
     setEditOrderFieldValue('edit-order-address-part3', '');
-    var noPlot = document.getElementById('edit-order-no-plot');
-    if (noPlot) noPlot.checked = false;
+    var noPlotEl = document.getElementById('edit-order-no-plot');
+    if (noPlotEl) noPlotEl.checked = false;
     setEditOrderFieldValue('edit-order-source', '');
     setEditOrderFieldValue('edit-order-comment', '');
     setEditOrderFieldValue('edit-order-gift', '');
@@ -7187,8 +7217,31 @@ function clearEditOrderForm() {
     _editOrderLoadedWarehouseCityKey = null;
     _editOrderOriginalAddressRaw = null;
     _editOrderAddressTouchedByUser = false;
+    _editOrderCompositionTouchedByUser = false;
+    _editOrderOriginalPhoneRaw = null;
+    _editOrderPhoneTouchedByUser = false;
+    _editOrderOriginalGiftRaw = null;
+    _editOrderGiftTouchedByUser = false;
+    editOrderEditingIndex = null;
+    editOrderCompositionUndoSample = null;
+    editOrderCompositionRedoSample = null;
+    editOrderStateUndoSample = null;
+    editOrderStateRedoSample = null;
+    lastSavedEditOrderState = null;
+    lastSavedEditOrderFormState = null;
+    lastPersistedEditOrderState = null;
+    lastPersistedEditOrderFormState = null;
+    _editOrderDeliveryCostPreview = null;
+    _editOrderDeliveryCostAtPanelOpen = null;
+    editOrderDeliveryCost = 0;
+    closeEditOrderAddPanel();
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
+}
+
+/** Очистить форму редактирования (контакты, состав, подарки). Вызывать при «заказов не найдено», чтобы внизу не висели данные старого заказа. */
+function clearEditOrderForm() {
+    if (typeof clearEditOrderFormStateOnly === 'function') clearEditOrderFormStateOnly();
     showEditOrderStep(1);
 }
 
@@ -7256,14 +7309,18 @@ function editOrderItemToCalc(item, deliveryCost, isFirstOfMultiple, orderTotalFo
 
 /** Собрать из полей модалки только редактируемые поля для update (частичное обновление). Включает состав и итог (Этап 6). */
 function buildOrderPayloadFromEditModal() {
-    // phantom fix: если панель открыта, есть recalc, но «Сохранить позицию» не нажата — payload из persisted state
-    var usePersistedForPayload = editOrderEditingIndex != null && lastModalCalculationResult && !_editOrderPositionExplicitlySaved && lastPersistedEditOrderState != null;
+    // phantom fix: если состав не трогали (add/delete/save position/undo/redo) — payload из persisted state
+    var usePersistedForPayload = !_editOrderCompositionTouchedByUser && lastPersistedEditOrderState != null;
     var compositionForPayload = usePersistedForPayload ? lastPersistedEditOrderState.composition : editOrderComposition;
     var deliveryCostForPayload = usePersistedForPayload && _editOrderDeliveryCostAtPanelOpen != null ? _editOrderDeliveryCostAtPanelOpen : (editOrderDeliveryCost || 0);
     var totalForPayload = compositionForPayload.reduce(function (s, i) { return s + (i.item_total || 0); }, 0) + deliveryCostForPayload;
+    // legacy single-item untouched: preserve loaded total instead of recomputing (comment-only save fix)
+    var total = (usePersistedForPayload && compositionForPayload.length === 1 && lastLoadedOrderTotalForDisplay != null)
+        ? lastLoadedOrderTotalForDisplay
+        : totalForPayload;
     // raw-preserve: решаем, сохранять raw legacy gift или пересобирать в канонический формат
     var _giftCurrentTier = (typeof getGiftSlotsByTotal === 'function')
-        ? getGiftSlotsByTotal(totalForPayload) : 0;
+        ? getGiftSlotsByTotal(total) : 0;
     var _giftTierChanged = _editOrderOriginalGiftRaw !== null && _giftCurrentTier !== _editOrderGiftTierAtOpen;
     if (!_editOrderGiftTouchedByUser && !_giftTierChanged && _editOrderOriginalGiftRaw !== null) {
         // Пользователь не трогал gifts и tier не изменился: вернуть оригинальный raw text в поле
@@ -7316,7 +7373,6 @@ function buildOrderPayloadFromEditModal() {
 
     var giftEl = document.getElementById('edit-order-gift');
     var giftValue = giftEl ? (giftEl.value || '').trim() : '';
-    var total = totalForPayload;
     var giftTotal = total;
     if (giftTotal < GIFT_THRESHOLDS.slot1) giftValue = '';
     payload.gift = giftValue;
@@ -7381,6 +7437,18 @@ function buildOrderPayloadFromEditModal() {
     };
     var firstCalc = editOrderCart[0];
     payload.commercial_offer = (editOrderCart.length > 0 && typeof generateFullOrderTemplate === 'function') ? generateFullOrderTemplate(firstCalc, client, editOrderCart, giftValue, function () { return orderTotal; }) : '';
+    if (typeof console !== 'undefined' && console.log) {
+        console.log('[edit-save-diagnostic] buildPayload', {
+            orderId: currentOrderIdForEdit,
+            compositionTouched: _editOrderCompositionTouchedByUser,
+            persistedExists: !!lastPersistedEditOrderState,
+            usePersisted: usePersistedForPayload,
+            compSnapshot: compositionForPayload.map(function (i) { return { bp: i.base_price, it: i.item_total }; }),
+            lastPersistedComp: lastPersistedEditOrderState && lastPersistedEditOrderState.composition ? lastPersistedEditOrderState.composition.map(function (i) { return { bp: i.base_price, it: i.item_total }; }) : null,
+            payloadMoney: { unit_price: payload.unit_price, total: payload.total, delivery_cost: payload.delivery_cost, line_itemsLen: (payload.line_items || '').length },
+            delivery_date: payload.delivery_date
+        });
+    }
     return payload;
 }
 
@@ -7465,6 +7533,7 @@ function startEditOrder(orderId, optFinally) {
             hintEl.className = 'edit-order-hint';
             hintEl.style.display = '';
         }
+        if (typeof clearEditOrderFormStateOnly === 'function') clearEditOrderFormStateOnly();
         showEditOrderStep(2);
         var body = document.getElementById('edit-order-modal-body');
         if (body) body.scrollTop = 0;
@@ -7485,6 +7554,12 @@ function startEditOrder(orderId, optFinally) {
         var orderStatus = (order.status || '').trim().toLowerCase();
         if (orderStatus === 'cancelled' || orderStatus === 'canceled' || orderStatus === 'отмена') {
             if (typeof showToast === 'function') showToast('Отменённый заказ нельзя редактировать', 'error');
+            showEditOrderStep(1);
+            if (typeof optFinally === 'function') optFinally();
+            return;
+        }
+        if (orderStatus === 'completed') {
+            if (typeof showToast === 'function') showToast('Выполненный заказ нельзя редактировать. Используйте «Новый заказ для этого клиента».', 'error');
             showEditOrderStep(1);
             if (typeof optFinally === 'function') optFinally();
             return;
@@ -7616,16 +7691,7 @@ function initEditOrderModal() {
     });
 
     function doGoBackToEditOrderList() {
-        currentOrderIdForEdit = null;
-        currentOrderCreatedAtForEdit = null;
-        editOrderCompositionUndoSample = null;
-        editOrderCompositionRedoSample = null;
-        editOrderStateUndoSample = null;
-        editOrderStateRedoSample = null;
-        lastSavedEditOrderState = null;
-        lastSavedEditOrderFormState = null;
-        lastPersistedEditOrderState = null;
-        lastPersistedEditOrderFormState = null;
+        if (typeof clearEditOrderFormStateOnly === 'function') clearEditOrderFormStateOnly();
         showEditOrderStep(1);
     }
     function goBackToEditOrderList() {
@@ -7658,6 +7724,7 @@ function initEditOrderModal() {
         undoBtn.addEventListener('click', function () {
             if (!editOrderStateUndoSample) return;
             editOrderStateRedoSample = getEditOrderStateSnapshot();
+            _editOrderCompositionTouchedByUser = true;
             restoreEditOrderState(editOrderStateUndoSample);
             editOrderStateUndoSample = null;
             lastSavedEditOrderState = getEditOrderStateSnapshot();
@@ -7670,6 +7737,7 @@ function initEditOrderModal() {
         redoBtn.addEventListener('click', function () {
             if (!editOrderStateRedoSample) return;
             editOrderStateUndoSample = getEditOrderStateSnapshot();
+            _editOrderCompositionTouchedByUser = true;
             restoreEditOrderState(editOrderStateRedoSample);
             editOrderStateRedoSample = null;
             lastSavedEditOrderState = getEditOrderStateSnapshot();
@@ -8032,8 +8100,11 @@ function initEditOrderModal() {
     if (confirmAddBtn) {
         confirmAddBtn.addEventListener('click', function () {
             if (!lastModalCalculationResult) return;
-            if (_editOrderDeliveryCostPreview != null) {
+            _editOrderCompositionTouchedByUser = true;
+            if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
                 editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                _editOrderDeliveryCostPreview = null;
+            } else if (_editOrderDeliveryCostPreview != null) {
                 _editOrderDeliveryCostPreview = null;
             }
             var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
@@ -8070,8 +8141,11 @@ function initEditOrderModal() {
     if (savePosBtn) {
         savePosBtn.addEventListener('click', function () {
             if (editOrderEditingIndex == null || !lastModalCalculationResult) return;
-            if (_editOrderDeliveryCostPreview != null) {
+            _editOrderCompositionTouchedByUser = true;
+            if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
                 editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                _editOrderDeliveryCostPreview = null;
+            } else if (_editOrderDeliveryCostPreview != null) {
                 _editOrderDeliveryCostPreview = null;
             }
             _editOrderPositionExplicitlySaved = true;
@@ -8125,6 +8199,7 @@ function initEditOrderModal() {
                 return;
             }
             lastEditOrderSearchedPhone = n;
+            if (typeof clearEditOrderForm === 'function') clearEditOrderForm();
             searchBtn.disabled = true;
             if (hintEl) hintEl.textContent = 'Поиск...';
             searchOrdersByPhone(phone).then(function (orders) {
@@ -14889,7 +14964,7 @@ function buildOrderPayloadFromFormAndCart() {
     });
     if (orderCart.length >= 2 && !isIdenticalCart) {
         lineItemsJson = JSON.stringify(orderCart.map(function (item) {
-            return {
+            var row = {
                 model: item.model,
                 width: item.width,
                 length: item.length,
@@ -14898,8 +14973,26 @@ function buildOrderPayloadFromFormAndCart() {
                 polycarbonate: item.polycarbonate,
                 extras: [(item.foundationText || ''), (item.additionalProductsText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '',
                 assembly: [(item.assemblyText || ''), (item.bedsAssemblyText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '',
-                item_total: item.itemTotal || 0
+                item_total: item.itemTotal || 0,
+                form: (item.form != null ? String(item.form) : '').trim() || '',
+                city: (item.city && typeof isRejectableNumericCityCandidate_ === 'function' && !isRejectableNumericCityCandidate_(String(item.city).trim())) ? String(item.city).trim() : ''
             };
+            if (item.basePrice != null && !isNaN(Number(item.basePrice))) row.base_price = Number(item.basePrice);
+            if (item.bracing != null || item.groundHooks != null || item.assembly != null || item.onWood != null || item.onConcrete != null ||
+                (item.selectedBeds && typeof item.selectedBeds === 'object' && Object.keys(item.selectedBeds).length) || item.bedsAssemblyEnabled != null ||
+                (item.additionalProducts && Array.isArray(item.additionalProducts) && item.additionalProducts.length)) {
+                row.options = {
+                    bracing: !!item.bracing,
+                    groundHooks: !!item.groundHooks,
+                    assembly: !!item.assembly,
+                    onWood: !!item.onWood,
+                    onConcrete: !!item.onConcrete
+                };
+                if (item.selectedBeds && typeof item.selectedBeds === 'object') row.options.selectedBeds = item.selectedBeds;
+                if (item.bedsAssemblyEnabled != null) row.options.bedsAssemblyEnabled = item.bedsAssemblyEnabled;
+                if (item.additionalProducts && Array.isArray(item.additionalProducts)) row.options.additionalProducts = item.additionalProducts;
+            }
+            return row;
         }));
     }
     if (orderCart.length >= 2 && isIdenticalCart) {

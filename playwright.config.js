@@ -23,6 +23,9 @@ module.exports = defineConfig({
       use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
     },
     { name: 'edit-order-legacy', testMatch: /edit-order\.spec/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
+    { name: 'delivery-probe', testMatch: /edit-order-delivery-probe/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
+    { name: 'core-mechanics', testMatch: /core-calculator-mechanics/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
+    { name: 'edit-integrity', testMatch: /edit-order-integrity/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
   ],
   outputDir: 'e2e/test-results',
 });

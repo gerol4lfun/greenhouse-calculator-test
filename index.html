@@ -119,6 +119,7 @@
               <h3 id="edit-order-section-delivery" class="edit-order-form-section-title">Доставка</h3>
               <div class="edit-order-field" id="eo-date">
                 <label for="edit-order-delivery-date-display">Дата доставки *</label>
+                <span class="edit-order-dates-link">(<a href="#" onclick="event.preventDefault(); openDeliveryDatesModalFromEditOrder(); return false;">даты по городам</a>)</span>
                 <div class="order-calendar-wrapper edit-order-calendar-wrapper">
                   <input type="text" id="edit-order-delivery-date-display" class="order-cal-input" readonly placeholder="ДД.ММ.ГГГГ" onclick="toggleEditOrderCalendar()" tabindex="3">
                   <input type="hidden" id="edit-order-delivery-date" value="">

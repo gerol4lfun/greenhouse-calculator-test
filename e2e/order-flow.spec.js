@@ -7,6 +7,8 @@ const { test, expect } = require('@playwright/test');
 const {
   testPhone,
   SEARCH_PHONE,
+  ADDRESS_FIXTURES,
+  waitForSelectOptions,
   selectFirstOption,
   expandOrderFormAndWaitCity,
   calculateGreenhouse,
@@ -32,6 +34,28 @@ test.describe('order-flow', () => {
     await expect(page.locator('#order-client-phone')).toBeVisible();
     await expect(page.locator('#order-source')).toBeVisible();
     await expect(page.locator('#order-submit-btn')).toBeVisible();
+  });
+
+  test('create-order-delivery-fixture-smoke: local-safe — адрес из fixture, доставка посчитана, create-flow не ломается', async ({ page }) => {
+    const fixture = ADDRESS_FIXTURES.mskNear;
+    const fullAddress = [fixture.part1, fixture.part2, fixture.part3].filter(Boolean).join(', ');
+    await page.goto('/');
+    await waitForSelectOptions(page, 'city', 15000);
+    await selectFirstOption(page, 'city');
+    await page.locator('#address').fill(fullAddress);
+    await page.locator('button:has-text("Рассчитать доставку")').click();
+    await expect(page.locator('#result')).toContainText(/руб|Стоимость доставки/i, { timeout: 15000 });
+    await page.locator('#order-card').click();
+    await page.waitForSelector('#order-collapse.open', { timeout: 3000 });
+    await page.waitForSelector('#order-delivery-date-display', { state: 'visible', timeout: 5000 });
+    await page.locator('#order-address-part1').fill(fixture.part1);
+    await page.locator('#order-address-part2').fill(fixture.part2);
+    await page.locator('#order-address-part3').fill(fixture.part3);
+    await calculateGreenhouse(page);
+    await page.locator('#order-add-to-cart-btn').click();
+    await page.waitForSelector('#order-cart-block', { state: 'visible', timeout: 5000 });
+    await expect(page.locator('#order-address-part1')).toHaveValue(fixture.part1);
+    await expect(page.locator('#order-cart-list')).toContainText('Доставка');
   });
 
   test('create-order-integration: полный submit заказа [staging/manual]', async ({ page }) => {

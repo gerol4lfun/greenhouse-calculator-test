@@ -1,8 +1,24 @@
 # LIVE INCIDENTS — 2026-03-19 — CALC
 
 **Контур:** greenhouse-calculator-main  
-**Дата:** 2026-03-19  
+**Дата:** 2026-03-19 (обновлено 2026-03-21)  
 **Scope:** только симптомы, связанные с калькулятором. Без предложений по исправлению кода.
+
+---
+
+## Status sync 2026-03-21 10:52 MSK (docs-only)
+
+- **Phantom +1000 reopen — НЕ закрыт.** Новый подтверждённый симптом на реальном заказе: 79227144004; date 11.04.2026→12.04.2026; total 46 470→47 470. Root cause **НЕ подтверждён.** Suspected: dirty baseline / delivery baseline / cross-contour — не confirmed.
+- **Literal-preserve / price-lock (проектный курс):** date-only edit / comment-only edit / opening existing order → не должен менять цену. Исторически согласованные деньги — locked snapshot.
+- **Open:** phantom +1000 still open; root cause not confirmed; `public.orders` transitional; `orders_live_v2` future direction, not switched.
+
+---
+
+## Status sync 2026-03-20 (docs-only)
+
+- **Delivery probe:** targeted probe on existing order with non-zero delivery passed; payload stable (`delivery_cost=1350`, `total=36070`). Phantom delivery leak into payload **not reproduced** in checked calculator-side probe. See AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md.
+- **Gift / INC-002:** read-only audit showed gift «2 дополнительные форточки» **does not explain +1000** in checked calculator code path. See AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md.
+- **Conclusion:** calculator-side hypotheses weakened; issue not globally closed. TG/sheets/diff layer remains the more plausible next layer.
 
 ---
 
@@ -35,6 +51,7 @@
 | **Open questions** | Откуда +1000? Gift не должен добавлять платную составляющую; возможен дубль delivery_cost или другой платный компонент |
 | **Evidence needed** | Supabase: order — gift, delivery_cost, total, base_price, extras, assembly; калькулятор: preview total при выборе «2 форточки»; таблица — разбивка по колонкам |
 | **Cross-contour** | TG строит diff; CALC — источник payload |
+| **2026-03-20 audit** | Gift «2 дополнительные форточки» does not explain +1000 in checked calculator code path. TG/sheets/diff layer remains more plausible next layer. See AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md. |
 
 ---
 
@@ -46,6 +63,7 @@
 | **Open questions** | Order ID не подтверждён; мог ли дубль delivery_cost попасть в payload? Или ошибка парсинга при sync? |
 | **Evidence needed** | Order ID; Supabase row; скрин калькулятора с итогом; строка таблицы с разбивкой (доставка отдельно) |
 | **Cross-contour** | CALC — payload; TG/Sheets — sync, парсинг |
+| **2026-03-20 audit** | Phantom delivery leak into payload not reproduced in checked calculator-side probe. TG/sheets/diff layer remains more plausible next layer. See AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md. |
 
 ---
 
@@ -71,6 +89,18 @@
 
 ---
 
+## INC-009: 79227144004 — Phantom +1000 reopen (21.03.2026)
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Date changed 11.04.2026 → 12.04.2026; total changed 46 470 → 47 470; симптом по скрину |
+| **Open questions** | Root cause НЕ подтверждён; suspected dirty baseline / delivery baseline / cross-contour — не confirmed |
+| **Evidence needed** | Root cause investigation; baseline/delivery audit |
+| **Cross-contour** | CALC + TG; не claim closed |
+| **Status** | confirmed symptom; root cause NOT confirmed |
+
+---
+
 ## Общие open questions (CALC)
 
 1. **Phantom diff (legacy composition):** при «Рассчитать» без «Сохранить позицию» — canonical model перезаписывает legacy; diff в TG показывает «Убрали/Добавили». См. PHANTOM_DIFF_LEGACY_COMPOSITION_AUDIT.md.
@@ -79,6 +109,8 @@
 3. **Delivery_cost при single-item edit:** EOD 18.03 — fix для 79500273936 (delivery_cost = 0). Smoke ещё не подтверждён live.
 4. **Legacy single-item total double-count (20.03.2026) — RESOLVED, verified 2026-03-20:** line_items=null, unit_price=0, delivery_cost>0 при date-only save увеличивал total. Root cause: fillEditOrderForm ставил item_total=order.total; buildOrderPayloadFromEditModal добавлял delivery_cost повторно. Fix: item_total = total - delivery_cost при delivery_cost>0. Retest PASS on safe clone: delivery_date changed, total=41480, delivery_cost=2500, unit_price=0, line_items=null preserved.
 5. **Legacy single-item comment-only total overwrite (20.03.2026) — RESOLVED, verified 2026-03-20:** comment-only save мог перезаписывать total (41480→43980). Fix: use lastLoadedOrderTotalForDisplay when usePersistedForPayload && single-item. Retest PASS on safe clone: comment changed, total=41480, delivery_cost=2500, unit_price=0, line_items=null preserved.
+6. **Inline vs modal delivery date mismatch (20.03.2026) — RESOLVED for checked edit-order cases, verified 2026-03-20:** inline calendar used order city; modal used default Moscow/SPB. Fix: showDeliveryDatesModal(initialCity); edit-order link «даты по городам» passes order city. Manual PASS: order without assembly, non-default city; order with assembly, non-default city. Do not claim all calendar edge cases solved; legacy assembly format, city normalization edge cases remain open.
+7. **Phantom +1000 (21.03.2026) — OPEN, NOT closed:** Reopen на 79227144004 (date 11.04→12.04, total 46 470→47 470). Root cause not confirmed. See INC-009.
 
 ---
 

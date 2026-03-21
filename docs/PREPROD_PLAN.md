@@ -11,8 +11,7 @@
 **Editing rules (направление):** untouched existing/recent order fields → preserve literally; date-only edit → must not recalc item price or delivery; address-only change → may recalc delivery; changing one extra → must not recalc whole greenhouse by new prices.
 
 **Active bug focus (калькулятор):**
-- phantom delivery +1000
-- inline vs modal delivery date mismatch (separate; not fixed)
+- phantom delivery +1000 — calculator-side hypotheses weakened; delivery probe passed, gift audit showed gift does not explain +1000 in checked code path; issue not globally closed; TG/sheets/diff layer remains more plausible next layer (see AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md, AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md)
 - legacy single-item date-only / comment-only total overwrite — fixed and verified 2026-03-20
 
 ---
@@ -67,6 +66,7 @@
 | 9 | **Legacy single-item total double-count (20.03.2026)** | fillEditOrderForm: при delivery_cost>0 item_total = total - delivery_cost; date-only save сохраняет total; retest PASS на safe clone |
 | 10 | **Stale form / mixed order state (verified 2026-03-20)** | Order A open, user searched order B from modal search → old form collapsed correctly; stale form no longer visible |
 | 11 | **Legacy single-item comment-only total overwrite (20.03.2026)** | buildOrderPayloadFromEditModal: use lastLoadedOrderTotalForDisplay when usePersistedForPayload && single-item; retest PASS: comment-only save preserves total=41480, delivery_cost=2500 |
+| 12 | **Inline vs modal delivery date mismatch (20.03.2026)** | showDeliveryDatesModal(initialCity); edit-order link «даты по городам» passes order city; manual PASS: non-default city with/without assembly. Resolved for checked edit-order cases. |
 
 ---
 
@@ -87,7 +87,7 @@
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.
 - **Gifts consistency end-to-end** не закрыт полностью
 - **Multi-item сценарии** не закрыты полностью.
-- **Inline vs modal delivery date mismatch** — отдельный open item; не исправлен.
+- **Inline vs modal delivery date mismatch** — resolved for checked edit-order cases (20.03.2026). Fix: modal receives initialCity from edit context. Remains open: legacy assembly format edge cases; city normalization edge cases; full calendar edge-case coverage not claimed.
 - **Broad legacy/recent stabilization** — не равно full legacy support; проверенные кейсы (date-only, comment-only на safe clone) не покрывают все legacy сценарии. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
 - **Auto-sync after edit:** на стороне калькулятора/Supabase change-signal (`orders.updated_at`) подтверждён. Downstream TG/Sheets без ручного /sync — отдельный контур, не входит в scope калькулятора.
 - **Cancel flow race:** при слишком раннем нажатии «Отменить заказ» возможна «Ошибка: заказ не выбран».

@@ -4,15 +4,90 @@ const path = require('path');
 const fs = require('fs');
 const {
   loginIfNeeded,
+  waitForEditOrderReady,
   openEditOrderByPhoneAndGetOrderId,
   openEditOrderById,
   saveEditOrder,
+  ADDRESS_FIXTURES,
+  SEARCH_PHONE,
+  getEditOrderSnapshot,
+  changeEditOrderDeliveryDate,
+  changeEditOrderAddress,
 } = require('./helpers');
 
-function randomPhone() {
-  return '79' + String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
+const KNOWN_PHONES = [SEARCH_PHONE, '70000000019', '79000000018'];
+
+/** Staging edit fixtures: known editable order IDs (ID-first, no phone search). From repo/docs. */
+const FIXTURE_ORDER_IDS = [
+  process.env.TEST_ORDER_ID,
+  '1efaa9ef-e65e-4017-b5b2-6aae72346d82',
+  'ced4fafd-1602-4aae-874d-70f0f97150e3',
+].filter(Boolean);
+
+/** Open order by fixture ID first (deep link). Fallback to phone search only if IDs fail. */
+async function openOrderByFixtureIdFirst(page) {
+  for (const orderId of FIXTURE_ORDER_IDS) {
+    try {
+      await page.goto('/');
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+      await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+      await waitForEditOrderReady(page);
+      await openEditOrderById(page, orderId);
+      await page.locator('.edit-order-composition-item').first().waitFor({ state: 'visible', timeout: 8000 });
+      return orderId;
+    } catch (_) {}
+  }
+  for (const phone of KNOWN_PHONES) {
+    try {
+      await page.goto('/');
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+      await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+      await waitForEditOrderReady(page);
+      const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
+      return orderId;
+    } catch (_) {}
+  }
+  throw new Error('Could not open any order. Set TEST_ORDER_ID or ensure fixture orders exist on staging.');
 }
-const TEST_PHONE = process.env.TEST_PHONE || randomPhone();
+
+function isOrdersPatch(req) {
+  return req.method() === 'PATCH' && req.url().includes('/rest/v1/orders');
+}
+
+/** Intercept PATCH /rest/v1/orders: capture payload, fulfill with stub, block real write. */
+async function setupPatchIntercept(page, captured) {
+  await page.route('**/rest/v1/orders*', async (route) => {
+    const req = route.request();
+    if (!isOrdersPatch(req)) return route.continue();
+    let payload = null;
+    try {
+      const postData = req.postData();
+      if (postData) payload = JSON.parse(postData);
+    } catch (_) {}
+    const orderId = req.url().match(/[?&]id=eq\.([a-f0-9-]+)/i)?.[1] || null;
+    captured.push({ order_id: orderId, payload: payload || null });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [{}], error: null }),
+    });
+  });
+}
+
+async function openOrderWithFallback(page) {
+  for (const phone of KNOWN_PHONES) {
+    try {
+      await page.goto('/');
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+      await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+      const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
+      return orderId;
+    } catch (_) {}
+  }
+  throw new Error('Could not open any known order from ' + KNOWN_PHONES.join(', '));
+}
+
+const EDIT_SEARCH_PHONE = process.env.TEST_PHONE || SEARCH_PHONE;
 const PHONE_EMPTY = '70000000000';
 const results = [];
 
@@ -102,7 +177,7 @@ test.describe('Редактирование заказа', () => {
     // 1.2
     let hasOrders = false;
     try {
-      await page.locator('#edit-order-phone').fill(TEST_PHONE);
+      await page.locator('#edit-order-phone').fill(EDIT_SEARCH_PHONE);
       await page.locator('#edit-order-search-btn').click();
       await page.waitForTimeout(2000);
       const hint = page.locator('#edit-order-search-hint');
@@ -110,7 +185,7 @@ test.describe('Редактирование заказа', () => {
       hasOrders = count > 0;
       const hintText = await hint.textContent().catch(() => '');
       const ok = hintText && (hintText.includes('Найдено') || hintText.includes('найдено') || hintText.length > 0);
-      record('1.2', !!ok, hasOrders ? '' : 'По номеру заказов нет (норм для случайного)');
+      record('1.2', !!ok, hasOrders ? '' : 'По номеру заказов нет. Задайте TEST_PHONE или добавьте заказ с SEARCH_PHONE.');
     } catch (e) {
       record('1.2', false, (e && e.message) || String(e));
     }
@@ -155,7 +230,7 @@ test.describe('Редактирование заказа', () => {
 
     // ——— Этап 2: открытие редактирования (реальные проверки, без сохранения в БД) ———
     if (hasOrders) {
-      await page.locator('#edit-order-phone').fill(TEST_PHONE);
+      await page.locator('#edit-order-phone').fill(EDIT_SEARCH_PHONE);
       await page.locator('#edit-order-search-btn').click();
       await page.waitForTimeout(1200);
     }
@@ -243,7 +318,7 @@ test.describe('Редактирование заказа', () => {
 
       // 3.2 — снова открыть тот же заказ → имя сохранено
       try {
-        await page.locator('#edit-order-phone').fill(TEST_PHONE);
+        await page.locator('#edit-order-phone').fill(EDIT_SEARCH_PHONE);
         await page.locator('#edit-order-search-btn').click();
         await page.waitForTimeout(1500);
         await page.locator('.edit-order-list-item').first().locator('.edit-order-item-btn').click();
@@ -324,7 +399,7 @@ test.describe('Редактирование заказа', () => {
 
       // 6.3 — снова открыть заказ → состав и итог есть
       try {
-        await page.locator('#edit-order-phone').fill(TEST_PHONE);
+        await page.locator('#edit-order-phone').fill(EDIT_SEARCH_PHONE);
         await page.locator('#edit-order-search-btn').click();
         await page.waitForTimeout(1500);
         await page.locator('.edit-order-list-item').first().locator('.edit-order-item-btn').click();
@@ -347,16 +422,11 @@ test.describe('Редактирование заказа', () => {
     writeResults();
   });
 
-  test('existing-order-paid-extra: 70000000019 -> change additional window -> save -> reopen', async ({ page }) => {
-    const phone = '70000000019';
+  test('existing-order-paid-extra: change additional window -> save -> reopen', async ({ page }) => {
     const login = process.env.TEST_LOGIN;
     const password = process.env.TEST_PASSWORD;
 
-    await page.goto('/');
-    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-    await loginIfNeeded(page, login, password);
-
-    const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
+    const orderId = await openOrderByFixtureIdFirst(page);
     await page.locator('.edit-order-composition-item__btn--edit').first().click();
     await page.locator('#edit-order-add-item-panel:not(.hidden)').waitFor({ state: 'visible', timeout: 5000 });
     const qtySelect = page.locator('#edit-order-add-additional-window-qty');
@@ -407,5 +477,70 @@ test.describe('Редактирование заказа', () => {
     expect(afterItemCount).toBe(beforeItemCount);
     expect(afterGiftSlots).toBe(beforeGiftSlots);
     expect((afterTotal || '').trim()).not.toBe((beforeTotal || '').trim());
+  });
+
+  test('existing-order-date-only-integrity: change only delivery date, intercept PATCH, verify payload and no drift', async ({ page }) => {
+    const captured = [];
+    await setupPatchIntercept(page, captured);
+    const orderId = await openOrderByFixtureIdFirst(page);
+
+    const before = await getEditOrderSnapshot(page);
+    expect(before.delivery_date_display).toBeTruthy();
+
+    await changeEditOrderDeliveryDate(page, 1);
+    const afterUI = await getEditOrderSnapshot(page);
+    expect(afterUI.delivery_date_display).toBeTruthy();
+    expect(afterUI.delivery_date_display).not.toBe(before.delivery_date_display);
+
+    await page.locator('#edit-order-save-btn').click();
+    await page.locator('#edit-order-form-hint').filter({ hasText: /изменены|Данные/ }).waitFor({ state: 'visible', timeout: 15000 });
+
+    expect(captured.length).toBeGreaterThan(0);
+    const pl = captured[captured.length - 1].payload;
+    expect(pl).toBeTruthy();
+    expect(pl.delivery_date).toBeTruthy();
+    expect(pl.line_items != null || pl.model != null).toBeTruthy();
+    if (before.address_part1 && pl.delivery_address != null) {
+      expect(String(pl.delivery_address).slice(0, 30)).toContain(before.address_part1.slice(0, 20));
+    }
+  });
+
+  test('existing-order-address-change-delivery-integrity: change address via ADDRESS_FIXTURES, trigger delivery recalc, intercept PATCH', async ({ page }) => {
+    const captured = [];
+    await setupPatchIntercept(page, captured);
+    await openOrderByFixtureIdFirst(page);
+
+    const before = await getEditOrderSnapshot(page);
+    const fixture = ADDRESS_FIXTURES.mskNear;
+    await changeEditOrderAddress(page, fixture);
+
+    await page.locator('.edit-order-composition-item__btn--edit').first().click();
+    await page.locator('#edit-order-add-item-panel:not(.hidden)').waitFor({ state: 'visible', timeout: 8000 });
+    await page.waitForFunction(
+      () => document.getElementById('edit-order-add-form') && document.getElementById('edit-order-add-form').value,
+      { timeout: 10000 }
+    ).catch(() => {});
+    await page.locator('#edit-order-add-calc-btn').click();
+    await page.locator('#edit-order-save-position-btn:not(.hidden)').waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator('#edit-order-save-position-btn').click();
+    await page.locator('#edit-order-add-item-panel').waitFor({ state: 'hidden', timeout: 5000 });
+
+    const afterUI = await getEditOrderSnapshot(page);
+    expect(afterUI.address_part1).toBe(fixture.part1);
+    expect(afterUI.address_part2).toBe(fixture.part2);
+    expect(afterUI.address_part3).toBe(fixture.part3);
+
+    await page.locator('#edit-order-save-btn').click();
+    await page.locator('#edit-order-form-hint').filter({ hasText: /изменены|Данные/ }).waitFor({ state: 'visible', timeout: 15000 });
+
+    expect(captured.length).toBeGreaterThan(0);
+    const pl = captured[captured.length - 1].payload;
+    expect(pl).toBeTruthy();
+    expect(pl.delivery_address).toBeTruthy();
+    const fullAddr = [fixture.part1, fixture.part2, fixture.part3].filter(Boolean).join(', ');
+    expect(String(pl.delivery_address)).toContain(fixture.part1);
+    expect(pl.total != null).toBeTruthy();
+    expect(pl.delivery_cost != null).toBeTruthy();
+    expect(pl.line_items != null || pl.model != null).toBeTruthy();
   });
 });

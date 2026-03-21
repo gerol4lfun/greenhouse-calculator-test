@@ -3303,6 +3303,14 @@ input[type="radio"] {
   font-size: 0.8125rem;
 }
 
+.edit-order-dates-link {
+  font-size: 0.8125rem;
+  color: var(--eo-color-hint, #6b7280);
+  margin-left: 0.25em;
+}
+.edit-order-dates-link a { color: inherit; text-decoration: none; }
+.edit-order-dates-link a:hover { text-decoration: underline; }
+
 .edit-order-search-row {
   display: flex;
   gap: var(--eo-space-md);

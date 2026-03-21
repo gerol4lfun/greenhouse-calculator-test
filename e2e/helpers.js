@@ -4,7 +4,17 @@
  * Используют устойчивые локаторы (id), без sleep где возможно.
  */
 
+const path = require('path');
+const ADDRESS_FIXTURES = require(path.join(__dirname, 'fixtures', 'addresses.json'));
+
 const TEST_COMMENT = 'ТЕСТОВЫЙ ЗАКАЗ АВТОСИНКА — НЕ ПЕРЕНОСИТЬ!!!';
+
+/** Default address (legacy SPB) — используется, если address fixture не передан. */
+const DEFAULT_ADDRESS = {
+  part1: 'Ленинградская обл., г. Санкт-Петербург',
+  part2: 'Невский пр.',
+  part3: 'д. 1',
+};
 
 /** Телефон для поиска уже существующего тестового заказа (не случайный). */
 const SEARCH_PHONE = '78883339999';
@@ -14,6 +24,21 @@ const SEARCH_PHONE = '78883339999';
  */
 function testPhone(suffix = '001') {
   return '790000000' + String(suffix).padStart(2, '0').slice(-2);
+}
+
+/**
+ * Дождаться готовности staging app для edit-order flow после auth.
+ * Fail с явным сообщением, если UI не готов.
+ */
+async function waitForEditOrderReady(page, timeout = 15000) {
+  const calc = page.locator('#calculator-container');
+  await calc.waitFor({ state: 'visible', timeout }).catch(() => {
+    throw new Error('Staging app not ready for edit-order flow after auth: #calculator-container not visible');
+  });
+  const card = page.locator('#edit-orders-card');
+  await card.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+    throw new Error('Staging app not ready for edit-order flow after auth: #edit-orders-card not visible');
+  });
 }
 
 /**
@@ -120,15 +145,17 @@ async function setPaidExtras(page, windowQty = 0, dripMechQty = 0) {
 
 /**
  * Заполнить форму заказа (create) и отправить.
+ * @param {object} opts.address — optional fixture из ADDRESS_FIXTURES (part1, part2, part3). Не передан — legacy SPB.
  */
-async function fillAndSubmitOrderForm(page, { phone, name = 'E2E Test', comment = TEST_COMMENT }) {
+async function fillAndSubmitOrderForm(page, { phone, name = 'E2E Test', comment = TEST_COMMENT, address }) {
+  const addr = address && address.part1 ? address : DEFAULT_ADDRESS;
   await page.locator('#order-client-name').fill(name);
   await page.locator('#order-client-phone').fill(phone);
   await page.locator('#order-source').selectOption({ index: 1 });
   await page.locator('#order-manager').selectOption({ index: 1 });
-  await page.locator('#order-address-part1').fill('Ленинградская обл., г. Санкт-Петербург');
-  await page.locator('#order-address-part2').fill('Невский пр.');
-  await page.locator('#order-address-part3').fill('д. 1');
+  await page.locator('#order-address-part1').fill(addr.part1);
+  await page.locator('#order-address-part2').fill(addr.part2);
+  await page.locator('#order-address-part3').fill(addr.part3);
   if (comment) await page.locator('#order-comment').fill(comment);
   // Дата: клик по календарю, выбрать первую доступную дату (зелёная — в слотах доставки)
   await page.locator('#order-delivery-date-display').click();
@@ -187,11 +214,20 @@ async function openEditOrderByPhoneAndGetOrderId(page, phone) {
 }
 
 /**
+ * URL приложения с query — сохраняет subpath (GitHub Pages /greenhouse-calculator-test/).
+ * Root-absolute /?id=... дропает subpath и ведёт на origin root.
+ */
+function appUrlWithQuery(queryString) {
+  const base = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') || '/';
+  return base + '/?' + queryString;
+}
+
+/**
  * Открыть модалку редактирования по order id (deep link ?id=).
  * Гарантирует тот же заказ при reopen, не зависит от порядка в списке по телефону.
  */
 async function openEditOrderById(page, orderId) {
-  await page.goto(`/?id=${orderId}`);
+  await page.goto(appUrlWithQuery('id=' + encodeURIComponent(orderId)));
   await page.locator('#edit-order-modal-body[data-step="2"]').waitFor({ state: 'visible', timeout: 10000 });
 }
 
@@ -203,11 +239,76 @@ async function saveEditOrder(page) {
   await page.locator('#edit-order-modal-body[data-step="1"]').waitFor({ state: 'visible', timeout: 10000 });
 }
 
+/**
+ * Снимок UI модалки редактирования (delivery, total, address, line_items, gift).
+ * Поля могут быть null, если не видимы или недоступны.
+ */
+async function getEditOrderSnapshot(page) {
+  const s = {
+    delivery_date_display: null,
+    total_display: null,
+    line_items_count: null,
+    delivery_line_display: null,
+    gift_display: null,
+    address_part1: null,
+    address_part2: null,
+    address_part3: null,
+    comment_preview: null,
+    source: null,
+  };
+  const fields = [
+    ['delivery_date_display', '#edit-order-delivery-date-display', 'inputValue'],
+    ['total_display', '#edit-order-composition-total', 'textContent'],
+    ['address_part1', '#edit-order-address-part1', 'inputValue'],
+    ['address_part2', '#edit-order-address-part2', 'inputValue'],
+    ['address_part3', '#edit-order-address-part3', 'inputValue'],
+    ['gift_display', '#edit-order-gift', 'inputValue'],
+    ['comment_preview', '#edit-order-comment', 'inputValue'],
+    ['source', '#edit-order-source', 'inputValue'],
+  ];
+  for (const [key, selector, method] of fields) {
+    try {
+      const el = page.locator(selector);
+      if (await el.isVisible()) s[key] = (await el[method]())?.trim?.() ?? null;
+    } catch (_) {}
+  }
+  try {
+    s.line_items_count = await page.locator('#edit-order-composition-list .edit-order-composition-item').count();
+  } catch (_) {}
+  try {
+    const deliveryLine = page.locator('.edit-order-composition-item:has-text("Доставка") .edit-order-composition-item__price');
+    if (await deliveryLine.isVisible()) s.delivery_line_display = (await deliveryLine.textContent())?.trim() || null;
+  } catch (_) {}
+  return s;
+}
+
+/**
+ * Изменить дату доставки в модалке: клик по календарю, выбор available day по индексу (0 = первый).
+ */
+async function changeEditOrderDeliveryDate(page, dayIndex = 1) {
+  await page.locator('#edit-order-delivery-date-display').click();
+  const dayBtn = page.locator('#edit-order-calendar .order-cal-day.available').nth(dayIndex);
+  await dayBtn.waitFor({ state: 'visible', timeout: 8000 });
+  await dayBtn.click();
+}
+
+/**
+ * Заполнить адрес в модалке из fixture { part1, part2, part3 }.
+ */
+async function changeEditOrderAddress(page, fixture) {
+  if (fixture.part1) await page.locator('#edit-order-address-part1').fill(fixture.part1);
+  if (fixture.part2) await page.locator('#edit-order-address-part2').fill(fixture.part2);
+  if (fixture.part3) await page.locator('#edit-order-address-part3').fill(fixture.part3);
+}
+
 module.exports = {
+  ADDRESS_FIXTURES,
   TEST_COMMENT,
   SEARCH_PHONE,
+  appUrlWithQuery,
   testPhone,
   loginIfNeeded,
+  waitForSelectOptions,
   selectFirstOption,
   expandOrderFormAndWaitCity,
   calculateGreenhouse,
@@ -219,4 +320,8 @@ module.exports = {
   openEditOrderByPhoneAndGetOrderId,
   openEditOrderById,
   saveEditOrder,
+  waitForEditOrderReady,
+  getEditOrderSnapshot,
+  changeEditOrderDeliveryDate,
+  changeEditOrderAddress,
 };
