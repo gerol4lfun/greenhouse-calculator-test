@@ -765,6 +765,12 @@ function getFormCategory(formName) {
     }
 }
 
+/** Является ли строка валидной категорией каталога (для prefill existing order). */
+function isFormCategoryValid(form) {
+    if (!form || typeof form !== "string") return false;
+    return Object.prototype.hasOwnProperty.call(availableForms, form.trim());
+}
+
 let currentCityData = []; // Данные для текущего города
 let deliveryCost = 0; // Стоимость доставки
 let currentDeliveryDate = null; // Текущая дата доставки для выбранного города
@@ -856,6 +862,10 @@ let _editOrderLoadedWarehouseCityKey = null;
 let _editOrderDeliveryCostPreview = null;
 /** Committed delivery cost на момент открытия панели. Используется в payload при save без «Сохранить позицию» (phantom fix). */
 let _editOrderDeliveryCostAtPanelOpen = null;
+/** Baseline extras/assembly для existing single-item: legacy-preserve merge при пересчёте. null если не editing или multi-item. */
+let _editOrderExtrasAssemblyBaseline = null;
+/** Safe mode: false = existing single-item locked (catalog path не использовать); true = разрешить catalog; null = add/multi. */
+let _editOrderGreenhouseEditMode = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6319,7 +6329,7 @@ function fillEditOrderForm(order) {
                         polycarbonate: (item.polycarbonate || '').toString().trim() || '',
                         item_total: parseOrderPrice_(item.item_total),
                         base_price: item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : undefined,
-                        form: (item.form || '').toString().trim() || getFormCategory(item.model || ''),
+                        form: (function () { var f = (item.form || '').toString().trim(); return isFormCategoryValid(f) ? f : getFormCategory(item.model || ''); })(),
                         city: (item.city || '').trim() || orderCity,
                         extras: extrasStr,
                         assembly: assemblyStr,
@@ -6676,6 +6686,165 @@ function deriveOptionsFromExtrasAssembly(extras, assembly) {
     };
 }
 
+/** Разбить extras+assembly на категории для legacy-preserve merge. Только для existing single-item edit path. */
+function parseExtrasAssemblyLegacyBaseline(extras, assembly) {
+    var combined = ((extras || '') + '\n' + (assembly || '')).replace(/\r/g, '');
+    var lines = combined.split(/\n/).map(function (s) { return (s || '').trim(); }).filter(Boolean);
+    var out = { bracingLines: [], groundHooksLines: [], assemblyLines: [], onWoodLines: [], onConcreteLines: [], productLines: [], opaqueLines: [] };
+    var productNameToId = [
+        { re: /капельн.*полив\s*мех/i, id: 'drip-irrigation-mech' },
+        { re: /капельн.*полив\s*авт/i, id: 'drip-irrigation-auto' },
+        { re: /автомат\s+для\s+форточки/i, id: 'window-automation' },
+        { re: /доп\.?\s*форточк/i, id: 'additional-window' },
+        { re: /лента\s+оцинк/i, id: 'galvanized-tape-30m' },
+        { re: /лента\s+паропроп/i, id: 'vapor-permeable-tape-25m' }
+    ];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var low = line.toLowerCase();
+        if (/основание\s+из\s+бруса|брус\s+\d|из\s+бруса/i.test(low)) { out.bracingLines.push(line); continue; }
+        if (/грунтозацепы|штыри\s+\d|штыри\s*-\s*\d/i.test(low)) { out.groundHooksLines.push(line); continue; }
+        if (/сборка\s+и\s+установка|сборка\s+и\s+установк|сборка\s+-\s*\d/i.test(low) && !/грядок/i.test(low)) { out.assemblyLines.push(line); continue; }
+        if (/монтаж\s+на\s+брус/i.test(low)) { out.onWoodLines.push(line); continue; }
+        if (/монтаж\s+на\s+бетон/i.test(low)) { out.onConcreteLines.push(line); continue; }
+        var found = false;
+        for (var j = 0; j < productNameToId.length; j++) {
+            if (productNameToId[j].re.test(low)) {
+                var cost = 0;
+                var m = line.match(/[\s\-–—](\d[\d\s.]*)\s*рублей?/i);
+                if (m) {
+                    var s = m[1].replace(/\s/g, '');
+                    if (/^\d+\.\d{3}$/.test(s)) cost = parseInt(s.replace('.', ''), 10);
+                    else if (/^\d+$/.test(s)) cost = parseInt(s, 10);
+                    else cost = parseFloat(s.replace('.', '').replace(',', '.')) || 0;
+                }
+                out.productLines.push({ id: productNameToId[j].id, line: line, cost: cost });
+                found = true;
+                break;
+            }
+        }
+        if (!found) out.opaqueLines.push(line);
+    }
+    return out;
+}
+
+/** Извлечь сумму из массива строк «… - X рублей». */
+function sumLinesRu(lines) {
+    var sum = 0;
+    for (var i = 0; i < lines.length; i++) {
+        var m = (lines[i] || '').match(/[\s\-–—](\d[\d\s.]*)\s*рублей?/i);
+        if (m) {
+            var s = m[1].replace(/\s/g, '');
+            if (/^\d+\.\d{3}$/.test(s)) sum += parseInt(s.replace('.', ''), 10);
+            else if (/^\d+$/.test(s)) sum += parseInt(s, 10);
+            else sum += parseFloat(s.replace('.', '').replace(',', '.')) || 0;
+        }
+    }
+    return sum;
+}
+
+/** Merge calc result с baseline для existing single-item: untouched -> baseline, changed/new -> calc. */
+function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, calcData) {
+    var parsed = parseExtrasAssemblyLegacyBaseline(baseline.extras || '', baseline.assembly || '');
+    var baseOpts = baselineOpts || { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] };
+    var currOpts = currentOpts || { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] };
+    var baseProds = {};
+    parsed.productLines.forEach(function (p) {
+        baseProds[p.id] = { qty: 1, cost: p.cost || 0, line: p.line };
+        var xMatch = (p.line || '').match(/\s+x\s*(\d+)\s*[-–—]/i);
+        if (xMatch) baseProds[p.id].qty = parseInt(xMatch[1], 10) || 1;
+    });
+    if (baseOpts.additionalProducts && baseOpts.additionalProducts.length) {
+        baseOpts.additionalProducts.forEach(function (p) {
+            var bp = baseProds[p.id];
+            if (bp) { bp.qty = p.quantity || 0; if (p.cost != null) bp.cost = p.cost; } else { baseProds[p.id] = { qty: p.quantity || 0, cost: p.cost || 0, line: null }; }
+        });
+    }
+    var foundationParts = [];
+    var assemblyParts = [];
+    var foundationCost = 0;
+    var assemblyCost = 0;
+    var productsCost = 0;
+    var productsLines = [];
+    if (baseOpts.bracing === currOpts.bracing && baseOpts.bracing && parsed.bracingLines.length) {
+        foundationParts = foundationParts.concat(parsed.bracingLines);
+        foundationCost += sumLinesRu(parsed.bracingLines);
+    } else if (currOpts.bracing && calcData.foundationText) {
+        var m = calcData.foundationText.match(/основание\s+из\s+бруса[^\n]*/i);
+        if (m) { foundationParts.push(m[0].trim()); var mc = m[0].match(/(\d[\d\s.]*)\s*рублей?/i); if (mc) foundationCost += parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0; }
+    }
+    if (baseOpts.groundHooks === currOpts.groundHooks && baseOpts.groundHooks && parsed.groundHooksLines.length) {
+        foundationParts = foundationParts.concat(parsed.groundHooksLines);
+        foundationCost += sumLinesRu(parsed.groundHooksLines);
+    } else if (currOpts.groundHooks && calcData.foundationText) {
+        var m = calcData.foundationText.match(/грунтозацепы[^\n]*|штыри[^\n]*/i);
+        if (m) { foundationParts.push(m[0].trim()); var mc = m[0].match(/(\d[\d\s.]*)\s*рублей?/i); if (mc) foundationCost += parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0; }
+    }
+    if (baseOpts.onWood === currOpts.onWood && baseOpts.onWood && parsed.onWoodLines.length) {
+        foundationParts = foundationParts.concat(parsed.onWoodLines);
+        foundationCost += sumLinesRu(parsed.onWoodLines);
+    } else if (currOpts.onWood && calcData.foundationText) {
+        var m = calcData.foundationText.match(/монтаж\s+на\s+брус[^\n]*/i);
+        if (m) { foundationParts.push(m[0].trim()); var mc = m[0].match(/(\d[\d\s.]*)\s*рублей?/i); if (mc) foundationCost += parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0; }
+    }
+    if (baseOpts.onConcrete === currOpts.onConcrete && baseOpts.onConcrete && parsed.onConcreteLines.length) {
+        foundationParts = foundationParts.concat(parsed.onConcreteLines);
+        foundationCost += sumLinesRu(parsed.onConcreteLines);
+    } else if (currOpts.onConcrete && calcData.foundationText) {
+        var m = calcData.foundationText.match(/монтаж\s+на\s+бетон[^\n]*/i);
+        if (m) { foundationParts.push(m[0].trim()); var mc = m[0].match(/(\d[\d\s.]*)\s*рублей?/i); if (mc) foundationCost += parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0; }
+    }
+    if (baseOpts.assembly === currOpts.assembly && baseOpts.assembly && parsed.assemblyLines.length) {
+        assemblyParts = parsed.assemblyLines.slice();
+        assemblyCost = sumLinesRu(parsed.assemblyLines);
+    } else if (currOpts.assembly && calcData.assemblyText) {
+        assemblyParts = [calcData.assemblyText.trim()];
+        var mc = calcData.assemblyText.match(/(\d[\d\s.]*)\s*рублей?/i);
+        if (mc) assemblyCost = parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0;
+    }
+    var currProdQtys = {};
+    if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
+        currOpts.additionalProducts.forEach(function (p) { currProdQtys[p.id] = p.quantity || 0; });
+    }
+    if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
+        currOpts.additionalProducts.forEach(function (p) {
+            var baseP = baseProds[p.id];
+            var sameQty = baseP && baseP.qty === (p.quantity || 0);
+            if (sameQty && baseP && baseP.line) {
+                productsLines.push(baseP.line);
+                productsCost += baseP.cost || 0;
+            } else {
+                var line = (p.name || '') + (p.quantity > 1 ? ' x ' + p.quantity : '') + ' - ' + (typeof formatPrice === 'function' ? formatPrice(p.cost || 0) : p.cost) + ' рублей';
+                productsLines.push(line);
+                productsCost += p.cost || 0;
+            }
+        });
+    }
+    Object.keys(baseProds).forEach(function (id) {
+        if (currProdQtys[id] || !baseProds[id] || !baseProds[id].line) return;
+        productsLines.push(baseProds[id].line);
+        productsCost += baseProds[id].cost || 0;
+    });
+    var hasNewNotInBase = currOpts.additionalProducts && currOpts.additionalProducts.some(function (p) { return !baseProds[p.id]; });
+    if (hasNewNotInBase && calcData && calcData.additionalProductsText) {
+        var calcLines = String(calcData.additionalProductsText).trim().split(/\n+/).filter(Boolean);
+        calcLines.forEach(function (line) {
+            var t = line.trim();
+            if (t && productsLines.indexOf(t) === -1) productsLines.push(t);
+        });
+    }
+    if (hasNewNotInBase && calcData && calcData.additionalProductsCost != null) {
+        var calcCost = Number(calcData.additionalProductsCost);
+        if (!isNaN(calcCost) && calcCost > productsCost) productsCost = calcCost;
+    }
+    foundationParts = foundationParts.concat(parsed.opaqueLines);
+    foundationCost += sumLinesRu(parsed.opaqueLines);
+    var extrasText = foundationParts.concat(productsLines).filter(Boolean).join('\n').trim();
+    var assemblyText = assemblyParts.join('\n').trim();
+    if (calcData.bedsAssemblyText && calcData.bedsAssemblyText.trim()) assemblyText = (assemblyText ? assemblyText + '\n' : '') + calcData.bedsAssemblyText.trim();
+    return { extrasText: extrasText, assemblyText: assemblyText, extrasCost: foundationCost + productsCost, assemblyCost: assemblyCost };
+}
+
 /**
  * Собирает HTML одного пункта состава заказа (модалка «Редактирование заказа», блок «Состав заказа»).
  * @param {Object} opts — text (название+размеры), priceFormatted (цена теплицы, уже отформатированная), extrasHtml (разбивка допов/сборки), index, showEditButton, showDeleteButton
@@ -6884,8 +7053,19 @@ function renderEditOrderAddBreakdown(data) {
     el.classList.remove('hidden');
 }
 
+/** Включить/выключить greenhouse params (form, width, length, frame, arc, poly, odd-length) для locked mode UX. */
+function setEditOrderGreenhouseControlsDisabled(disabled) {
+    var ids = ['edit-order-add-form', 'edit-order-add-width', 'edit-order-add-length', 'edit-order-add-frame', 'edit-order-add-arcStep', 'edit-order-add-polycarbonate', 'edit-order-add-odd-length'];
+    ids.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.disabled = !!disabled;
+    });
+}
+
 function openEditOrderAddPanel(index) {
     editOrderEditingIndex = index;
+    _editOrderGreenhouseEditMode = (index != null && index >= 0 && editOrderComposition.length === 1) ? false : null;
+    _editOrderExtrasAssemblyBaseline = null;
     _editOrderPositionExplicitlySaved = false;
     _editOrderDeliveryCostPreview = null;
     _editOrderDeliveryCostAtPanelOpen = editOrderDeliveryCost;
@@ -6915,6 +7095,7 @@ function openEditOrderAddPanel(index) {
                 var catalogHintShown = false;
                 var formSel = document.getElementById('edit-order-add-form');
                 var formVal = (item.form || item.model || 'Теплица').toString().trim() || 'Теплица';
+                if (!formVal) formVal = getFormCategory(item.model || '') || 'Теплица';
                 if (formVal && formSel && !Array.prototype.find.call(formSel.options, function (o) { return o.value === formVal; })) {
                     var formOpt = document.createElement('option');
                     formOpt.value = formVal;
@@ -6922,7 +7103,7 @@ function openEditOrderAddPanel(index) {
                     formSel.appendChild(formOpt);
                     catalogHintShown = true;
                 }
-                setEditOrderSelectValue('edit-order-add-form', item.form || formVal || '');
+                setEditOrderSelectValue('edit-order-add-form', formVal);
                 onModalAddFormChange();
                 var widthSel = document.getElementById('edit-order-add-width');
                 var widthVal = item.width != null ? String(item.width) : '';
@@ -6955,7 +7136,10 @@ function openEditOrderAddPanel(index) {
                 setEditOrderSelectValue('edit-order-add-arcStep', String(item.arc_step || '1'));
                 setEditOrderSelectValue('edit-order-add-polycarbonate', item.polycarbonate || '');
                 if (catalogHint) {
-                    if (catalogHintShown) {
+                    if (_editOrderGreenhouseEditMode === false) {
+                        catalogHint.textContent = 'Теплица зафиксирована в старом заказе. Можно менять только допы, сборку, дату и адрес.';
+                        catalogHint.classList.remove('hidden');
+                    } else if (catalogHintShown) {
                         catalogHint.textContent = 'Данные не подходят под текущий каталог. Показаны сохранённые значения.';
                         catalogHint.classList.remove('hidden');
                     } else {
@@ -6963,6 +7147,7 @@ function openEditOrderAddPanel(index) {
                         catalogHint.classList.add('hidden');
                     }
                 }
+                if (_editOrderGreenhouseEditMode === false) setEditOrderGreenhouseControlsDisabled(true);
                 var derived = (item.extras || item.assembly) ? deriveOptionsFromExtrasAssembly(item.extras, item.assembly) : null;
                 var opts = item.options && typeof item.options === 'object' && Object.keys(item.options).length > 0 ? item.options : null;
                 var merged = {
@@ -6974,6 +7159,13 @@ function openEditOrderAddPanel(index) {
                     additionalProducts: (opts && opts.additionalProducts && opts.additionalProducts.length) ? opts.additionalProducts : (derived && derived.additionalProducts) || []
                 };
                 setEditOrderAddPanelOptions(merged);
+                if (editOrderComposition.length === 1) {
+                    _editOrderExtrasAssemblyBaseline = {
+                        extras: item.extras || '',
+                        assembly: item.assembly || '',
+                        options: typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] }
+                    };
+                }
                 if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(item.item_total || 0) : item.item_total) + ' ₽';
                 var basePriceForResult = item.base_price;
                 if ((basePriceForResult == null || isNaN(Number(basePriceForResult))) && (item.extras || item.assembly)) {
@@ -7004,9 +7196,14 @@ function openEditOrderAddPanel(index) {
 
 function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
+    _editOrderGreenhouseEditMode = null;
+    setEditOrderGreenhouseControlsDisabled(false);
+    var ch = document.getElementById('edit-order-add-catalog-hint');
+    if (ch) { ch.textContent = ''; ch.classList.add('hidden'); }
     _editOrderPositionExplicitlySaved = false;
     _editOrderDeliveryCostPreview = null;
     _editOrderDeliveryCostAtPanelOpen = null;
+    _editOrderExtrasAssemblyBaseline = null;
     lastModalCalculationResult = null;
     clearEditOrderAddBreakdown();
     var panel = document.getElementById('edit-order-add-item-panel');
@@ -7121,6 +7318,33 @@ function onModalAddWidthChange() {
     var oddCb = document.getElementById('edit-order-add-odd-length');
     if (oddCb) { oddCb.checked = false; oddCb.disabled = true; }
     clearEditOrderAddPanelCalculation();
+}
+
+/** Панель vs item: теплица не менялась (form/width/length/frame/arc_step/polycarbonate). Для locked-snapshot path.
+ * Расслабленная проверка: panel empty + item has value = unchanged (каталог не заполнил dropdown для legacy).
+ * Safe mode: при _editOrderGreenhouseEditMode === false считаем greenhouse всегда locked (extras-only edit). */
+function isEditOrderGreenhouseIdentityUnchanged(item) {
+    if (_editOrderGreenhouseEditMode === false) return true;
+    if (!item || editOrderEditingIndex == null || editOrderEditingIndex < 0) return false;
+    var _eq = function (a, b) { if (a == null && b == null) return true; if (typeof a === 'number' && typeof b === 'number') return Math.abs((a || 0) - (b || 0)) < 0.01; return String(a || '').trim() === String(b || '').trim(); };
+    var _unchanged = function (panelVal, itemVal) { var p = String(panelVal || '').trim(); var i = String(itemVal || '').trim(); return p === i || (p === '' && i !== ''); };
+    var formEl = document.getElementById('edit-order-add-form');
+    var widthEl = document.getElementById('edit-order-add-width');
+    var lengthEl = document.getElementById('edit-order-add-length');
+    var frameEl = document.getElementById('edit-order-add-frame');
+    var arcEl = document.getElementById('edit-order-add-arcStep');
+    var polyEl = document.getElementById('edit-order-add-polycarbonate');
+    var panelForm = formEl ? (formEl.value || '').trim() : '';
+    var panelWidth = widthEl ? parseFloat(widthEl.value) : NaN;
+    var panelLengthRaw = lengthEl ? (lengthEl.value || '').trim() : '';
+    var panelLength = parseFloat(panelLengthRaw);
+    var oddCb = document.getElementById('edit-order-add-odd-length');
+    if (oddCb && oddCb.checked && !isNaN(panelLength) && panelLength >= ODD_LENGTH_MIN_BILLING) panelLength = panelLength - 1;
+    var itemLen = item.length != null ? parseFloat(item.length) : NaN;
+    var panelFrame = frameEl ? (frameEl.value || '').trim() : '';
+    var panelArc = arcEl ? (arcEl.value || '').trim() : '';
+    var panelPoly = polyEl ? (polyEl.value || '').trim() : '';
+    return _eq(panelForm, item.form || '') && _eq(panelWidth, item.width) && _eq(panelLength, itemLen) && _unchanged(panelFrame, item.frame || '') && _unchanged(panelArc, item.arc_step || '') && _unchanged(panelPoly, item.polycarbonate || '');
 }
 
 /** С панели «Параметры теплицы» в модалке редактирования: фактическая длина и длина для расчёта цены. */
@@ -7792,6 +8016,71 @@ function initEditOrderModal() {
                     return;
                 }
             }
+            var addPanel = document.getElementById('edit-order-add-item-panel');
+            if (addPanel && !addPanel.classList.contains('hidden') && editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length === 1) {
+                var item = editOrderComposition[editOrderEditingIndex];
+                var useLockedSnapshot = item && _editOrderExtrasAssemblyBaseline && isEditOrderGreenhouseIdentityUnchanged(item);
+                if (useLockedSnapshot) {
+                    var merged = mergeExtrasAssemblyWithBaseline(
+                        { extras: item.extras || '', assembly: item.assembly || '' },
+                        _editOrderExtrasAssemblyBaseline.options,
+                        typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
+                        { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
+                    );
+                    var base = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
+                    var total = Math.ceil((base + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
+                    lastModalCalculationResult = {
+                        model: item.model, width: item.width, length: item.length, frame: item.frame, arcStep: item.arc_step, polycarbonate: item.polycarbonate, form: item.form,
+                        item_total: total, base_price: item.base_price, extras: merged.extrasText || '', assembly: merged.assemblyText || '',
+                        height: item.height, snowLoad: item.snowLoad, horizontalTies: item.horizontalTies, equipment: item.equipment
+                    };
+                } else {
+                    var runResult = runEditOrderAddPanelCalculation();
+                    if (runResult === null) {
+                        var hasValidLegacyItem = item && (item.frame || item.polycarbonate || item.base_price != null) && _editOrderExtrasAssemblyBaseline;
+                        if (hasValidLegacyItem) {
+                            var mergedFallback = mergeExtrasAssemblyWithBaseline(
+                                { extras: item.extras || '', assembly: item.assembly || '' },
+                                _editOrderExtrasAssemblyBaseline.options,
+                                typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
+                                { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
+                            );
+                            var baseFb = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
+                            var totalFb = Math.ceil((baseFb + (mergedFallback.extrasCost || 0) + (mergedFallback.assemblyCost || 0)) / 10) * 10;
+                            lastModalCalculationResult = {
+                                model: item.model, width: item.width, length: item.length, frame: item.frame, arcStep: item.arc_step, polycarbonate: item.polycarbonate, form: item.form,
+                                item_total: totalFb, base_price: item.base_price, extras: mergedFallback.extrasText || '', assembly: mergedFallback.assemblyText || '',
+                                height: item.height, snowLoad: item.snowLoad, horizontalTies: item.horizontalTies, equipment: item.equipment
+                            };
+                        } else {
+                            if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
+                            return;
+                        }
+                    } else {
+                        await runResult;
+                        if (!lastModalCalculationResult) return;
+                    }
+                }
+                _editOrderCompositionTouchedByUser = true;
+                if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
+                    editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                    _editOrderDeliveryCostPreview = null;
+                } else if (_editOrderDeliveryCostPreview != null) {
+                    _editOrderDeliveryCostPreview = null;
+                }
+                editOrderComposition[editOrderEditingIndex] = {
+                    model: lastModalCalculationResult.model, width: lastModalCalculationResult.width, length: lastModalCalculationResult.length,
+                    frame: lastModalCalculationResult.frame, arc_step: lastModalCalculationResult.arcStep, polycarbonate: lastModalCalculationResult.polycarbonate,
+                    item_total: lastModalCalculationResult.item_total, base_price: lastModalCalculationResult.base_price, form: lastModalCalculationResult.form,
+                    city: (typeof getEditOrderAddCity === 'function') ? getEditOrderAddCity() : (item.city || ''),
+                    extras: lastModalCalculationResult.extras || '', assembly: lastModalCalculationResult.assembly || '',
+                    options: typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : undefined,
+                    height: lastModalCalculationResult.height, snowLoad: lastModalCalculationResult.snowLoad, horizontalTies: lastModalCalculationResult.horizontalTies, equipment: lastModalCalculationResult.equipment
+                };
+                closeEditOrderAddPanel();
+                lastModalCalculationResult = null;
+                if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
+            }
             // Перезаписывать позицию из lastModalCalculationResult только если менеджер явно нажал «Сохранить позицию».
             // Иначе legacy composition не трогаем — phantom diff fix (canonical из расчёта не перезаписывает untouched legacy).
             if (_editOrderPositionExplicitlySaved && lastModalCalculationResult && editOrderEditingIndex != null &&
@@ -8046,6 +8335,20 @@ function initEditOrderModal() {
                     itemTotal = basePrice + (data.assemblyCost || 0) + (data.foundationCost || 0) + (data.additionalProductsCost || 0);
                     itemTotal = Math.ceil(itemTotal / 10) * 10;
                 }
+                if (idMatch && _editOrderExtrasAssemblyBaseline && typeof mergeExtrasAssemblyWithBaseline === 'function' && typeof getEditOrderAddPanelOptionsForStorage === 'function') {
+                    var merged = mergeExtrasAssemblyWithBaseline(_editOrderExtrasAssemblyBaseline, _editOrderExtrasAssemblyBaseline.options, getEditOrderAddPanelOptionsForStorage(), {
+                        foundationText: [(data.foundationText || '')].join(''),
+                        assemblyText: [(data.assemblyText || ''), (data.bedsAssemblyText || '')].filter(Boolean).join('\n'),
+                        bedsAssemblyText: data.bedsAssemblyText || '',
+                        additionalProductsText: data.additionalProductsText || '',
+                        additionalProductsCost: data.additionalProductsCost || 0
+                    });
+                    extrasText = merged.extrasText || extrasText;
+                    assemblyText = merged.assemblyText || assemblyText;
+                    var effBase = basePrice != null ? basePrice : (data.basePrice != null ? Number(data.basePrice) : 0);
+                    itemTotal = Math.ceil((effBase + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
+                    data = Object.assign({}, data, { foundationText: extrasText, assemblyText: assemblyText, additionalProductsText: '', bedsAssemblyText: '' });
+                }
             }
             lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText, height: data.height, snowLoad: data.snowLoad, horizontalTies: data.horizontalTies, equipment: data.equipment };
             if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(itemTotal) : itemTotal) + ' ₽';
@@ -8149,8 +8452,42 @@ function initEditOrderModal() {
         });
     }
     if (savePosBtn) {
-        savePosBtn.addEventListener('click', function () {
-            if (editOrderEditingIndex == null || !lastModalCalculationResult) return;
+        savePosBtn.addEventListener('click', async function () {
+            if (editOrderEditingIndex == null) return;
+            var item = editOrderComposition[editOrderEditingIndex];
+            var useLockedSnapshot = editOrderComposition.length === 1 && item && _editOrderExtrasAssemblyBaseline && isEditOrderGreenhouseIdentityUnchanged(item);
+            if (useLockedSnapshot) {
+                var merged = mergeExtrasAssemblyWithBaseline(
+                    { extras: item.extras || '', assembly: item.assembly || '' },
+                    _editOrderExtrasAssemblyBaseline.options,
+                    typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
+                    { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
+                );
+                var base = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
+                var total = Math.ceil((base + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
+                lastModalCalculationResult = {
+                    model: item.model,
+                    width: item.width,
+                    length: item.length,
+                    frame: item.frame,
+                    arcStep: item.arc_step,
+                    polycarbonate: item.polycarbonate,
+                    form: item.form,
+                    item_total: total,
+                    base_price: item.base_price,
+                    extras: merged.extrasText || '',
+                    assembly: merged.assemblyText || '',
+                    height: item.height,
+                    snowLoad: item.snowLoad,
+                    horizontalTies: item.horizontalTies,
+                    equipment: item.equipment
+                };
+            } else {
+                var runResult = runEditOrderAddPanelCalculation();
+                if (runResult === null) return;
+                await runResult;
+                if (!lastModalCalculationResult) return;
+            }
             _editOrderCompositionTouchedByUser = true;
             if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
                 editOrderDeliveryCost = _editOrderDeliveryCostPreview;
