@@ -866,6 +866,8 @@ let _editOrderDeliveryCostAtPanelOpen = null;
 let _editOrderExtrasAssemblyBaseline = null;
 /** Safe mode: false = existing single-item locked (catalog path не использовать); true = разрешить catalog; null = add/multi. */
 let _editOrderGreenhouseEditMode = null;
+/** Snapshot item при входе в greenhouse edit mode (для «← Назад»). */
+let _editOrderGreenhouseEditModeUnlockSnapshot = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -7137,8 +7139,20 @@ function openEditOrderAddPanel(index) {
                 setEditOrderSelectValue('edit-order-add-polycarbonate', item.polycarbonate || '');
                 if (catalogHint) {
                     if (_editOrderGreenhouseEditMode === false) {
-                        catalogHint.textContent = 'Теплица зафиксирована в старом заказе. Можно менять только допы, сборку, дату и адрес.';
-                        catalogHint.classList.remove('hidden');
+                        var _title = greenhouseTitle_(item.model, item.width, item.length);
+                        var _price = (item.base_price != null && !isNaN(Number(item.base_price))) ? Number(item.base_price) : (item.item_total || 0);
+                        var _fmt = typeof formatPrice === 'function' ? formatPrice : function (n) { return n; };
+                        var _titleEl = document.getElementById('edit-order-add-locked-title');
+                        var _priceEl = document.getElementById('edit-order-add-locked-price');
+                        if (_titleEl) _titleEl.textContent = _title;
+                        if (_priceEl) _priceEl.textContent = _fmt(_price) + ' ₽';
+                        var _summary = document.getElementById('edit-order-add-locked-summary');
+                        if (_summary) _summary.classList.remove('hidden');
+                        catalogHint.classList.add('hidden');
+                        var _grid = panel ? panel.querySelector('.edit-order-add-params-grid') : null;
+                        if (_grid) _grid.style.display = 'none';
+                        var _ubar = document.getElementById('edit-order-add-unlock-bar');
+                        if (_ubar) { _ubar.classList.add('hidden'); }
                     } else if (catalogHintShown) {
                         catalogHint.textContent = 'Данные не подходят под текущий каталог. Показаны сохранённые значения.';
                         catalogHint.classList.remove('hidden');
@@ -7147,7 +7161,14 @@ function openEditOrderAddPanel(index) {
                         catalogHint.classList.add('hidden');
                     }
                 }
-                if (_editOrderGreenhouseEditMode === false) setEditOrderGreenhouseControlsDisabled(true);
+                if (_editOrderGreenhouseEditMode === false) {
+                    setEditOrderGreenhouseControlsDisabled(true);
+                    var _ubar2 = document.getElementById('edit-order-add-unlock-bar');
+                    if (_ubar2) _ubar2.classList.add('hidden');
+                } else {
+                    var _sum2 = document.getElementById('edit-order-add-locked-summary');
+                    if (_sum2) _sum2.classList.add('hidden');
+                }
                 var derived = (item.extras || item.assembly) ? deriveOptionsFromExtrasAssembly(item.extras, item.assembly) : null;
                 var opts = item.options && typeof item.options === 'object' && Object.keys(item.options).length > 0 ? item.options : null;
                 var merged = {
@@ -7197,9 +7218,19 @@ function openEditOrderAddPanel(index) {
 function closeEditOrderAddPanel() {
     editOrderEditingIndex = null;
     _editOrderGreenhouseEditMode = null;
+    _editOrderGreenhouseEditModeUnlockSnapshot = null;
     setEditOrderGreenhouseControlsDisabled(false);
     var ch = document.getElementById('edit-order-add-catalog-hint');
-    if (ch) { ch.textContent = ''; ch.classList.add('hidden'); }
+    if (ch) { ch.textContent = ''; ch.innerHTML = ''; ch.classList.add('hidden'); }
+    var _summary = document.getElementById('edit-order-add-locked-summary');
+    if (_summary) _summary.classList.add('hidden');
+    var _ubar = document.getElementById('edit-order-add-unlock-bar');
+    if (_ubar) _ubar.classList.add('hidden');
+    var _panel = document.getElementById('edit-order-add-item-panel');
+    if (_panel) {
+        var _grid = _panel.querySelector('.edit-order-add-params-grid');
+        if (_grid) _grid.style.display = '';
+    }
     _editOrderPositionExplicitlySaved = false;
     _editOrderDeliveryCostPreview = null;
     _editOrderDeliveryCostAtPanelOpen = null;
@@ -8529,6 +8560,60 @@ function initEditOrderModal() {
     }
     var cancelAddBtn = document.getElementById('edit-order-add-cancel-btn');
     if (cancelAddBtn) cancelAddBtn.addEventListener('click', closeEditOrderAddPanel);
+    var unlockBtn = document.getElementById('edit-order-add-unlock-btn');
+    if (unlockBtn) unlockBtn.addEventListener('click', function () {
+        if (editOrderEditingIndex == null || editOrderComposition.length !== 1) return;
+        var item = editOrderComposition[editOrderEditingIndex];
+        if (!item) return;
+        _editOrderGreenhouseEditModeUnlockSnapshot = (function () { var o = {}; for (var k in item) if (Object.prototype.hasOwnProperty.call(item, k)) o[k] = item[k]; return o; })();
+        _editOrderGreenhouseEditMode = true;
+        setEditOrderGreenhouseControlsDisabled(false);
+        var _sum = document.getElementById('edit-order-add-locked-summary');
+        if (_sum) _sum.classList.add('hidden');
+        var grid = document.getElementById('edit-order-add-item-panel');
+        if (grid) grid = grid.querySelector('.edit-order-add-params-grid');
+        if (grid) grid.style.display = '';
+        var ub = document.getElementById('edit-order-add-unlock-bar');
+        if (ub) ub.classList.remove('hidden');
+        clearEditOrderAddPanelCalculation();
+    });
+    var backBtn = document.getElementById('edit-order-add-back-btn');
+    if (backBtn) backBtn.addEventListener('click', function () {
+        if (editOrderEditingIndex == null || !_editOrderGreenhouseEditModeUnlockSnapshot) return;
+        _editOrderGreenhouseEditMode = false;
+        editOrderComposition[editOrderEditingIndex] = _editOrderGreenhouseEditModeUnlockSnapshot;
+        var item = editOrderComposition[editOrderEditingIndex];
+        _editOrderGreenhouseEditModeUnlockSnapshot = null;
+        var derived = (item.extras || item.assembly) ? deriveOptionsFromExtrasAssembly(item.extras, item.assembly) : null;
+        var opts = item.options && typeof item.options === 'object' && Object.keys(item.options).length > 0 ? item.options : null;
+        var merged = {
+            bracing: (derived && derived.bracing) || (opts && opts.bracing) || false,
+            assembly: (derived && derived.assembly) || (opts && opts.assembly) || false,
+            groundHooks: (derived && derived.groundHooks) || (opts && opts.groundHooks) || false,
+            onWood: (derived && derived.onWood) || (opts && opts.onWood) || false,
+            onConcrete: (derived && derived.onConcrete) || (opts && opts.onConcrete) || false,
+            additionalProducts: (opts && opts.additionalProducts && opts.additionalProducts.length) ? opts.additionalProducts : (derived && derived.additionalProducts) || []
+        };
+        setEditOrderAddPanelOptions(merged);
+        setEditOrderGreenhouseControlsDisabled(true);
+        var _t = greenhouseTitle_(item.model, item.width, item.length);
+        var _p = (item.base_price != null && !isNaN(Number(item.base_price))) ? Number(item.base_price) : (item.item_total || 0);
+        var _f = typeof formatPrice === 'function' ? formatPrice : function (n) { return n; };
+        var _titleEl = document.getElementById('edit-order-add-locked-title');
+        var _priceEl = document.getElementById('edit-order-add-locked-price');
+        var _sum = document.getElementById('edit-order-add-locked-summary');
+        if (_titleEl) _titleEl.textContent = _t;
+        if (_priceEl) _priceEl.textContent = _f(_p) + ' ₽';
+        if (_sum) _sum.classList.remove('hidden');
+        var panel = document.getElementById('edit-order-add-item-panel');
+        if (panel) {
+            var grid = panel.querySelector('.edit-order-add-params-grid');
+            if (grid) grid.style.display = 'none';
+        }
+        var ub = document.getElementById('edit-order-add-unlock-bar');
+        if (ub) ub.classList.add('hidden');
+        if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
+    });
 
     var searchBtn = document.getElementById('edit-order-search-btn');
     var phoneInput = document.getElementById('edit-order-phone');

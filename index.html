@@ -190,6 +190,20 @@
               <div id="edit-order-add-item-panel" class="edit-order-add-item-panel hidden">
                 <div class="edit-order-add-item-panel__title">Параметры теплицы</div>
                 <p id="edit-order-add-catalog-hint" class="edit-order-add-catalog-hint hidden" aria-live="polite"></p>
+                <div id="edit-order-add-locked-summary" class="edit-order-add-locked-summary hidden">
+                  <div class="edit-order-add-locked-header">
+                    <span id="edit-order-add-locked-title" class="edit-order-add-locked-title"></span>
+                    <span id="edit-order-add-locked-price" class="edit-order-add-locked-price"></span>
+                  </div>
+                  <div class="edit-order-add-locked-row">
+                    <span class="edit-order-add-locked-status">🔒 Цена зафиксирована</span>
+                    <button type="button" id="edit-order-add-unlock-btn" class="edit-order-add-unlock-btn">Изменить теплицу</button>
+                  </div>
+                </div>
+                <div id="edit-order-add-unlock-bar" class="edit-order-add-unlock-bar hidden">
+                  <button type="button" id="edit-order-add-back-btn" class="edit-order-btn-secondary">← Назад</button>
+                  <span class="edit-order-add-unlock-hint">Новая цена будет рассчитана автоматически</span>
+                </div>
                 <div class="edit-order-add-params-grid">
                   <div class="edit-order-add-item-row">
                     <label for="edit-order-add-form">Модель (форма)</label>
