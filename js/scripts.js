@@ -8037,6 +8037,16 @@ function initEditOrderModal() {
             var extrasText = [(data.foundationText || ''), (data.additionalProductsText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
             var assemblyText = [(data.assemblyText || ''), (data.bedsAssemblyText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
             var basePrice = data.basePrice != null && !isNaN(Number(data.basePrice)) ? Number(data.basePrice) : undefined;
+            if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length === 1) {
+                var orig = editOrderComposition[editOrderEditingIndex];
+                var _eq = function (a, b) { if (a == null && b == null) return true; if (typeof a === 'number' && typeof b === 'number') return Math.abs((a || 0) - (b || 0)) < 0.01; return String(a || '').trim() === String(b || '').trim(); };
+                var idMatch = _eq(orig.model, data.model) && _eq(orig.form, data.form) && _eq(orig.width, data.width) && _eq(orig.length, data.length) && _eq(orig.frame, data.frame) && _eq(orig.arc_step, data.arcStep) && _eq(orig.polycarbonate, data.polycarbonate);
+                if (idMatch && orig.base_price != null && !isNaN(Number(orig.base_price))) {
+                    basePrice = Number(orig.base_price);
+                    itemTotal = basePrice + (data.assemblyCost || 0) + (data.foundationCost || 0) + (data.additionalProductsCost || 0);
+                    itemTotal = Math.ceil(itemTotal / 10) * 10;
+                }
+            }
             lastModalCalculationResult = { model: data.model, width: data.width, length: data.length, frame: data.frame, arcStep: data.arcStep, polycarbonate: data.polycarbonate, form: data.form, item_total: itemTotal, base_price: basePrice, extras: extrasText, assembly: assemblyText, height: data.height, snowLoad: data.snowLoad, horizontalTies: data.horizontalTies, equipment: data.equipment };
             if (priceEl) priceEl.textContent = (typeof formatPrice === 'function' ? formatPrice(itemTotal) : itemTotal) + ' ₽';
             renderEditOrderAddBreakdown(data);
