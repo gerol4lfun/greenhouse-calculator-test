@@ -83,6 +83,7 @@
 - **line_items = null для single-item:** не blocker; future topic.
 - **line_items_v2 (23.03.2026):** structured price snapshot для create path. Каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed привязаны к теплице через parent_line_id. Delivery — одна общая строка без parent. Legacy flat-поля без изменений. Edit path не трогаем.
 - **legacy line_items (23.03.2026):** для multi-item create (в т.ч. identical) line_items всегда заполняется (orderCart.map), не null. Совместим с downstream.
+- **flat extras/assembly (23.03.2026):** для multi-item строятся по фактическим item-ам; x2 только если доп/сборка у нескольких позиций.
 
 ---
 

@@ -10,6 +10,8 @@
 
 **23.03.2026 legacy fix:** для identical multi-item create order legacy line_items больше не null — всегда заполняется при orderCart.length >= 2 (формат orderCart.map, совместим с downstream).
 
+**23.03.2026 flat extras/assembly fix:** для multi-item create top-level extras и assembly строятся по фактическим item-ам (aggregateLinesFromItems_). x2 только когда доп/сборка есть у нескольких позиций.
+
 **Файлы:** js/scripts.js (buildLineItemsV2FromOrderCart, buildOrderPayloadFromFormAndCart, getOrderCartOptionsSnapshot), telegram_bot_main/supabase_orders.sql.
 
 **Старые поля:** без изменений. Edit path не трогаем.

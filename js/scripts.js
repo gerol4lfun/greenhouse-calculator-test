@@ -15477,10 +15477,6 @@ function buildOrderPayloadFromFormAndCart() {
     var extrasForSheet = '';
     var assemblyForSheet = '';
     var lineItemsJson = null;
-    var isIdenticalCart = orderCart.length >= 2 && orderCart.every(function (item) {
-        var first = orderCart[0];
-        return item.model === first.model && item.width === first.width && item.length === first.length && item.frame === first.frame;
-    });
     if (orderCart.length >= 2) {
         lineItemsJson = JSON.stringify(orderCart.map(function (item) {
             var row = {
@@ -15514,12 +15510,37 @@ function buildOrderPayloadFromFormAndCart() {
             return row;
         }));
     }
-    if (orderCart.length >= 2 && isIdenticalCart) {
-        var qty = orderCart.length;
-        var productLines = lineWithQty(effectiveCalc.foundationText, qty).concat(lineWithQty(effectiveCalc.additionalProductsText, qty));
-        extrasForSheet = productLines.join('; ');
-        var assemblyLines = lineWithQty(effectiveCalc.assemblyText, qty).concat(lineWithQty(effectiveCalc.bedsAssemblyText, qty));
-        assemblyForSheet = assemblyLines.join('; ');
+    if (orderCart.length >= 2) {
+        function aggregateLinesFromItems_(items, getTextBlocks) {
+            var lineToCount = {};
+            for (var i = 0; i < items.length; i++) {
+                var blocks = getTextBlocks(items[i]);
+                var seenInItem = {};
+                for (var bi = 0; bi < blocks.length; bi++) {
+                    var text = (blocks[bi] || '').trim();
+                    if (!text) continue;
+                    text.split(/\n+/).forEach(function (ln) {
+                        ln = ln.trim();
+                        if (!ln || seenInItem[ln]) return;
+                        seenInItem[ln] = true;
+                        lineToCount[ln] = (lineToCount[ln] || 0) + 1;
+                    });
+                }
+            }
+            return lineToCount;
+        }
+        function formatAggregatedLines_(lineToCount) {
+            var out = [];
+            for (var k in lineToCount) {
+                var cnt = lineToCount[k];
+                out = out.concat(cnt > 1 ? lineWithQty(k, cnt) : [k]);
+            }
+            return out.join('; ');
+        }
+        var extrasMap = aggregateLinesFromItems_(orderCart, function (it) { return [(it.foundationText || ''), (it.additionalProductsText || '')]; });
+        var assemblyMap = aggregateLinesFromItems_(orderCart, function (it) { return [(it.assemblyText || ''), (it.bedsAssemblyText || '')]; });
+        extrasForSheet = formatAggregatedLines_(extrasMap);
+        assemblyForSheet = formatAggregatedLines_(assemblyMap);
     } else if (orderCart.length === 1) {
         extrasForSheet = [(effectiveCalc.foundationText || ''), (effectiveCalc.additionalProductsText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
         assemblyForSheet = [(effectiveCalc.assemblyText || ''), (effectiveCalc.bedsAssemblyText || '')].filter(Boolean).map(function (s) { return String(s).replace(/^\n+/, ''); }).join('\n').trim() || '';
