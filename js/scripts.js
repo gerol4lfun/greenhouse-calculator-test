@@ -15115,6 +15115,12 @@ function addToOrderCart() {
     bedsAssemblyEnabled: opts.bedsAssemblyEnabled,
     additionalProducts: opts.additionalProducts
   };
+  // Guard: clear stale text fields if opts say the option is off (can happen if user changes checkboxes without recalculating)
+  if (!opts.bracing && !opts.groundHooks && !opts.onWood && !opts.onConcrete) newItem.foundationText = '';
+  if (!opts.assembly) newItem.assemblyText = '';
+  if (!opts.bedsAssemblyEnabled) newItem.bedsAssemblyText = '';
+  var hasAnyBeds = opts.selectedBeds && typeof opts.selectedBeds === 'object' && Object.keys(opts.selectedBeds).some(function (k) { return opts.selectedBeds[k] > 0; });
+  if ((!opts.additionalProducts || opts.additionalProducts.length === 0) && !hasAnyBeds) newItem.additionalProductsText = '';
   if (orderCartEditingIndex !== null && orderCartEditingIndex >= 0 && orderCartEditingIndex < orderCart.length) {
     orderCart[orderCartEditingIndex] = newItem;
     orderCartEditingIndex = null;

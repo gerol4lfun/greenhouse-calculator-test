@@ -12,6 +12,8 @@
 
 **23.03.2026 flat extras/assembly fix:** для multi-item create top-level extras и assembly строятся по фактическим item-ам (aggregateLinesFromItems_). x2 только когда доп/сборка есть у нескольких позиций.
 
+**23.03.2026 stale text guard:** в addToOrderCart добавлен guard: если opts-флаги (bracing/groundHooks/onWood/onConcrete/assembly/additionalProducts/beds) = false/empty, соответствующие text-поля обнуляются. Исправляет leaked extras в legacy line_items и flat extras при изменении опций без пересчёта.
+
 **Файлы:** js/scripts.js (buildLineItemsV2FromOrderCart, buildOrderPayloadFromFormAndCart, getOrderCartOptionsSnapshot), telegram_bot_main/supabase_orders.sql.
 
 **Старые поля:** без изменений. Edit path не трогаем.
