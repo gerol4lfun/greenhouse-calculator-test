@@ -90,6 +90,7 @@
 
 - **Create path:** новые заказы получают line_items_v2, price_snapshot_at, pricing_snapshot_version, warehouse_city_key. Legacy flat-поля без изменений.
 - **Структура:** каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed с parent_line_id = line_id greenhouse. Delivery — одна строка без parent.
+- **Legacy line_items:** для multi-item (identical и different) всегда заполнен, не null.
 - **SQL:** ALTER TABLE orders ADD COLUMN IF NOT EXISTS для line_items_v2, price_snapshot_at, pricing_snapshot_version (warehouse_city_key может уже быть).
 - **Manual:** проверить create single/identical/different — line_items_v2 заполнен, parent_line_id корректен.
 

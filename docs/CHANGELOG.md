@@ -8,6 +8,8 @@
 
 **23.03.2026 fix:** убрано опасное объединение identical items. Каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed привязаны к greenhouse через parent_line_id. Delivery — одна общая строка.
 
+**23.03.2026 legacy fix:** для identical multi-item create order legacy line_items больше не null — всегда заполняется при orderCart.length >= 2 (формат orderCart.map, совместим с downstream).
+
 **Файлы:** js/scripts.js (buildLineItemsV2FromOrderCart, buildOrderPayloadFromFormAndCart, getOrderCartOptionsSnapshot), telegram_bot_main/supabase_orders.sql.
 
 **Старые поля:** без изменений. Edit path не трогаем.

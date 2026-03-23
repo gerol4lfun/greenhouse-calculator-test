@@ -15481,7 +15481,7 @@ function buildOrderPayloadFromFormAndCart() {
         var first = orderCart[0];
         return item.model === first.model && item.width === first.width && item.length === first.length && item.frame === first.frame;
     });
-    if (orderCart.length >= 2 && !isIdenticalCart) {
+    if (orderCart.length >= 2) {
         lineItemsJson = JSON.stringify(orderCart.map(function (item) {
             var row = {
                 model: item.model,
