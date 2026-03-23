@@ -79,8 +79,23 @@
 
 ---
 
+## Completed (2026-03-22)
+
+| # | Что | Статус |
+|---|-----|--------|
+| 13 | **Safe mode for legacy single-item** | В main: f6a1f47, bced390, d54e24d. locked snapshot path; current catalog не обязателен для default save. |
+| 14 | **Summary-card UI** | Вместо legacy greenhouse form — summary-card с названием, размером, ценой, статусом «🔒 Цена зафиксирована», CTA «Изменить теплицу». |
+
+## line_items_v2 rollout (23.03.2026)
+
+- **Create path:** новые заказы получают line_items_v2, price_snapshot_at, pricing_snapshot_version, warehouse_city_key. Legacy flat-поля без изменений.
+- **Структура:** каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed с parent_line_id = line_id greenhouse. Delivery — одна строка без parent.
+- **SQL:** ALTER TABLE orders ADD COLUMN IF NOT EXISTS для line_items_v2, price_snapshot_at, pricing_snapshot_version (warehouse_city_key может уже быть).
+- **Manual:** проверить create single/identical/different — line_items_v2 заполнен, parent_line_id корректен.
+
 ## Open issues / suspected issues
 
+- **Full «Изменить теплицу» unlock-flow (22.03.2026) — open next step:** отдельный и полностью проверенный unlock/catalog path для кнопки «Изменить теплицу» — не считать fully closed; не было отдельной полной ручной проверки. Не смешивать с multi-item / x2.
 - **Date mismatch 28→27 (15.03.2026) — under doubt:** кейс «перенести на 28 марта» → в «Заказ изменён» фигурировала 27.03. Аудит выявил потенциально опасное место: syncEditOrderCalendarSlotsWithMode при «недоступной» дате для режима сборки заменяет выбранную дату на getNearestAvailableDate. Живой воспроизводимый кейс не подтверждён → code fix не вносился.
 - **Phone scope:** dual-phone UI и search реализованы и приняты. См. TRUTH_MAP.md «Phone scope» и CHANGELOG «Dual-phone UI + untouched legacy (doc-only)».
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.

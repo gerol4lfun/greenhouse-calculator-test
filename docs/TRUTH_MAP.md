@@ -47,6 +47,44 @@
 
 ---
 
+## Update 2026-03-22 — Existing single-item locked greenhouse (safe mode)
+
+### Current source of truth (2026-03-22)
+
+- **Legacy single-item:** safe mode / locked snapshot path.
+- **Main save path:** current catalog не обязателен для default existing single-item save — если теплицу не меняли.
+- **New order flow:** untouched.
+
+### Commits in main (2026-03-22)
+
+- **d54e24d:** fix(edit): preserve locked base_price on assembly-only edit.
+- **bced390:** fix(edit): safe mode for legacy single-item orders.
+- **f6a1f47:** feat(edit): safe mode for legacy single-item orders.
+
+### Manual verification evidence
+
+- **Order 5f9a1c7b-b6fd-463e-a326-e313223835d4:** model ТЕПЛИЦА ЦАРСКАЯ ЛЮКС 3М ПРЯМОСТЕННАЯ; extras Грунтозацепы 14 шт; assembly Сборка и установка; delivery_cost 1000; total before 62470.
+- Safe mode summary-card отображается; legacy greenhouse fields больше не торчат как основная форма.
+- Добавлен доп «форточка сверху» → total 63960.
+- Старые допы/сборка визуально сохранились.
+- **Status:** manual verification evidence; automation unreliable / blocked — решающие проверки делались вручную.
+
+### Product direction (согласованная логика)
+
+- Existing single-item по умолчанию — locked snapshot.
+- Если теплицу не меняли: current catalog не обязателен; можно менять extras/assembly/foundation/delivery/address/comment; no-change и extras-only save должны работать.
+- Только при изменении greenhouse identity — catalog path и новая цена.
+- New order flow не трогать.
+
+### Open / not fully proven
+
+- **Full «Изменить теплицу» unlock/catalog flow:** не считать fully closed; не было отдельной полной ручной проверки.
+- **multi-item / x2:** вне scope.
+- **line_items = null для single-item:** не blocker; future topic.
+- **line_items_v2 (23.03.2026):** structured price snapshot для create path. Каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed привязаны к теплице через parent_line_id. Delivery — одна общая строка без parent. Legacy flat-поля без изменений. Edit path не трогаем.
+
+---
+
 ## Документация (источники истины)
 
 | Файл | За что отвечает | Когда смотреть |
@@ -56,6 +94,7 @@
 | **docs/GIFT_TRUTH.md** | Бизнес-истина подарков (slot model) | Любые изменения в логике подарков |
 | **docs/AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md** | Phantom delivery probe: not reproduced in checked calculator-side scenarios | Phantom +1000, delivery payload |
 | **docs/AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md** | INC-002 gift audit: gift does not explain +1000 in calculator code path | Gift, +1000, INC-002 |
+| **docs/EOD_2026-03-22_CALC.md** | EOD 22.03: safe mode closed, commits, manual verify, open unlock-flow | Locked greenhouse, 5f9a1c7b, next step |
 | **docs/PREPROD_PLAN.md** | План до прода (красное/жёлтое/зелёное) | Перед релизом |
 | **docs/SMOKE_CHECKLIST.md** | Ручной чек-лист перед выкладкой | Перед релизом |
 | **docs/LEGACY_MAP.md** | Что устарело, что legacy | При сомнениях в FAQ/версиях |

@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v271"; // v271: auth RPC (authenticate_user, validate_session), админка временно отключена
+const APP_VERSION = "v273"; // v273: line_items_v2 parent_line_id, no identical-merge
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -15059,7 +15059,10 @@ function getOrderCartOptionsSnapshot() {
       var nameEl = select.parentElement ? select.parentElement.querySelector('.product-name') : null;
       var name_ = nameEl ? nameEl.textContent.trim() : '';
       if (name_.toLowerCase().indexOf('перегородка') !== -1) continue;
-      additionalProducts.push({ name: name_, quantity: quantity });
+      var price = parseFloat(select.getAttribute('data-price')) || 0;
+      var cost = price * quantity;
+      var id_ = (select.id || '').replace(/-qty$/, '');
+      additionalProducts.push({ id: id_ || null, name: name_, quantity: quantity, cost: cost });
     }
   }
   return {
@@ -15341,6 +15344,90 @@ function updateOrderTotalDisplay_() {
 }
 
 /**
+ * Строит line_items_v2 (structured price snapshot) для create path.
+ * Только для новых заказов. Edit path не трогает.
+ * @param {Array} cart - orderCart
+ * @param {number} deliveryAmount - сумма доставки (с первой позиции)
+ * @returns {Array} массив объектов { line_id, kind, display_name, quantity, unit_price_locked, line_total_locked, pricing_source, sku_or_code, parent_line_id, config, meta }
+ */
+function buildLineItemsV2FromOrderCart(cart, deliveryAmount) {
+    if (!cart || cart.length === 0) return [];
+    var lines = [];
+    var lineIdx = 0;
+    var deliveryAmountNum = deliveryAmount != null ? Number(deliveryAmount) : 0;
+    if (isNaN(deliveryAmountNum)) deliveryAmountNum = 0;
+
+    function addLine(kind, displayName, quantity, unitPrice, lineTotal, pricingSource, sku, config, meta, parentLineId) {
+        lineIdx++;
+        var lid = kind + '-' + lineIdx;
+        var line = {
+            line_id: lid,
+            kind: kind,
+            display_name: displayName,
+            quantity: quantity,
+            unit_price_locked: unitPrice != null ? Number(unitPrice) : null,
+            line_total_locked: lineTotal != null ? Number(lineTotal) : null,
+            pricing_source: pricingSource || 'fixed',
+            sku_or_code: sku || null,
+            parent_line_id: parentLineId || null,
+            config: config || null,
+            meta: meta || null
+        };
+        if (line.config && Object.keys(line.config).length === 0) line.config = null;
+        if (line.meta && Object.keys(line.meta).length === 0) line.meta = null;
+        lines.push(line);
+        return lid;
+    }
+
+    for (var idx = 0; idx < cart.length; idx++) {
+        var item = cart[idx];
+        var ghUnit = item.basePrice != null ? Number(item.basePrice) : 0;
+        var ghLineId = addLine('greenhouse', (item.model || 'Теплица') + ' ' + (item.width || '') + 'x' + (item.length || ''), 1, ghUnit, ghUnit, 'catalog', null, { model: item.model, width: item.width, length: item.length, frame: item.frame, polycarbonate: item.polycarbonate, form: item.form }, null, null);
+
+        var ilen = item.length != null ? Number(item.length) : 0;
+        if (item.bracing && additionalServicesData['Брус'] && additionalServicesData['Брус'].price_by_length) {
+            var ibPrice = additionalServicesData['Брус'].price_by_length[ilen];
+            if (ibPrice != null) addLine('addon', 'Основание из бруса', 1, ibPrice, ibPrice, 'fixed', 'bracing', null, null, ghLineId);
+        }
+        if (item.groundHooks && additionalServicesData['Штыри']) {
+            var iqd = item.bracing ? (additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['with_bracing']) : (additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['without_bracing']);
+            var istakesQty = iqd && ilen ? (iqd[String(ilen)] || iqd[ilen]) : 0;
+            var istakesPrice = (additionalServicesData['Штыри'].price_per_unit || 0) * (istakesQty || 0);
+            if (istakesQty > 0) addLine('addon', 'Грунтозацепы ' + istakesQty + ' шт', 1, istakesPrice, istakesPrice, 'calculated', 'ground_hooks', null, null, ghLineId);
+        }
+        if (item.onWood) addLine('addon', 'Монтаж на брус клиента', 1, 1500, 1500, 'fixed', 'on_wood', null, null, ghLineId);
+        if (item.onConcrete) addLine('addon', 'Монтаж на бетон клиента', 1, 2000, 2000, 'fixed', 'on_concrete', null, null, ghLineId);
+        if (item.assembly && item.form && item.width && item.length && typeof getAssemblyCategory === 'function' && typeof calculateAssemblyCost === 'function') {
+            var iac = getAssemblyCategory(item.form, item.width);
+            var iaPrice = calculateAssemblyCost(item.form, iac, ilen);
+            if (iaPrice > 0) addLine('service', 'Сборка и установка', 1, iaPrice, iaPrice, 'fixed', null, null, null, ghLineId);
+        }
+        var iap = item.additionalProducts || [];
+        for (var j = 0; j < iap.length; j++) {
+            var p2 = iap[j];
+            var p2q = p2.quantity || 1;
+            var p2cost = p2.cost != null ? Number(p2.cost) : 0;
+            if (p2q > 0) addLine('addon', p2.name || 'Доп. товар', p2q, p2cost > 0 ? p2cost / p2q : null, p2cost, 'fixed', p2.id || null, null, null, ghLineId);
+        }
+        var isbs = item.selectedBeds && typeof item.selectedBeds === 'object' ? item.selectedBeds : {};
+        if (typeof BEDS_DATA !== 'undefined') {
+            for (var bid2 in isbs) {
+                if (!isbs[bid2] || isbs[bid2] <= 0) continue;
+                var b2 = BEDS_DATA.find(function (x) { return x.id === bid2; });
+                if (b2 && b2.price > 0) addLine('bed', b2.name || 'Грядка', isbs[bid2], b2.price, b2.price * isbs[bid2], 'fixed', b2.id || null, null, { length: b2.length, width: b2.width, height: b2.height }, ghLineId);
+            }
+        }
+        if (item.bedsAssemblyEnabled && typeof calculateBedsAssemblyCost === 'function' && Object.keys(isbs).length > 0) {
+            var ibac = calculateBedsAssemblyCost(isbs);
+            if (ibac > 0) addLine('service', 'Сборка грядок', 1, ibac, ibac, 'fixed', null, null, null, ghLineId);
+        }
+    }
+
+    if (deliveryAmountNum > 0) addLine('delivery', 'Доставка', 1, deliveryAmountNum, deliveryAmountNum, 'calculated', null, null, null, null);
+    return lines;
+}
+
+/**
  * Собирает объект заказа для Supabase из текущей формы и корзины.
  * Используется и при создании (insert), и при обновлении (update) заказа.
  * @returns {Object} orderData — поля для orders (без id, created_at)
@@ -15469,6 +15556,18 @@ function buildOrderPayloadFromFormAndCart() {
         commercial_offer: commercialOffer
     };
     if (lineItemsJson) orderData.line_items = lineItemsJson;
+
+    // line_items_v2 — structured price snapshot для новых заказов (create only, edit path не трогаем)
+    var deliveryAmt = (effectiveCalc && effectiveCalc.deliveryPrice != null) ? effectiveCalc.deliveryPrice : 0;
+    var lineItemsV2 = buildLineItemsV2FromOrderCart(orderCart, deliveryAmt);
+    if (lineItemsV2 && lineItemsV2.length > 0) {
+        orderData.line_items_v2 = lineItemsV2;
+        orderData.price_snapshot_at = new Date().toISOString();
+        orderData.pricing_snapshot_version = '1.0';
+    }
+    var whKey = (typeof resolveCreateWarehouseCityKey_ === 'function') ? (resolveCreateWarehouseCityKey_() || '') : '';
+    if (whKey) orderData.warehouse_city_key = whKey;
+
     return orderData;
 }
 

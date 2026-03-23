@@ -1,5 +1,19 @@
 # История изменений проекта
 
+## line_items_v2 — structured price snapshot для create (23.03.2026)
+
+**Добавлено:** при create нового заказа записывается line_items_v2 (jsonb), price_snapshot_at, pricing_snapshot_version, warehouse_city_key.
+
+**Покрытие:** single-item, identical multi, different multi, beds, foundation (брус, штыри, монтаж), assembly, delivery, additional products. Подарки остаются в legacy gift.
+
+**23.03.2026 fix:** убрано опасное объединение identical items. Каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed привязаны к greenhouse через parent_line_id. Delivery — одна общая строка.
+
+**Файлы:** js/scripts.js (buildLineItemsV2FromOrderCart, buildOrderPayloadFromFormAndCart, getOrderCartOptionsSnapshot), telegram_bot_main/supabase_orders.sql.
+
+**Старые поля:** без изменений. Edit path не трогаем.
+
+---
+
 ## city = "7" bug — closeout (18.03.2026)
 
 **A. Fixed:** create flow city source fixed; city больше не сохраняется как numeric-only ("7") при create; edit flow safeguard для line_items[].city.
