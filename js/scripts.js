@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v281"; // v281: native edit PATCH always syncs line_items_v2 + delivery row to payload delivery_cost
+const APP_VERSION = "v282"; // v282: mergeLineItemsV2 — fallback when snapshot has fewer GH rows than matched atOpen row (stale v2)
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -6426,7 +6426,14 @@ function mergeLineItemsV2ForNativeEditPatch_() {
         var matchedK = findFirstUnusedNativeAtOpenMatch_(atOpen, usedAtOpen, cur);
         if (matchedK >= 0) {
             usedAtOpen[matchedK] = true;
-            parts = parts.concat(getGreenhouseSubtreeFromSnapshot_(snap, matchedK));
+            // getGreenhouseSubtreeFromSnapshot_ indexes the Nth greenhouse *in the DB snapshot* (ghs[matchedK]).
+            // matchedK is an atOpen row index; when line_items has more greenhouse rows than line_items_v2 (stale v2),
+            // ghs.length < matchedK + 1 → [] — must rebuild that row from current composition or PATCH keeps stale v2.
+            var sub = getGreenhouseSubtreeFromSnapshot_(snap, matchedK);
+            if (!sub || sub.length === 0) {
+                sub = buildLineItemsV2FromOrderCart([editCompositionToOrderCartItem_(cur)], 0);
+            }
+            parts = parts.concat(sub);
         } else {
             parts = parts.concat(buildLineItemsV2FromOrderCart([editCompositionToOrderCartItem_(cur)], 0));
         }
