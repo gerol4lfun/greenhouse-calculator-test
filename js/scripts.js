@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v282"; // v282: mergeLineItemsV2 — fallback when snapshot has fewer GH rows than matched atOpen row (stale v2)
+const APP_VERSION = "v283"; // v283: multi-line native PATCH — full cart line_items_v2 (unique GH line_ids); merge concat duplicated greenhouse-1
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -6413,6 +6413,12 @@ function shouldUpdateDeliveryLineInV2Merge_() {
  * удалённые позиции не попадают в payload; fallback — только без снимка/atOpen или пустой состав.
  */
 function mergeLineItemsV2ForNativeEditPatch_() {
+    // Per-row merge used buildLineItemsV2FromOrderCart([one item], 0) — each call resets internal lineIdx to 0,
+    // so every greenhouse row got line_id "greenhouse-1". line_items (JSON from composition) still had 2 rows.
+    // DB / consumers then saw one GH in line_items_v2 vs two in line_items. Full-cart build assigns greenhouse-1…n once.
+    if (editOrderComposition && editOrderComposition.length >= 2) {
+        return buildLineItemsV2FromNativeEditComposition_();
+    }
     var snap = _editOrderNativeLineItemsV2Snapshot;
     var atOpen = _editOrderCompositionAtOpen;
     if (!snap || !Array.isArray(snap) || snap.length === 0) return buildLineItemsV2FromNativeEditComposition_();
