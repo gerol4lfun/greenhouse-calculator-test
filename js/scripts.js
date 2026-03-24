@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v273"; // v273: line_items_v2 parent_line_id, no identical-merge
+const APP_VERSION = "v281"; // v281: native edit PATCH always syncs line_items_v2 + delivery row to payload delivery_cost
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -858,6 +858,8 @@ let _editOrderGiftTierAtOpen = 0;
 let _editOrderLoadedCityRaw = null;
 /** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
 let _editOrderLoadedWarehouseCityKey = null;
+/** Raw orders.line_items (JSON string) при загрузке itemized заказа; для preserve при save без изменения состава. null = flat legacy или не загружено. */
+let _editOrderOriginalLineItemsJson = null;
 /** Preview доставки из runEditOrderAddPanelCalculation. Применяется в payload только при «Сохранить позицию»/«Добавить в заказ». */
 let _editOrderDeliveryCostPreview = null;
 /** Committed delivery cost на момент открытия панели. Используется в payload при save без «Сохранить позицию» (phantom fix). */
@@ -868,6 +870,16 @@ let _editOrderExtrasAssemblyBaseline = null;
 let _editOrderGreenhouseEditMode = null;
 /** Snapshot item при входе в greenhouse edit mode (для «← Назад»). */
 let _editOrderGreenhouseEditModeUnlockSnapshot = null;
+/** true если заказ загружен через hydrateEditOrderCompositionFromLineItemsV2_ (line_items=null + v2). Для stop-loss save. */
+let _editOrderHybridLineItemsV2Hydrated = false;
+/** Копия orders.line_items_v2 при открытии (native). null = legacy / без снимка. */
+let _editOrderNativeLineItemsV2Snapshot = null;
+/** Legacy: нет непустого line_items_v2 — состав в калькуляторе не редактируем (только дата и метаданные). */
+let _editOrderLegacyCompositionLocked = false;
+/** Снимок editOrderComposition после fillEditOrderForm (для merge line_items_v2 при PATCH). */
+let _editOrderCompositionAtOpen = null;
+/** delivery_cost при открытии заказа (число). */
+let _editOrderOriginalDeliveryCost = null;
 
 function editOrderCompositionClone() {
     return editOrderComposition.map(function (item) {
@@ -6253,6 +6265,309 @@ function showEditOrderStep(step) {
     }
 }
 
+/** Распарсить orders.line_items_v2 в массив строк или null. */
+function parseLineItemsV2Array_(order) {
+    if (!order || order.line_items_v2 == null) return null;
+    try {
+        var raw = order.line_items_v2;
+        var lines = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return Array.isArray(lines) && lines.length > 0 ? lines : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** Обновить/добавить строку доставки в снимке line_items_v2 (без трогания позиций товара). */
+function replaceDeliveryLineInV2_(lines, deliveryCost) {
+    if (!lines || !Array.isArray(lines)) return [];
+    var d = deliveryCost != null ? Number(deliveryCost) : 0;
+    if (isNaN(d)) d = 0;
+    var out = [];
+    var sawDelivery = false;
+    for (var i = 0; i < lines.length; i++) {
+        var L = lines[i];
+        if (!L) continue;
+        var copy = {};
+        for (var k in L) if (Object.prototype.hasOwnProperty.call(L, k)) copy[k] = L[k];
+        if (String(copy.kind || '').toLowerCase() === 'delivery') {
+            copy.unit_price_locked = d;
+            copy.line_total_locked = d;
+            sawDelivery = true;
+        }
+        out.push(copy);
+    }
+    if (d > 0 && !sawDelivery) {
+        out.push({
+            line_id: 'delivery-addr',
+            kind: 'delivery',
+            display_name: 'Доставка',
+            quantity: 1,
+            unit_price_locked: d,
+            line_total_locked: d,
+            pricing_source: 'calculated',
+            sku_or_code: null,
+            parent_line_id: null,
+            config: null,
+            meta: null
+        });
+    }
+    return out;
+}
+
+/** Сравнение позиций состава по «материалу» (без item_total) — для merge v2: не тронули → копируем поддерево из снимка. */
+function isNativeLineMaterialUnchanged_(a, b) {
+    if (!a || !b) return false;
+    var _eq = function (x, y) {
+        if (x == null && y == null) return true;
+        if (typeof x === 'number' && typeof y === 'number') return Math.abs((x || 0) - (y || 0)) < 0.01;
+        return String(x || '').trim() === String(y || '').trim();
+    };
+    if (!_eq(a.model, b.model)) return false;
+    if (!_eq(a.width, b.width)) return false;
+    if (!_eq(a.length, b.length)) return false;
+    if (!_eq(a.frame, b.frame)) return false;
+    if (!_eq(a.arc_step, b.arc_step)) return false;
+    if (!_eq(a.polycarbonate, b.polycarbonate)) return false;
+    if (!_eq(a.form, b.form)) return false;
+    if (String((a.extras || '').trim()) !== String((b.extras || '').trim())) return false;
+    if (String((a.assembly || '').trim()) !== String((b.assembly || '').trim())) return false;
+    var oa = a.options && typeof a.options === 'object' ? a.options : {};
+    var ob = b.options && typeof b.options === 'object' ? b.options : {};
+    return JSON.stringify(oa) === JSON.stringify(ob);
+}
+
+/** Стабильный материальный ключ (model/width/length/frame/arc/pc/form/extras/assembly/options) — для add/delete сопоставления; равенство строк не заменяет isNativeLineMaterialUnchanged_ из-за допусков по числам. */
+function nativeLineMaterialSignature_(c) {
+    if (!c) return '';
+    var o = c.options && typeof c.options === 'object' ? c.options : {};
+    return JSON.stringify({
+        model: String(c.model || '').trim(),
+        width: c.width,
+        length: c.length,
+        frame: String(c.frame || '').trim(),
+        arc_step: c.arc_step,
+        polycarbonate: String(c.polycarbonate || '').trim(),
+        form: String(c.form || '').trim(),
+        extras: String((c.extras || '').trim()),
+        assembly: String((c.assembly || '').trim()),
+        options: o
+    });
+}
+
+/** Первый неиспользованный индекс atOpen с тем же материалом, что и cur (FIFO при дубликатах). */
+function findFirstUnusedNativeAtOpenMatch_(atOpen, usedFlags, cur) {
+    if (!atOpen || !Array.isArray(atOpen) || !usedFlags) return -1;
+    for (var k = 0; k < atOpen.length; k++) {
+        if (usedFlags[k]) continue;
+        if (isNativeLineMaterialUnchanged_(atOpen[k], cur)) return k;
+    }
+    return -1;
+}
+
+/** Поддерево v2: greenhouse #ghIndex + дочерние addon/service/bed (не delivery). */
+function getGreenhouseSubtreeFromSnapshot_(snapshot, ghIndex) {
+    if (!snapshot || !Array.isArray(snapshot)) return [];
+    var ghs = [];
+    for (var i = 0; i < snapshot.length; i++) {
+        var L = snapshot[i];
+        if (L && String(L.kind || '').toLowerCase() === 'greenhouse') ghs.push(L);
+    }
+    if (ghIndex >= ghs.length) return [];
+    var gh = ghs[ghIndex];
+    var lid = gh.line_id != null ? String(gh.line_id) : '';
+    var out = [JSON.parse(JSON.stringify(gh))];
+    for (var j = 0; j < snapshot.length; j++) {
+        var L2 = snapshot[j];
+        if (!L2 || L2 === gh) continue;
+        var k = String(L2.kind || '').toLowerCase();
+        if (k === 'delivery' || k === 'greenhouse') continue;
+        var p = L2.parent_line_id != null ? String(L2.parent_line_id) : '';
+        if (lid && p === lid) out.push(JSON.parse(JSON.stringify(L2)));
+    }
+    return out;
+}
+
+/** Нужно ли обновить строку доставки в v2 (как в buildEditOrderSafeMetadataPayload_ addrChanged или смена суммы доставки). */
+function shouldUpdateDeliveryLineInV2Merge_() {
+    var orig = _editOrderOriginalDeliveryCost != null ? Number(_editOrderOriginalDeliveryCost) : 0;
+    var cur = editOrderDeliveryCost || 0;
+    if (isNaN(orig)) orig = 0;
+    if (isNaN(cur)) cur = 0;
+    if (Math.abs(cur - orig) > 0.5) return true;
+    var addr1 = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
+    var addr2 = (document.getElementById('edit-order-address-part2') && document.getElementById('edit-order-address-part2').value) ? document.getElementById('edit-order-address-part2').value.trim() : '';
+    var addr3 = (document.getElementById('edit-order-address-part3') && document.getElementById('edit-order-address-part3').value) ? document.getElementById('edit-order-address-part3').value.trim() : '';
+    var noPlot = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
+    var fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
+    var _deliveryAddressForPayload = (!_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw !== null)
+        ? _editOrderOriginalAddressRaw
+        : fullAddress;
+    return _editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw !== null &&
+        String(_deliveryAddressForPayload || '').trim() !== String(_editOrderOriginalAddressRaw || '').trim();
+}
+
+/**
+ * Native PATCH: merge — нетронутые позиции = поддеревья из _editOrderNativeLineItemsV2Snapshot;
+ * изменённые/новые = buildLineItemsV2FromOrderCart по одной позиции; доставка только при смене адреса/суммы.
+ * Add/delete: сопоставление atOpen ↔ текущий состав по материалу (findFirstUnusedNativeAtOpenMatch_ / nativeLineMaterialSignature_);
+ * удалённые позиции не попадают в payload; fallback — только без снимка/atOpen или пустой состав.
+ */
+function mergeLineItemsV2ForNativeEditPatch_() {
+    var snap = _editOrderNativeLineItemsV2Snapshot;
+    var atOpen = _editOrderCompositionAtOpen;
+    if (!snap || !Array.isArray(snap) || snap.length === 0) return buildLineItemsV2FromNativeEditComposition_();
+    if (!atOpen || !Array.isArray(atOpen)) return buildLineItemsV2FromNativeEditComposition_();
+    if (!editOrderComposition || editOrderComposition.length === 0) return buildLineItemsV2FromNativeEditComposition_();
+    var usedAtOpen = [];
+    for (var u = 0; u < atOpen.length; u++) usedAtOpen[u] = false;
+    var parts = [];
+    for (var i = 0; i < editOrderComposition.length; i++) {
+        var cur = editOrderComposition[i];
+        var matchedK = findFirstUnusedNativeAtOpenMatch_(atOpen, usedAtOpen, cur);
+        if (matchedK >= 0) {
+            usedAtOpen[matchedK] = true;
+            parts = parts.concat(getGreenhouseSubtreeFromSnapshot_(snap, matchedK));
+        } else {
+            parts = parts.concat(buildLineItemsV2FromOrderCart([editCompositionToOrderCartItem_(cur)], 0));
+        }
+    }
+    if (shouldUpdateDeliveryLineInV2Merge_()) {
+        var dc = editOrderDeliveryCost || 0;
+        if (_editOrderDeliveryCostPreview != null) dc = _editOrderDeliveryCostPreview;
+        return replaceDeliveryLineInV2_(parts, dc);
+    }
+    var deliverySnap = null;
+    for (var k = 0; k < snap.length; k++) {
+        if (snap[k] && String(snap[k].kind || '').toLowerCase() === 'delivery') {
+            deliverySnap = snap[k];
+            break;
+        }
+    }
+    if (deliverySnap) {
+        parts.push(JSON.parse(JSON.stringify(deliverySnap)));
+    } else {
+        var dc0 = editOrderDeliveryCost || 0;
+        if (dc0 > 0) parts = replaceDeliveryLineInV2_(parts, dc0);
+    }
+    return parts;
+}
+
+/**
+ * Hybrid native order: line_items=null, line_items_v2 с greenhouse + child addons/services.
+ * Собирает одну позицию editOrderComposition + extras/assembly (v2 + flat без дублей).
+ * @returns {boolean} true если заполнено одной теплицей
+ */
+function hydrateEditOrderCompositionFromLineItemsV2_(order, orderCity) {
+    if (!order || order.line_items != null) return false;
+    var raw = order.line_items_v2;
+    var lines = [];
+    if (raw == null) return false;
+    if (typeof raw === 'string') {
+        try {
+            lines = JSON.parse(raw);
+        } catch (e) {
+            return false;
+        }
+    } else if (Array.isArray(raw)) {
+        lines = raw;
+    }
+    if (!lines || lines.length === 0) return false;
+    var ghs = lines.filter(function (L) { return L && String(L.kind || '').toLowerCase() === 'greenhouse'; });
+    if (ghs.length !== 1) return false;
+    var gh = ghs[0];
+    var cfg = gh.config && typeof gh.config === 'object' ? gh.config : {};
+    var model = (cfg.model || order.model || '').toString().trim() || 'Теплица';
+    var width = cfg.width != null ? cfg.width : order.width;
+    var length = cfg.length != null ? cfg.length : order.length;
+    var frame = (cfg.frame != null ? String(cfg.frame) : '').trim() || (order.frame != null ? String(order.frame).trim() : '') || '';
+    var polycarbonate = (cfg.polycarbonate != null ? String(cfg.polycarbonate) : '').trim() || (order.polycarbonate != null ? String(order.polycarbonate).trim() : '') || '';
+    var formStr = (cfg.form != null && String(cfg.form).trim()) ? String(cfg.form).trim() : '';
+    var form = isFormCategoryValid(formStr) ? formStr : getFormCategory(model);
+    var ghLineId = gh.line_id || null;
+    var extrasFromV2 = [];
+    var assemblyFromV2 = [];
+    lines.forEach(function (L) {
+        if (!L || L === gh) return;
+        var k = String(L.kind || '').toLowerCase();
+        if (k === 'delivery' || k === 'greenhouse') return;
+        var parent = L.parent_line_id != null ? String(L.parent_line_id) : '';
+        if (ghLineId && parent && parent !== String(ghLineId)) return;
+        var dn = (L.display_name || '').trim();
+        var lt = L.line_total_locked != null ? Number(L.line_total_locked) : NaN;
+        var lineText = dn && !isNaN(lt)
+            ? (dn + ' - ' + (typeof formatPrice === 'function' ? formatPrice(lt) : lt) + ' рублей')
+            : dn;
+        if (k === 'service') {
+            if (/сборка/i.test(dn) || /установк/i.test(dn)) assemblyFromV2.push(lineText);
+            else extrasFromV2.push(lineText);
+        } else {
+            extrasFromV2.push(lineText);
+        }
+    });
+    function mergeTextBlocksNoDup_(primary, secondary) {
+        var seen = {};
+        var out = [];
+        function addBlock(block) {
+            String(block || '').split(/\r?\n/).forEach(function (ln) {
+                var t = (ln || '').trim();
+                if (!t) return;
+                var key = t.toLowerCase().replace(/\s+/g, ' ');
+                if (seen[key]) return;
+                seen[key] = true;
+                out.push(t);
+            });
+        }
+        addBlock(primary);
+        addBlock(secondary);
+        return out.join('\n').trim();
+    }
+    var flatExtras = (order.extras != null ? String(order.extras) : '').trim();
+    var flatAssembly = (order.assembly != null ? String(order.assembly) : '').trim();
+    var extrasMerged = mergeTextBlocksNoDup_(extrasFromV2.join('\n'), flatExtras);
+    var assemblyMerged = mergeTextBlocksNoDup_(assemblyFromV2.join('\n'), flatAssembly);
+    var ghUnit = gh.line_total_locked != null ? Number(gh.line_total_locked) : NaN;
+    var posSubtotal = !isNaN(ghUnit) ? ghUnit : 0;
+    lines.forEach(function (L) {
+        if (!L || L === gh) return;
+        var k = String(L.kind || '').toLowerCase();
+        if (k === 'delivery' || k === 'greenhouse') return;
+        var parent = L.parent_line_id != null ? String(L.parent_line_id) : '';
+        if (ghLineId && parent && parent !== String(ghLineId)) return;
+        var lt = L.line_total_locked != null ? Number(L.line_total_locked) : 0;
+        if (!isNaN(lt)) posSubtotal += lt;
+    });
+    var flatBase = order.base_price != null && !isNaN(Number(order.base_price)) ? Number(order.base_price) : (order.unit_price != null && !isNaN(Number(order.unit_price)) ? Number(order.unit_price) : undefined);
+    var basePrice = !isNaN(ghUnit) && ghUnit > 0 ? ghUnit : flatBase;
+    editOrderComposition.push({
+        model: model,
+        width: width,
+        length: length,
+        frame: frame,
+        arc_step: order.arc_step != null ? order.arc_step : '',
+        polycarbonate: polycarbonate,
+        item_total: posSubtotal,
+        base_price: basePrice,
+        form: form,
+        city: orderCity,
+        extras: extrasMerged,
+        assembly: assemblyMerged,
+        options: order.options && typeof order.options === 'object' ? order.options : undefined
+    });
+    if (typeof console !== 'undefined' && console.log) {
+        console.log('[open-edit-hydrate] hybrid_line_items_v2', { order_id: order && order.id, gh_line_id: ghLineId, posSubtotal: posSubtotal });
+    }
+    var totOrder = parseOrderPrice_(order.total);
+    var dcOrder = editOrderDeliveryCost || 0;
+    if (dcOrder > 0 && totOrder >= dcOrder) {
+        editOrderComposition[0].item_total = Math.max(0, totOrder - dcOrder);
+    } else if (dcOrder === 0 && totOrder > 0) {
+        var sumItems = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
+        editOrderDeliveryCost = Math.max(0, totOrder - sumItems);
+    }
+    _editOrderHybridLineItemsV2Hydrated = true;
+    return true;
+}
+
 /** Заполнить форму редактирования в модалке данными заказа. */
 function fillEditOrderForm(order) {
     if (!order) return;
@@ -6311,37 +6626,52 @@ function fillEditOrderForm(order) {
     _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
+    _editOrderHybridLineItemsV2Hydrated = false;
+    _editOrderOriginalLineItemsJson = null;
     _editOrderDeliveryCostPreview = null;
     editOrderDeliveryCost = parseOrderPrice_(order.delivery_cost);
-    if (order.line_items && typeof order.line_items === 'string') {
-        try {
-            var items = JSON.parse(order.line_items);
-            if (Array.isArray(items) && items.length > 0) {
-                items.forEach(function (item, idx) {
-                    var extrasStr = (item.extras != null ? String(item.extras) : '').trim();
-                    var assemblyStr = (item.assembly != null ? String(item.assembly) : '').trim();
-                    if (!assemblyStr && idx === 0 && (order.assembly || '').trim()) assemblyStr = (order.assembly || '').trim();
-                    if (!extrasStr && idx === 0 && (order.extras || '').trim()) extrasStr = (order.extras || '').trim();
-                    editOrderComposition.push({
-                        model: (item.model || '').toString().trim() || 'Теплица',
-                        width: item.width != null ? item.width : '',
-                        length: item.length != null ? item.length : '',
-                        frame: (item.frame || '').toString().trim() || '',
-                        arc_step: item.arc_step != null ? item.arc_step : '',
-                        polycarbonate: (item.polycarbonate || '').toString().trim() || '',
-                        item_total: parseOrderPrice_(item.item_total),
-                        base_price: item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : undefined,
-                        form: (function () { var f = (item.form || '').toString().trim(); return isFormCategoryValid(f) ? f : getFormCategory(item.model || ''); })(),
-                        city: (item.city || '').trim() || orderCity,
-                        extras: extrasStr,
-                        assembly: assemblyStr,
-                        options: item.options && typeof item.options === 'object' ? item.options : undefined
-                    });
-                });
-                var sumItems = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
-                if (editOrderDeliveryCost === 0 && order.total != null) editOrderDeliveryCost = Math.max(0, parseOrderPrice_(order.total) - sumItems);
-            }
-        } catch (e) { /* ignore */ }
+    if (typeof console !== 'undefined' && console.log) console.log('[open-edit-hydrate] before', { order_id: order && order.id, lastLoadedOrderTotalForDisplay: lastLoadedOrderTotalForDisplay, editOrderDeliveryCost: editOrderDeliveryCost, editOrderComposition_length: editOrderComposition.length });
+    var lineItemsParsed = null;
+    var lineItemsPreserveStr = null;
+    if (order.line_items != null) {
+        if (typeof order.line_items === 'string') {
+            try {
+                lineItemsParsed = JSON.parse(order.line_items);
+                lineItemsPreserveStr = order.line_items;
+            } catch (e) { /* ignore */ }
+        } else if (Array.isArray(order.line_items) && order.line_items.length > 0) {
+            lineItemsParsed = order.line_items;
+            lineItemsPreserveStr = JSON.stringify(order.line_items);
+        }
+    }
+    if (lineItemsParsed && Array.isArray(lineItemsParsed) && lineItemsParsed.length > 0) {
+        _editOrderOriginalLineItemsJson = lineItemsPreserveStr;
+        lineItemsParsed.forEach(function (item, idx) {
+            var extrasStr = (item.extras != null ? String(item.extras) : '').trim();
+            var assemblyStr = (item.assembly != null ? String(item.assembly) : '').trim();
+            if (!assemblyStr && idx === 0 && (order.assembly || '').trim()) assemblyStr = (order.assembly || '').trim();
+            if (!extrasStr && idx === 0 && (order.extras || '').trim()) extrasStr = (order.extras || '').trim();
+            editOrderComposition.push({
+                model: (item.model || '').toString().trim() || 'Теплица',
+                width: item.width != null ? item.width : '',
+                length: item.length != null ? item.length : '',
+                frame: (item.frame || '').toString().trim() || '',
+                arc_step: item.arc_step != null ? item.arc_step : '',
+                polycarbonate: (item.polycarbonate || '').toString().trim() || '',
+                item_total: parseOrderPrice_(item.item_total != null ? item.item_total : item.itemTotal),
+                base_price: item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : undefined,
+                form: (function () { var f = (item.form || '').toString().trim(); return isFormCategoryValid(f) ? f : getFormCategory(item.model || ''); })(),
+                city: (item.city || '').trim() || orderCity,
+                extras: extrasStr,
+                assembly: assemblyStr,
+                options: item.options && typeof item.options === 'object' ? item.options : undefined
+            });
+        });
+        var sumItems = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
+        if (editOrderDeliveryCost === 0 && order.total != null) editOrderDeliveryCost = Math.max(0, parseOrderPrice_(order.total) - sumItems);
+    }
+    if (editOrderComposition.length === 0 && order.line_items == null) {
+        hydrateEditOrderCompositionFromLineItemsV2_(order, orderCity);
     }
     if (editOrderComposition.length === 0 && order.model) {
         var tot = parseOrderPrice_(order.total);
@@ -6373,6 +6703,31 @@ function fillEditOrderForm(order) {
             editOrderComposition[0].item_total = Math.max(0, tot - editOrderDeliveryCost);
         }
     }
+    if (editOrderComposition.length === 1) {
+        var comp = editOrderComposition[0];
+        var it = comp.item_total;
+        var ot = order.total != null ? parseOrderPrice_(order.total) : 0;
+        var dc = editOrderDeliveryCost || 0;
+        if ((it == null || it <= 0) && ot > dc) editOrderComposition[0].item_total = Math.max(0, ot - dc);
+        // Legacy/manual poisoned: item_total=0, order.total<=delivery, но base_price или unit_price есть — восстановить из base_price+extras
+        var ordTot = parseOrderPrice_(order.total);
+        var ordDc = parseOrderPrice_(order.delivery_cost);
+        var hasBasePrice = comp.base_price != null && !isNaN(Number(comp.base_price)) && Number(comp.base_price) > 0;
+        var hasUnitPrice = order.unit_price != null && !isNaN(Number(order.unit_price)) && Number(order.unit_price) > 0;
+        if (order.model && (ordTot <= ordDc) && (hasBasePrice || hasUnitPrice)) {
+            var baseVal = hasBasePrice ? Number(comp.base_price) : Number(order.unit_price);
+            var sumExtrasRecover = parseExtrasAssemblySum(comp.extras || order.extras, comp.assembly || order.assembly);
+            var recoveredItemTotal = Math.max(0, baseVal + sumExtrasRecover);
+            editOrderComposition[0].item_total = recoveredItemTotal;
+            lastLoadedOrderTotalForDisplay = recoveredItemTotal + (editOrderDeliveryCost || 0);
+        }
+    }
+    if (typeof console !== 'undefined' && console.log) console.log('[open-edit-hydrate] after', { order_id: order && order.id, lastLoadedOrderTotalForDisplay: lastLoadedOrderTotalForDisplay, editOrderDeliveryCost: editOrderDeliveryCost, editOrderComposition_length: editOrderComposition.length });
+    (function initNativeLegacyEditFlags_() {
+        var v2 = parseLineItemsV2Array_(order);
+        _editOrderNativeLineItemsV2Snapshot = v2 ? JSON.parse(JSON.stringify(v2)) : null;
+        _editOrderLegacyCompositionLocked = !(v2 && v2.length > 0);
+    })();
     setEditOrderFieldValue('edit-order-gift', order.gift || '');
     editOrderEditingIndex = null;
     editOrderCompositionUndoSample = null;
@@ -6393,9 +6748,11 @@ function fillEditOrderForm(order) {
         ? getGiftSlotsByTotal(getEditOrderCompositionTotal()) : 0;
     renderEditOrderCompositionList(); // вызывает updateEditOrderGiftFromTotal → threshold → показ/скрытие блока
     // Принудительный enforce видимости: renderEditOrderCompositionList может не успеть при асинхронных изменениях DOM
+    // skipNotice=true: не показывать toast про threshold на hydrate (fix gifts phantom UI)
     if (typeof updateEditOrderGiftsBlock === 'function' && typeof getEditOrderCompositionTotal === 'function') {
-        updateEditOrderGiftsBlock(getEditOrderCompositionTotal());
+        updateEditOrderGiftsBlock(getEditOrderCompositionTotal(), false, true);
     }
+    if (typeof syncEditOrderLegacyDateOnlyUi_ === 'function') syncEditOrderLegacyDateOnlyUi_();
     lastSavedEditOrderState = getEditOrderStateSnapshot();
     lastSavedEditOrderFormState = getEditOrderFormSnapshot();
     lastPersistedEditOrderState = getEditOrderStateSnapshot();
@@ -6403,12 +6760,19 @@ function fillEditOrderForm(order) {
     if (typeof console !== 'undefined' && console.log) {
         console.log('[edit-save-diagnostic] fillEditOrderForm persisted', { orderId: order && order.id, compLen: editOrderComposition.length });
     }
+    _editOrderCompositionAtOpen = editOrderCompositionClone();
+    _editOrderOriginalDeliveryCost = editOrderDeliveryCost != null && !isNaN(Number(editOrderDeliveryCost)) ? Number(editOrderDeliveryCost) : 0;
 }
 
-/** Итог по составу: сумма позиций + доставка. */
+/** Итог по составу: сумма позиций + доставка. Fallback для existing order: если sum(item_total) схлопнулся к 0, состав не меняли, есть lastLoadedOrderTotalForDisplay — использовать его (fix gifts tier при open-edit). */
 function getEditOrderCompositionTotal() {
     var sum = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0);
-    return sum + (editOrderDeliveryCost || 0);
+    var delivery = editOrderDeliveryCost || 0;
+    var total = sum + delivery;
+    if (editOrderComposition.length > 0 && total <= delivery && lastLoadedOrderTotalForDisplay != null && !_editOrderCompositionTouchedByUser && lastLoadedOrderTotalForDisplay > delivery) {
+        return lastLoadedOrderTotalForDisplay;
+    }
+    return total;
 }
 
 /** Доставка для отображения: preview из панели (если есть) или committed. Payload всегда использует editOrderDeliveryCost. */
@@ -6614,6 +6978,7 @@ function updateEditOrderGiftsBlock(totalPrice, previewOnly, skipNotice) {
             hintEl.textContent = 'Выберите подарки в списках выше или оставьте как есть.';
         }
     }
+    if (_editOrderLegacyCompositionLocked && typeof syncEditOrderLegacyDateOnlyUi_ === 'function') syncEditOrderLegacyDateOnlyUi_();
     editOrderGiftBlockRebuilding = false;
 }
 
@@ -6660,10 +7025,10 @@ function updateEditOrderGiftFromTotal() {
     if (typeof updateEditOrderGiftsBlock === 'function') updateEditOrderGiftsBlock(total);
 }
 
-/** Сумма цен из текста extras/assembly (строки вида «… - X XXX рублей»). Для старых заказов без base_price: цена теплицы ≈ item_total - эта сумма. */
+/** Сумма цен из текста extras/assembly (строки вида «… - X XXX рублей» или «… — 5 990 ₽»). Для старых заказов без base_price: цена теплицы ≈ item_total - эта сумма. */
 function parseExtrasAssemblySum(extras, assembly) {
     var combined = ((extras || '') + ' ' + (assembly || '')).replace(/\s+/g, ' ');
-    var re = /[\s\-–—](\d[\d\s.]*)\s*рублей?/gi;
+    var re = /[\s\-–—](\d[\d\s.]*)\s*(?:рублей?|₽)/gi;
     var sum = 0;
     var m;
     while ((m = re.exec(combined)) !== null) {
@@ -6870,6 +7235,69 @@ function buildOrderCompositionItemHtml(opts) {
     return html;
 }
 
+/** Legacy: отключить «Добавить теплицу» — состав не редактируется в калькуляторе. */
+function updateEditOrderLegacyCompositionUi_() {
+    var addBtn = document.getElementById('edit-order-add-item-btn');
+    if (addBtn) {
+        addBtn.disabled = !!_editOrderLegacyCompositionLocked;
+        addBtn.style.opacity = _editOrderLegacyCompositionLocked ? '0.5' : '';
+        addBtn.title = _editOrderLegacyCompositionLocked
+            ? 'Старый заказ: через калькулятор можно менять только дату доставки'
+            : '';
+    }
+}
+
+/**
+ * Legacy (нет непустого line_items_v2): только смена даты в UI; контакты/адрес/контекст/подарки заблокированы.
+ * Native: снять блокировки.
+ */
+function syncEditOrderLegacyDateOnlyUi_() {
+    var locked = !!_editOrderLegacyCompositionLocked;
+    var notice = document.getElementById('edit-order-legacy-date-only-notice');
+    if (notice) {
+        notice.textContent = 'Старый заказ: через калькулятор можно менять только дату доставки';
+        notice.classList.toggle('hidden', !locked);
+    }
+    var fieldIds = [
+        'edit-order-client-name',
+        'edit-order-client-phone',
+        'edit-order-client-phone-2',
+        'edit-order-address-part1',
+        'edit-order-address-part2',
+        'edit-order-address-part3',
+        'edit-order-source',
+        'edit-order-comment',
+        'edit-order-gift',
+        'edit-order-add-phone2-btn',
+        'edit-order-remove-phone2-btn',
+        'edit-order-undo-btn',
+        'edit-order-redo-btn'
+    ];
+    fieldIds.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.disabled = locked;
+    });
+    var noPlot = document.getElementById('edit-order-no-plot');
+    if (noPlot) noPlot.disabled = locked;
+    document.querySelectorAll('.edit-order-gift-select').forEach(function (el) {
+        el.disabled = locked;
+    });
+    var cityLink = document.getElementById('edit-order-dates-by-city-link');
+    if (cityLink) {
+        if (locked) {
+            cityLink.style.pointerEvents = 'none';
+            cityLink.style.opacity = '0.45';
+            cityLink.setAttribute('aria-disabled', 'true');
+        } else {
+            cityLink.style.pointerEvents = '';
+            cityLink.style.opacity = '';
+            cityLink.removeAttribute('aria-disabled');
+        }
+    }
+    var dateDisp = document.getElementById('edit-order-delivery-date-display');
+    if (dateDisp) dateDisp.disabled = false;
+}
+
 /** Отрисовать список состава в модалке и привязать кнопки Изменить/Удалить. У позиции справа — цена теплицы (base_price), под позицией — разбивка допов, внизу — строка «Итого». */
 function renderEditOrderCompositionList() {
     var listEl = document.getElementById('edit-order-composition-list');
@@ -6881,6 +7309,7 @@ function renderEditOrderCompositionList() {
     }
     var deliveryForDisplay = getEditOrderDeliveryCostForDisplay();
     var total = editOrderComposition.reduce(function (s, i) { return s + (i.item_total || 0); }, 0) + deliveryForDisplay;
+    if (total <= deliveryForDisplay && lastLoadedOrderTotalForDisplay != null && lastLoadedOrderTotalForDisplay > deliveryForDisplay && editOrderComposition.length > 0) total = lastLoadedOrderTotalForDisplay;
     var orderTotal = lastLoadedOrderTotalForDisplay != null ? lastLoadedOrderTotalForDisplay : total;
     var totalExtrasSum = 0;
     editOrderComposition.forEach(function (item) { totalExtrasSum += parseExtrasAssemblySum(item.extras, item.assembly); });
@@ -6926,7 +7355,7 @@ function renderEditOrderCompositionList() {
                 extrasHtml += '<div class="edit-order-composition-item__extras-line">' + escapeHtml(line) + '</div>';
             });
         }
-        html += buildOrderCompositionItemHtml({ text: text, priceFormatted: priceFormatted, extrasHtml: extrasHtml, index: idx, showEditButton: true, showDeleteButton: true });
+        html += buildOrderCompositionItemHtml({ text: text, priceFormatted: priceFormatted, extrasHtml: extrasHtml, index: idx, showEditButton: !_editOrderLegacyCompositionLocked, showDeleteButton: !_editOrderLegacyCompositionLocked });
     });
     if (deliveryForDisplay > 0) {
         html += '<div class="edit-order-composition-item"><span class="edit-order-composition-item__text">Доставка</span><span class="edit-order-composition-item__price">' + escapeHtml(typeof formatPrice === 'function' ? formatPrice(deliveryForDisplay) : deliveryForDisplay) + ' ₽</span></div>';
@@ -6954,6 +7383,10 @@ function renderEditOrderCompositionList() {
             if (row) {
                 var idx = parseInt(row.getAttribute('data-index'), 10);
                 if (!isNaN(idx) && idx >= 0) {
+                    if (editOrderComposition.length <= 1) {
+                        if (typeof showToast === 'function') showToast('Нельзя удалить последнюю позицию. В заказе должна быть хотя бы одна теплица.', 'info');
+                        return;
+                    }
                     var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
                     editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
                     editOrderStateRedoSample = null;
@@ -6968,6 +7401,7 @@ function renderEditOrderCompositionList() {
     });
     updateEditOrderGiftFromTotal();
     updateEditOrderUndoRedoButtons();
+    updateEditOrderLegacyCompositionUi_();
     if (editOrderComposition.length > 0) {
         var compWrapper = document.getElementById('eo-composition');
         if (compWrapper) {
@@ -7065,6 +7499,11 @@ function setEditOrderGreenhouseControlsDisabled(disabled) {
 }
 
 function openEditOrderAddPanel(index) {
+    if (_editOrderLegacyCompositionLocked) {
+        if (typeof showToast === 'function') showToast('Старый заказ: через калькулятор можно менять только дату доставки.', 'info');
+        if (typeof console !== 'undefined' && console.warn) console.warn('[edit-legacy-composition-locked] panel_open_blocked');
+        return;
+    }
     editOrderEditingIndex = index;
     _editOrderGreenhouseEditMode = (index != null && index >= 0 && editOrderComposition.length === 1) ? false : null;
     _editOrderExtrasAssemblyBaseline = null;
@@ -7439,6 +7878,38 @@ function setEditOrderFieldValue(id, value) {
     if (el) el.value = value;
 }
 
+/** Сбросить только edit-session переменные (без DOM). Вызывать перед hydrate существующего заказа, чтобы избежать утечки между заказами. */
+function resetEditOrderSessionState_() {
+    lastLoadedOrderTotalForDisplay = null;
+    editOrderComposition = [];
+    editOrderDeliveryCost = 0;
+    _editOrderDeliveryCostPreview = null;
+    _editOrderOriginalLineItemsJson = null;
+    _editOrderDeliveryCostAtPanelOpen = null;
+    lastModalCalculationResult = null;
+    lastSavedEditOrderState = null;
+    lastSavedEditOrderFormState = null;
+    lastPersistedEditOrderState = null;
+    lastPersistedEditOrderFormState = null;
+    editOrderEditingIndex = null;
+    editOrderCompositionUndoSample = null;
+    editOrderCompositionRedoSample = null;
+    editOrderStateUndoSample = null;
+    editOrderStateRedoSample = null;
+    _editOrderPositionExplicitlySaved = false;
+    _editOrderExtrasAssemblyBaseline = null;
+    _editOrderGreenhouseEditMode = null;
+    _editOrderGreenhouseEditModeUnlockSnapshot = null;
+    _editOrderCompositionTouchedByUser = false;
+    editOrderGiftSlotsPrev = -1;
+    _editOrderHybridLineItemsV2Hydrated = false;
+    _editOrderNativeLineItemsV2Snapshot = null;
+    _editOrderLegacyCompositionLocked = false;
+    _editOrderCompositionAtOpen = null;
+    _editOrderOriginalDeliveryCost = null;
+    if (typeof closeEditOrderAddPanel === 'function') closeEditOrderAddPanel();
+}
+
 /** Очистить форму и edit state без смены шага. Для startEditOrder (до fetch) и close/back. */
 function clearEditOrderFormStateOnly() {
     setEditOrderFieldValue('edit-order-client-name', '');
@@ -7462,6 +7933,11 @@ function clearEditOrderFormStateOnly() {
     setEditOrderFieldValue('edit-order-comment', '');
     setEditOrderFieldValue('edit-order-gift', '');
     editOrderComposition = [];
+    _editOrderHybridLineItemsV2Hydrated = false;
+    _editOrderNativeLineItemsV2Snapshot = null;
+    _editOrderLegacyCompositionLocked = false;
+    _editOrderCompositionAtOpen = null;
+    _editOrderOriginalDeliveryCost = null;
     lastLoadedOrderTotalForDisplay = null;
     lastEditOrderManager = '';
     lastLoadedOrderCommercialOffer = '';
@@ -7470,6 +7946,7 @@ function clearEditOrderFormStateOnly() {
     editOrderGiftSlotsPrev = -1;
     _editOrderLoadedCityRaw = null;
     _editOrderLoadedWarehouseCityKey = null;
+    _editOrderOriginalLineItemsJson = null;
     _editOrderOriginalAddressRaw = null;
     _editOrderAddressTouchedByUser = false;
     _editOrderCompositionTouchedByUser = false;
@@ -7492,6 +7969,7 @@ function clearEditOrderFormStateOnly() {
     closeEditOrderAddPanel();
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
+    if (typeof syncEditOrderLegacyDateOnlyUi_ === 'function') syncEditOrderLegacyDateOnlyUi_();
 }
 
 /** Очистить форму редактирования (контакты, состав, подарки). Вызывать при «заказов не найдено», чтобы внизу не висели данные старого заказа. */
@@ -7562,17 +8040,98 @@ function editOrderItemToCalc(item, deliveryCost, isFirstOfMultiple, orderTotalFo
     };
 }
 
+/** Legacy заказ: PATCH только delivery_date (продуктовая граница vs native full edit). */
+function buildEditOrderLegacyDateOnlyPayload_() {
+    var dateInput = document.getElementById('edit-order-delivery-date');
+    var deliveryDate = dateInput ? dateInput.value.trim() : '';
+    var dateForDb = deliveryDate && deliveryDate.indexOf('-') !== -1 ? formatDateRu(deliveryDate) : deliveryDate;
+    return { delivery_date: dateForDb };
+}
+
+/**
+ * SAFE EDIT: только метаданные для PATCH — товарная часть в БД не трогается (price lock / literal preserve).
+ * Условие вызывающей стороны: состав не меняли и не нажимали «Сохранить позицию».
+ */
+function buildEditOrderSafeMetadataPayload_() {
+    var name = (document.getElementById('edit-order-client-name') && document.getElementById('edit-order-client-name').value) ? document.getElementById('edit-order-client-name').value.trim() : '';
+    var phone1 = (document.getElementById('edit-order-client-phone') && document.getElementById('edit-order-client-phone').value) ? document.getElementById('edit-order-client-phone').value.trim() : '';
+    var phone2 = (document.getElementById('edit-order-client-phone-2') && document.getElementById('edit-order-client-phone-2').value) ? document.getElementById('edit-order-client-phone-2').value.trim() : '';
+    var dateInput = document.getElementById('edit-order-delivery-date');
+    var deliveryDate = dateInput ? dateInput.value.trim() : '';
+    var addr1 = (document.getElementById('edit-order-address-part1') && document.getElementById('edit-order-address-part1').value) ? document.getElementById('edit-order-address-part1').value.trim() : '';
+    var addr2 = (document.getElementById('edit-order-address-part2') && document.getElementById('edit-order-address-part2').value) ? document.getElementById('edit-order-address-part2').value.trim() : '';
+    var addr3 = (document.getElementById('edit-order-address-part3') && document.getElementById('edit-order-address-part3').value) ? document.getElementById('edit-order-address-part3').value.trim() : '';
+    var noPlot = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
+    var source = document.getElementById('edit-order-source') ? document.getElementById('edit-order-source').value : '';
+    var comment = document.getElementById('edit-order-comment') ? document.getElementById('edit-order-comment').value.trim() : '';
+    var fullAddress = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
+    var _deliveryAddressForPayload = (!_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw !== null)
+        ? _editOrderOriginalAddressRaw
+        : fullAddress;
+    var dateForDb = deliveryDate && deliveryDate.indexOf('-') !== -1 ? formatDateRu(deliveryDate) : deliveryDate;
+    var _phoneCombined = combinePhonesForPayload_(phone1, phone2);
+    var _phoneEffectivelyChanged = _editOrderOriginalPhoneRaw === null
+        || (_phoneCombined && _phoneCombined.trim() !== _editOrderOriginalPhoneRaw.trim());
+    var _clientPhoneForPayload;
+    if (_editOrderOriginalPhoneRaw !== null && (!_editOrderPhoneTouchedByUser || !_phoneEffectivelyChanged)) {
+        _clientPhoneForPayload = _editOrderOriginalPhoneRaw;
+    } else {
+        _clientPhoneForPayload = combinePhonesForPayload_(phone1, phone2) || '';
+    }
+    var payload = {
+        client_name: name,
+        client_phone: _clientPhoneForPayload,
+        delivery_date: dateForDb,
+        delivery_address: _deliveryAddressForPayload,
+        source: source,
+        comment: comment
+    };
+    if (_editOrderGiftTouchedByUser) {
+        var giftEl = document.getElementById('edit-order-gift');
+        var giftValue = giftEl ? (giftEl.value || '').trim() : '';
+        var giftTotal = lastLoadedOrderTotalForDisplay != null ? Number(lastLoadedOrderTotalForDisplay) : 0;
+        if (giftTotal < GIFT_THRESHOLDS.slot1) giftValue = '';
+        payload.gift = giftValue;
+    }
+    var addrChanged = _editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw !== null &&
+        String(_deliveryAddressForPayload || '').trim() !== String(_editOrderOriginalAddressRaw || '').trim();
+    if (addrChanged) {
+        var sumItems = 0;
+        for (var si = 0; si < editOrderComposition.length; si++) {
+            sumItems += (editOrderComposition[si].item_total || 0);
+        }
+        var dcMeta = editOrderDeliveryCost || 0;
+        if (_editOrderDeliveryCostPreview != null) dcMeta = _editOrderDeliveryCostPreview;
+        payload.delivery_cost = dcMeta;
+        payload.total = sumItems + dcMeta;
+        if (_editOrderNativeLineItemsV2Snapshot && Array.isArray(_editOrderNativeLineItemsV2Snapshot) && _editOrderNativeLineItemsV2Snapshot.length > 0) {
+            payload.line_items_v2 = replaceDeliveryLineInV2_(JSON.parse(JSON.stringify(_editOrderNativeLineItemsV2Snapshot)), dcMeta);
+            payload.price_snapshot_at = new Date().toISOString();
+            payload.pricing_snapshot_version = '1.0';
+        }
+    }
+    return payload;
+}
+
 /** Собрать из полей модалки только редактируемые поля для update (частичное обновление). Включает состав и итог (Этап 6). */
 function buildOrderPayloadFromEditModal() {
+    if (_editOrderLegacyCompositionLocked) {
+        return buildEditOrderLegacyDateOnlyPayload_();
+    }
+    if (!_editOrderCompositionTouchedByUser && !_editOrderPositionExplicitlySaved) {
+        return buildEditOrderSafeMetadataPayload_();
+    }
     // phantom fix: если состав не трогали (add/delete/save position/undo/redo) — payload из persisted state
     var usePersistedForPayload = !_editOrderCompositionTouchedByUser && lastPersistedEditOrderState != null;
     var compositionForPayload = usePersistedForPayload ? lastPersistedEditOrderState.composition : editOrderComposition;
+    if (!compositionForPayload || compositionForPayload.length === 0) return null;
     var deliveryCostForPayload = usePersistedForPayload && _editOrderDeliveryCostAtPanelOpen != null ? _editOrderDeliveryCostAtPanelOpen : (editOrderDeliveryCost || 0);
     var totalForPayload = compositionForPayload.reduce(function (s, i) { return s + (i.item_total || 0); }, 0) + deliveryCostForPayload;
-    // legacy single-item untouched: preserve loaded total instead of recomputing (comment-only save fix)
-    var total = (usePersistedForPayload && compositionForPayload.length === 1 && lastLoadedOrderTotalForDisplay != null)
-        ? lastLoadedOrderTotalForDisplay
-        : totalForPayload;
+    // date-only/comment-only: preserve loaded total when composition not touched (decouple from usePersistedForPayload — lastPersistedEditOrderState can be null in edge cases)
+    var compositionNotTouched = !_editOrderCompositionTouchedByUser;
+    var singleItem = compositionForPayload.length === 1;
+    var useLoadedTotal = compositionNotTouched && singleItem && lastLoadedOrderTotalForDisplay != null;
+    var total = useLoadedTotal ? lastLoadedOrderTotalForDisplay : totalForPayload;
     // raw-preserve: решаем, сохранять raw legacy gift или пересобирать в канонический формат
     var _giftCurrentTier = (typeof getGiftSlotsByTotal === 'function')
         ? getGiftSlotsByTotal(total) : 0;
@@ -7645,7 +8204,11 @@ function buildOrderPayloadFromEditModal() {
         payload.total = total;
         payload.delivery_cost = deliveryCostForPayload;
         if (one.base_price != null && !isNaN(Number(one.base_price))) payload.unit_price = Number(one.base_price);
-        payload.line_items = null;
+        if (!_editOrderCompositionTouchedByUser && _editOrderOriginalLineItemsJson != null && String(_editOrderOriginalLineItemsJson).trim()) {
+            payload.line_items = _editOrderOriginalLineItemsJson;
+        } else {
+            payload.line_items = null;
+        }
     } else if (compositionForPayload.length > 1) {
         payload.line_items = JSON.stringify(compositionForPayload.map(function (item) {
             var row = {
@@ -7704,7 +8267,52 @@ function buildOrderPayloadFromEditModal() {
             delivery_date: payload.delivery_date
         });
     }
+    // Native (non-legacy-locked): PATCH must always include line_items_v2 in sync with line_items + delivery_cost/total.
+    // merge preserves untouched GH subtrees from snapshot; final replaceDeliveryLineInV2_ forces delivery row to match
+    // payload.delivery_cost (fixes stale snapshot delivery when shouldUpdateDeliveryLineInV2Merge_ was false).
+    if (!_editOrderLegacyCompositionLocked) {
+        try {
+            var v2ForPayload = mergeLineItemsV2ForNativeEditPatch_();
+            if (v2ForPayload && Array.isArray(v2ForPayload) && v2ForPayload.length > 0) {
+                payload.line_items_v2 = replaceDeliveryLineInV2_(JSON.parse(JSON.stringify(v2ForPayload)), deliveryCostForPayload);
+                payload.price_snapshot_at = new Date().toISOString();
+                payload.pricing_snapshot_version = '1.0';
+            }
+        } catch (e) {
+            if (typeof console !== 'undefined' && console.warn) console.warn('[edit-native-v2] line_items_v2 merge failed', e);
+            try {
+                var v2Fb = buildLineItemsV2FromNativeEditComposition_();
+                if (v2Fb && Array.isArray(v2Fb) && v2Fb.length > 0) {
+                    payload.line_items_v2 = replaceDeliveryLineInV2_(JSON.parse(JSON.stringify(v2Fb)), deliveryCostForPayload);
+                    payload.price_snapshot_at = new Date().toISOString();
+                    payload.pricing_snapshot_version = '1.0';
+                }
+            } catch (e2) {
+                if (typeof console !== 'undefined' && console.warn) console.warn('[edit-native-v2] line_items_v2 fallback failed', e2);
+            }
+        }
+    }
     return payload;
+}
+
+/** Main save с открытой панелью позиции: true если пересчитанная строка реально отличается от текущей (иначе не помечаем composition touched — сохраняются useLoadedTotal / preserve line_items). */
+function isEditOrderPanelFlushMaterialChange_(before, r) {
+    if (!before || !r) return true;
+    var eq = function (a, b) { return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim(); };
+    if (!eq(before.model, r.model)) return true;
+    if (!eq(before.extras, r.extras)) return true;
+    if (!eq(before.assembly, r.assembly)) return true;
+    if (!eq(before.frame, r.frame)) return true;
+    if (String(before.width) !== String(r.width)) return true;
+    if (String(before.length) !== String(r.length)) return true;
+    var arcB = before.arc_step != null ? String(before.arc_step) : '';
+    var arcR = r.arcStep != null ? String(r.arcStep) : '';
+    if (arcB !== arcR) return true;
+    if (!eq(before.polycarbonate, r.polycarbonate)) return true;
+    var bt = Number(before.item_total) || 0;
+    var rt = Number(r.item_total) || 0;
+    if (Math.abs(bt - rt) > 5) return true;
+    return false;
 }
 
 /** Валидация полей формы редактирования в модалке. Возвращает массив строк с ошибками (пустой — всё ок). */
@@ -7822,12 +8430,15 @@ function startEditOrder(orderId, optFinally) {
         currentOrderIdForEdit = order.id;
         currentOrderCreatedAtForEdit = order.created_at || null;
         clearEditOrderFieldErrors_();
+        if (typeof resetEditOrderSessionState_ === 'function') resetEditOrderSessionState_();
         fillEditOrderForm(order);
         showEditOrderStep(2);
         var titleEl = document.getElementById('edit-order-modal-title');
         if (titleEl) titleEl.textContent = EDIT_ORDER_MODAL_TITLE_BASE + ' · ' + (order.client_phone || '').trim();
-        var first = document.getElementById('edit-order-client-name');
-        if (first) setTimeout(function () { first.focus(); }, 80);
+        var focusEl = _editOrderLegacyCompositionLocked && document.getElementById('edit-order-delivery-date-display')
+            ? document.getElementById('edit-order-delivery-date-display')
+            : document.getElementById('edit-order-client-name');
+        if (focusEl) setTimeout(function () { focusEl.focus(); }, 80);
         if (typeof optFinally === 'function') optFinally();
     }).catch(function (err) {
         console.error('fetchOrderById error:', err);
@@ -8092,55 +8703,83 @@ function initEditOrderModal() {
                         if (!lastModalCalculationResult) return;
                     }
                 }
-                _editOrderCompositionTouchedByUser = true;
-                if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
-                    editOrderDeliveryCost = _editOrderDeliveryCostPreview;
-                    _editOrderDeliveryCostPreview = null;
-                } else if (_editOrderDeliveryCostPreview != null) {
-                    _editOrderDeliveryCostPreview = null;
+                var hasMaterialChanges = isEditOrderPanelFlushMaterialChange_(item, lastModalCalculationResult);
+                if (hasMaterialChanges && !_editOrderPositionExplicitlySaved) {
+                    if (typeof showToast === 'function') showToast('Сначала сохраните изменения позиции или отмените их.', 'error');
+                    if (hintEl) {
+                        hintEl.textContent = 'Сначала сохраните изменения позиции или отмените их.';
+                        hintEl.className = 'edit-order-hint edit-order-hint--error';
+                        hintEl.style.display = '';
+                    }
+                    return;
                 }
-                editOrderComposition[editOrderEditingIndex] = {
-                    model: lastModalCalculationResult.model, width: lastModalCalculationResult.width, length: lastModalCalculationResult.length,
-                    frame: lastModalCalculationResult.frame, arc_step: lastModalCalculationResult.arcStep, polycarbonate: lastModalCalculationResult.polycarbonate,
-                    item_total: lastModalCalculationResult.item_total, base_price: lastModalCalculationResult.base_price, form: lastModalCalculationResult.form,
-                    city: (typeof getEditOrderAddCity === 'function') ? getEditOrderAddCity() : (item.city || ''),
-                    extras: lastModalCalculationResult.extras || '', assembly: lastModalCalculationResult.assembly || '',
-                    options: typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : undefined,
-                    height: lastModalCalculationResult.height, snowLoad: lastModalCalculationResult.snowLoad, horizontalTies: lastModalCalculationResult.horizontalTies, equipment: lastModalCalculationResult.equipment
-                };
-                closeEditOrderAddPanel();
-                lastModalCalculationResult = null;
-                if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
+                if (!hasMaterialChanges) {
+                    if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
+                        editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+                        _editOrderDeliveryCostPreview = null;
+                    } else if (_editOrderDeliveryCostPreview != null) {
+                        _editOrderDeliveryCostPreview = null;
+                    }
+                }
             }
-            // Перезаписывать позицию из lastModalCalculationResult только если менеджер явно нажал «Сохранить позицию».
-            // Иначе legacy composition не трогаем — phantom diff fix (canonical из расчёта не перезаписывает untouched legacy).
-            if (_editOrderPositionExplicitlySaved && lastModalCalculationResult && editOrderEditingIndex != null &&
-                editOrderEditingIndex >= 0 && editOrderEditingIndex < editOrderComposition.length) {
-                editOrderComposition[editOrderEditingIndex] = {
-                    model: lastModalCalculationResult.model,
-                    width: lastModalCalculationResult.width,
-                    length: lastModalCalculationResult.length,
-                    frame: lastModalCalculationResult.frame,
-                    arc_step: lastModalCalculationResult.arcStep,
-                    polycarbonate: lastModalCalculationResult.polycarbonate,
-                    item_total: lastModalCalculationResult.item_total,
-                    base_price: lastModalCalculationResult.base_price,
-                    form: lastModalCalculationResult.form,
-                    city: (typeof getEditOrderAddCity === 'function') ? getEditOrderAddCity() : (editOrderComposition[editOrderEditingIndex].city || ''),
-                    extras: lastModalCalculationResult.extras || '',
-                    assembly: lastModalCalculationResult.assembly || '',
-                    options: (typeof getEditOrderAddPanelOptionsForStorage === 'function') ? getEditOrderAddPanelOptionsForStorage() : undefined,
-                    height: lastModalCalculationResult.height,
-                    snowLoad: lastModalCalculationResult.snowLoad,
-                    horizontalTies: lastModalCalculationResult.horizontalTies,
-                    equipment: lastModalCalculationResult.equipment
-                };
-                closeEditOrderAddPanel();
-                lastModalCalculationResult = null;
-                renderEditOrderCompositionList();
+            if (typeof calculateDeliveryCostFromAddress === 'function') {
+                var addr1d = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
+                var addr2d = document.getElementById('edit-order-address-part2') ? document.getElementById('edit-order-address-part2').value.trim() : '';
+                var addr3d = document.getElementById('edit-order-address-part3') ? document.getElementById('edit-order-address-part3').value.trim() : '';
+                var noPlotd = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
+                var fullAddrNow = [addr1d, addr2d, noPlotd ? 'без номера участка' : addr3d].filter(Boolean).join(', ');
+                if (_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw != null &&
+                    fullAddrNow.trim() !== String(_editOrderOriginalAddressRaw).trim()) {
+                    var delRes = await calculateDeliveryCostFromAddress(fullAddrNow);
+                    if (delRes.ok) editOrderDeliveryCost = delRes.cost;
+                }
             }
             saveBtn.disabled = true;
             var payload = buildOrderPayloadFromEditModal();
+            if (!payload) {
+                saveBtn.disabled = false;
+                if (typeof showToast === 'function') showToast('Ошибка: состав заказа пуст. Добавьте хотя бы одну позицию.', 'error');
+                if (hintEl) { hintEl.textContent = 'Состав заказа пуст. Добавьте хотя бы одну позицию.'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
+                return;
+            }
+            // STOP-LOSS: legacy flat single-item — не отправлять PATCH если total схлопнулся до доставки (79208034041, 79260699646). Native v2-only исключаем.
+            var isLegacyFlatSingle = payload.line_items === null && payload.model != null &&
+                !(_editOrderNativeLineItemsV2Snapshot && Array.isArray(_editOrderNativeLineItemsV2Snapshot) && _editOrderNativeLineItemsV2Snapshot.length > 0);
+            if (isLegacyFlatSingle) {
+                var dlv = Number(payload.delivery_cost) || 0;
+                var tot = Number(payload.total) || 0;
+                var orig = lastLoadedOrderTotalForDisplay != null ? Number(lastLoadedOrderTotalForDisplay) : null;
+                var hasPosition = (payload.model && String(payload.model).trim()) ||
+                    (payload.unit_price != null && !isNaN(Number(payload.unit_price)) && Number(payload.unit_price) > 0) ||
+                    (payload.extras && String(payload.extras).trim()) ||
+                    (payload.assembly && String(payload.assembly).trim());
+                var collapsed = tot <= dlv && hasPosition && (orig == null ? true : orig > dlv);
+                if (collapsed) {
+                    if (typeof console !== 'undefined' && console.warn) {
+                        var usePersisted = !_editOrderCompositionTouchedByUser && lastPersistedEditOrderState != null;
+                        console.warn('[edit-save-stop-loss] BLOCKED PATCH', {
+                            orderId: currentOrderIdForEdit,
+                            usePersistedForPayload: usePersisted,
+                            compositionSnapshot: (lastPersistedEditOrderState && lastPersistedEditOrderState.composition && lastPersistedEditOrderState.composition.length)
+                                ? lastPersistedEditOrderState.composition.map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; })
+                                : (editOrderComposition || []).map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; }),
+                            deliveryCostForPayload: dlv,
+                            totalForPayload: tot,
+                            originalTotalAtOpen: orig,
+                            shape: 'legacy-flat-single-item'
+                        });
+                    }
+                    saveBtn.disabled = false;
+                    if (typeof showToast === 'function') showToast('Ошибка: сумма заказа некорректно пересчиталась (осталась только доставка). Сохранение отменено. Обратитесь в поддержку.', 'error');
+                    if (hintEl) {
+                        hintEl.textContent = 'Сумма заказа пересчитана некорректно. Сохранение отменено.';
+                        hintEl.className = 'edit-order-hint edit-order-hint--error';
+                        hintEl.style.display = '';
+                    }
+                    return;
+                }
+            }
+            if (typeof console !== 'undefined' && console.log) console.log('[edit-save] PATCH', { orderId: currentOrderIdForEdit, total: payload.total, delivery_cost: payload.delivery_cost, line_items_len: (payload.line_items || '').length });
             supabaseClient.from('orders').update(payload).eq('id', currentOrderIdForEdit).then(function (res) {
                 if (res.error) throw res.error;
                 if (typeof showToast === 'function') showToast('Данные по заказу изменены.', 'success');
@@ -15433,6 +16072,40 @@ function buildLineItemsV2FromOrderCart(cart, deliveryAmount) {
     return lines;
 }
 
+/** Edit native: позиция состава модалки → объект как элемент orderCart для buildLineItemsV2FromOrderCart. */
+function editCompositionToOrderCartItem_(comp) {
+    if (!comp || typeof comp !== 'object') return {};
+    var o = comp.options && typeof comp.options === 'object' ? comp.options : {};
+    return {
+        model: comp.model,
+        width: comp.width,
+        length: comp.length,
+        frame: comp.frame,
+        arcStep: comp.arc_step,
+        polycarbonate: comp.polycarbonate,
+        form: comp.form,
+        city: comp.city,
+        basePrice: comp.base_price != null ? Number(comp.base_price) : 0,
+        bracing: !!o.bracing,
+        groundHooks: !!o.groundHooks,
+        assembly: !!o.assembly,
+        onWood: !!o.onWood,
+        onConcrete: !!o.onConcrete,
+        additionalProducts: Array.isArray(o.additionalProducts) ? o.additionalProducts : [],
+        selectedBeds: o.selectedBeds && typeof o.selectedBeds === 'object' ? o.selectedBeds : {},
+        bedsAssemblyEnabled: !!o.bedsAssemblyEnabled
+    };
+}
+
+/** PATCH native: пересобрать line_items_v2 из текущего состава и доставки (не оставлять расхождение с flat). */
+function buildLineItemsV2FromNativeEditComposition_() {
+    var cart = [];
+    for (var i = 0; i < editOrderComposition.length; i++) {
+        cart.push(editCompositionToOrderCartItem_(editOrderComposition[i]));
+    }
+    return buildLineItemsV2FromOrderCart(cart, editOrderDeliveryCost || 0);
+}
+
 /**
  * Собирает объект заказа для Supabase из текущей формы и корзины.
  * Используется и при создании (insert), и при обновлении (update) заказа.
@@ -15584,7 +16257,7 @@ function buildOrderPayloadFromFormAndCart() {
     };
     if (lineItemsJson) orderData.line_items = lineItemsJson;
 
-    // line_items_v2 — structured price snapshot для новых заказов (create only, edit path не трогаем)
+    // line_items_v2 — structured price snapshot; при create и при PATCH native edit (buildLineItemsV2FromNativeEditComposition_)
     var deliveryAmt = (effectiveCalc && effectiveCalc.deliveryPrice != null) ? effectiveCalc.deliveryPrice : 0;
     var lineItemsV2 = buildLineItemsV2FromOrderCart(orderCart, deliveryAmt);
     if (lineItemsV2 && lineItemsV2.length > 0) {

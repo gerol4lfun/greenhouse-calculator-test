@@ -42,6 +42,8 @@
   .edit-order-loading-overlay__box{display:flex;flex-direction:column;align-items:center;gap:16px;color:#fff;font-size:1rem}
   .edit-order-loading-overlay__spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:edit-order-loading-spin .85s linear infinite}
   @keyframes edit-order-loading-spin{to{transform:rotate(360deg)}}
+  .edit-order-legacy-date-only-notice{margin:0 0 12px;padding:10px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;font-size:.9rem;color:#78350f;line-height:1.35}
+  .edit-order-legacy-date-only-notice.hidden{display:none!important}
   </style>
   <link rel="preload" href="css/styles.css?v=271" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="css/styles.css?v=271"></noscript>
@@ -51,7 +53,7 @@
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=278" defer></script>
+  <script src="js/scripts.js?v=281" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -92,6 +94,7 @@
         <!-- Шаг 2: форма редактирования заказа -->
         <div class="edit-order-step edit-order-step2" id="edit-order-step2">
           <div class="edit-order-form">
+            <p id="edit-order-legacy-date-only-notice" class="edit-order-legacy-date-only-notice hidden" role="status" aria-live="polite"></p>
             <section class="edit-order-form-section" aria-labelledby="edit-order-section-contacts">
               <h3 id="edit-order-section-contacts" class="edit-order-form-section-title">Контакты</h3>
               <div class="edit-order-field" id="eo-name">
@@ -119,7 +122,7 @@
               <h3 id="edit-order-section-delivery" class="edit-order-form-section-title">Доставка</h3>
               <div class="edit-order-field" id="eo-date">
                 <label for="edit-order-delivery-date-display">Дата доставки *</label>
-                <span class="edit-order-dates-link">(<a href="#" onclick="event.preventDefault(); openDeliveryDatesModalFromEditOrder(); return false;">даты по городам</a>)</span>
+                <span class="edit-order-dates-link">(<a href="#" id="edit-order-dates-by-city-link" onclick="event.preventDefault(); openDeliveryDatesModalFromEditOrder(); return false;">даты по городам</a>)</span>
                 <div class="order-calendar-wrapper edit-order-calendar-wrapper">
                   <input type="text" id="edit-order-delivery-date-display" class="order-cal-input" readonly placeholder="ДД.ММ.ГГГГ" onclick="toggleEditOrderCalendar()" tabindex="3">
                   <input type="hidden" id="edit-order-delivery-date" value="">
