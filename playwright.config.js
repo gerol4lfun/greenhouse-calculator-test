@@ -26,6 +26,36 @@ module.exports = defineConfig({
     { name: 'delivery-probe', testMatch: /edit-order-delivery-probe/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
     { name: 'core-mechanics', testMatch: /core-calculator-mechanics/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
     { name: 'edit-integrity', testMatch: /edit-order-integrity/, use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') } },
+    {
+      name: 'existing-order-date-only',
+      testMatch: /existing-order-date-only\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
+    {
+      name: 'new-order-native-integrity',
+      testMatch: /new-order-native-integrity\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
+    {
+      name: 'native-legacy-edit-gates',
+      testMatch: /native-legacy-edit-gates\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
+    {
+      name: 'native-order-v2-merge',
+      testMatch: /native-order-v2-merge\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
+    {
+      name: 'staging-existing-native-composition',
+      testMatch: /staging-existing-native-composition-smoke\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
+    {
+      name: 'staging-native-v2-final',
+      testMatch: /staging-native-v2-final-smoke\.spec/,
+      use: { channel: 'chromium', storageState: path.join(__dirname, 'e2e/.auth/user.json') },
+    },
   ],
   outputDir: 'e2e/test-results',
 });

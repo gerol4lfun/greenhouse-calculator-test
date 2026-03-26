@@ -1,5 +1,11 @@
 # История изменений проекта
 
+## Create path stage closeout (23.03.2026)
+
+**Добавлено:** line_items_v2 (jsonb), price_snapshot_at, pricing_snapshot_version, warehouse_city_key для новых заказов. Fix create-order storage: dangerous identical merge removed; legacy line_items restored для multi-item; flat extras/assembly aggregated from real per-item composition; stale text guard в addToOrderCart. Manual PASS: single, 2 identical, 2 different, 3-item mixed. Edit-path, TG runtime, legacy historical orders — not touched.
+
+---
+
 ## line_items_v2 — structured price snapshot для create (23.03.2026)
 
 **Добавлено:** при create нового заказа записывается line_items_v2 (jsonb), price_snapshot_at, pricing_snapshot_version, warehouse_city_key.

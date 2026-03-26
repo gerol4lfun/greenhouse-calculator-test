@@ -4,9 +4,39 @@
 
 **greenhouse-calculator-main** — главный проект и центр общей документации.
 
+**Обновление верхнего baseline:** 2026-03-26 — см. блок **Latest status** ниже и `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md` (дополнение §1.I).
+
 ---
 
-## Update 2026-03-21 10:52 MSK
+## Latest status (2026-03-26) — baseline + live downstream
+
+**Current-state snapshot:** `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md` — структурный baseline (имя файла историческое; содержимое дополнено **2026-03-26**).
+
+**Current working policy (кратко):** **legacy** = **date-only only** (full composition edit через калькулятор — **не** норма). **Native:** **composition edit supported**; **one-save** — **текущая норма UX**; **save-position-only** как единственный пользовательский сценарий — **не канон**. **Live create** в тестах **off by default** → **`LIVE_SMOKE_ALLOWED=1`**.
+
+**Канон `BASE_URL`:** `https://gerol4lfun.github.io/greenhouse-calculator-test/` (с `/`).
+
+**Канонические `order id`:**
+
+| Роль | id |
+|------|-----|
+| Native single-line | `9aac35ca-9d2e-4291-a6aa-e89528278687` (phone **79000000033**) |
+| Native two-line | `d8357800-b2c9-4cff-a0a5-0a4f5068d3ff` |
+| Legacy date-only `TEST_ORDER_ID` | `121033f7-72f3-48b3-a833-d52444f5424e` |
+
+**E2E lock:** Native — `e2e/staging-existing-native-composition-smoke.spec.js`, project **`staging-existing-native-composition`**. Legacy date-only — `e2e/edit-order.spec.js`, **`edit-order-legacy`**, **`existing-order-date-only-integrity`**. Legacy PATCH contract: **`delivery_date` required**; **`line_items` / `model` not required** (date-only path).
+
+### Живое подтверждение (2026-03-26) — **CONFIRMED** (один заказ, один сценарий)
+
+По **`9aac35ca-9d2e-4291-a6aa-e89528278687`** / **79000000033** после явного изменения состава зафиксировано TG-уведомление вида: **«Заказ изменён · 79000000033»**, блок добавленных позиций (**ТЕПЛИЦА БОЯРСКАЯ 2.5x6** ×2 в тексте), **«Итого: 20 480 ₽ → 56 460 ₽»**. Это принимается как **живое подтверждение** цепочки **calculator → PATCH → sync → Telegram notify** для этого кейса.
+
+**Всё ещё не объявлять закрытым без отдельного доказательства:** повторные подряд правки; полнота downstream/sync/diff/analytics; каждая вариация уведомления.
+
+**Секции с датами 2026-03-21 / 2026-03-22 / 2026-03-23 ниже** — **historical context**, **not latest status**; при конфликте приоритет у snapshot + блоку **2026-03-26** выше.
+
+---
+
+## Update 2026-03-21 10:52 MSK *(historical context — not latest status; baseline: `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md`)*
 
 ### Бизнес-логика жизни заказа
 
@@ -47,13 +77,36 @@
 
 ---
 
-## Update 2026-03-22 — Existing single-item locked greenhouse (safe mode)
+## Update 2026-03-22 — Existing single-item locked greenhouse (safe mode) *(historical context — not latest status; baseline: `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md`)*
 
 ### Current source of truth (2026-03-22)
 
-- **Legacy single-item:** safe mode / locked snapshot path.
-- **Main save path:** current catalog не обязателен для default existing single-item save — если теплицу не меняли.
+- **Legacy single-item:** safe mode / locked snapshot path внедрён (commits f6a1f47, bced390, d54e24d).
+- **Main save path:** current catalog не обязателен для default existing single-item save — если теплицу не меняли. **Not proven sufficient** — real-base smoke 2026-03-23 выявил total collapse.
 - **New order flow:** untouched.
+
+### Native/new vs legacy/manual — split (2026-03-23)
+
+| Класс | Определение | Статус |
+|-------|-------------|--------|
+| **native/new** | Созданы через калькулятор; line_items присутствует | PASS evidence: order afa926e5, phone 79204934944; date-only save; total 24 990 preserved |
+| **legacy/manual** | Старые заказы, вручную внесённые в Google Sheets | Отдельный audit; отдельная smoke logic; не смешивать с native в отладке |
+
+**line_items-present native/new path** уже имеет PASS evidence. Manual legacy orders требуют отдельного audit и отдельной smoke logic. **Do not mix these classes** в future debugging. See AUDIT_2026-03-23_LEGACY_MANUAL_OPEN_EDIT.md.
+
+### Existing-order edit — разграничение путей (2026-03-23)
+
+**Safe-save principle (подтверждён):** если composition/order items не меняли, existing order save должен идти по safe metadata-only payload — без пересборки товарной части, без пересчёта price-locked полей. Old/existing orders keep locked prices unless user actually changes composition.
+
+**Open-edit hydration bug (подтверждён):** часть бага была в open-edit/hydrate flow, не только в save/PATCH. Карточка показывала total 56 020 (или 31 470 для legacy 79202431340), но после «Редактировать» modal сразу показывал 2 550 или 1 000 до save. Исправлено: item_total fallback, single-item backfill, base_price/unit_price recovery for legacy. Reset edit-session state.
+
+**Пути:**
+
+| Путь | Статус |
+|------|--------|
+| **SAFE METADATA EDIT** (date-only, address-only, comment-only) | existing itemized single-item date-only: **PASS** на Sergey (79260699646). Модалка 56 020; save; total preserved; line_items preserved. address-only — не yet re-verified. |
+| **COMPOSITION EDIT** | extra-only, add/remove position — **NOT PROVEN**. Не claim stable. |
+| **RECALC / NOT PROVEN** | «Обновить расчёт» для legacy/non-catalog — **NOT READY**. 79045355637: save success, recalc error. Recalc path diverges from save path. Multi-item existing edit — not proven. |
 
 ### Commits in main (2026-03-22)
 
@@ -72,9 +125,22 @@
 ### Product direction (согласованная логика)
 
 - Existing single-item по умолчанию — locked snapshot.
-- Если теплицу не меняли: current catalog не обязателен; можно менять extras/assembly/foundation/delivery/address/comment; no-change и extras-only save должны работать.
+- Если теплицу не меняли: current catalog не обязателен; можно менять extras/assembly/foundation/delivery/address/comment; no-change и extras-only save должны работать. **Target, not proven:** real-base smoke 2026-03-23 показал total collapse.
 - Только при изменении greenhouse identity — catalog path и новая цена.
 - New order flow не трогать.
+
+### Confirmed incidents 2026-03-23 (real-base smoke)
+
+- **79260699646, order 6a936a8b-8bb4-401a-9276-3e67f202e35b (Сергей Николаевич):** date-only edit 28.04.2026→29.04.2026. Result: total collapsed 56 020→2 550. Remediation: order restored from manual backup (несколько раз). **После фиксов:** narrow path existing itemized single-item date-only — PASS (modal 56 020, save OK, total preserved, line_items preserved).
+- **79045355637:** added timber base + assembly. Save path showed success; «Обновить расчёт» produced error «Заполните все параметры теплицы». Save path и recalc path diverge; recalc path для legacy/non-catalog broken. Remediation: order restored back.
+
+**Отдельно зафиксировано:** возможна утечка edit-session state между заказами без full reload. Сделан reset edit-session state. Важный проработанный контур; не объявлять весь existing-edit fully stable только из-за этого.
+
+**Не считать доказанным:** extra-only edit for all existing orders; recalc path for legacy/non-catalog; composition edit for all legacy orders; multi-item existing edit as fully stable.
+
+**Важное различие:** старые/manual orders и new-form orders нельзя смешивать в анализе и тестах. У старых заказов часть полей может быть legacy shape. Для старых заказов менеджерская таблица может служить источником восстановления цены/допов/сборки по телефону.
+
+**Not confirmed:** Supabase "not found" screenshot — UI had extra empty id filter; not evidence of missing-order bug.
 
 ### Open / not fully proven
 
@@ -88,6 +154,42 @@
 
 ---
 
+## Update 2026-03-24 — Legacy active live smoke + gifts phantom fix retest
+
+**Scope:** real active orders; backup/restore; gifts phantom UI minimal fix.
+
+**CONFIRMED:** 2 legacy/manual active orders (79276687505, 79178183702) — date-only edit smoke PASS. Gifts phantom UI: minimal diff (resetEditOrderSessionState_, fillEditOrderForm skipNotice); payload/save не менялись. Live retest 79276687505: ложный toast не появляется; date-only save OK; restore успешен. TG notify по 79276687505: корректно пришло только смена даты. Final restored: e939569d/79178183702/11.04.2026/1000/71730; 121033f7/79276687505/25.04.2026/1000/53850.
+
+**OPEN:** TG notification inconsistency — часть других edit без видимых уведомлений; не confirmed bug; separate audit in telegram_bot_main.
+
+**Not claimed:** legacy fully fixed; gifts fully fixed; notify-path fully reliable. See docs/AUDIT_2026-03-24_LEGACY_ACTIVE_LIVE_SMOKE_AND_GIFTS_RETEST.md.
+
+---
+
+## Update 2026-03-25 — Native vs legacy / v283 (stage snapshot)
+
+**Файл:** `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md` (полный текст — там же; сверху файла — блок **Latest status**).
+
+- **CONFIRMED:** калькулятор staging **v283**; kill switch **LIVE_SMOKE_ALLOWED**; native composition **line_items ↔ line_items_v2** fix chain (v281→v283); legacy **date-only** workflow (не full composition edit через калькулятор).
+- **OPEN:** идентичные строки / FIFO; «грязные» smoke-заказы; supplier path для всех сценариев — не claim exhaustive.
+- **Не заявлять:** каждый edge case закрыт; безопасный legacy full-edit; все исторические тестовые заказы как контрольные.
+
+---
+
+## Update 2026-03-23 — Create path storage для new orders (PASS) *(historical context — not latest status; baseline: `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md`)*
+
+**Главный слой:** для новых заказов детальным хранилищем состава является `line_items_v2` (jsonb).
+
+**Legacy flat fields** сохраняются для совместимости: model, quantity, extras, assembly, line_items, delivery_cost, total.
+
+**Модель:** один заказ = одна запись в `orders`.
+
+**line_items_v2:** отдельные строки по сущностям — greenhouse, addon, service, bed, delivery. `parent_line_id` связывает допы/сборку/грядки с конкретной теплицей.
+
+**Manual PASS:** single-item, 2 identical, 2 different, 3-item mixed composition. Edit-path, TG runtime, legacy historical orders — not touched.
+
+---
+
 ## Документация (источники истины)
 
 | Файл | За что отвечает | Когда смотреть |
@@ -98,6 +200,9 @@
 | **docs/AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md** | Phantom delivery probe: not reproduced in checked calculator-side scenarios | Phantom +1000, delivery payload |
 | **docs/AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md** | INC-002 gift audit: gift does not explain +1000 in calculator code path | Gift, +1000, INC-002 |
 | **docs/EOD_2026-03-22_CALC.md** | EOD 22.03: safe mode closed, commits, manual verify, open unlock-flow | Locked greenhouse, 5f9a1c7b, next step |
+| **docs/AUDIT_2026-03-23_LEGACY_MANUAL_OPEN_EDIT.md** | Legacy/manual open-edit total collapse: canonical repro, fix, verified | Native vs legacy split, canonical cases |
+| **docs/AUDIT_2026-03-24_LEGACY_ACTIVE_LIVE_SMOKE_AND_GIFTS_RETEST.md** | Legacy active live smoke + gifts phantom fix retest | Live smoke 24.03, CONFIRMED/OPEN |
+| **docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md** | Этап 25.03: native/legacy, v283, CONFIRMED/OPEN/limits | После handoff v283, kill switch, line_items_v2 parity |
 | **docs/PREPROD_PLAN.md** | План до прода (красное/жёлтое/зелёное) | Перед релизом |
 | **docs/SMOKE_CHECKLIST.md** | Ручной чек-лист перед выкладкой | Перед релизом |
 | **docs/LEGACY_MAP.md** | Что устарело, что legacy | При сомнениях в FAQ/версиях |

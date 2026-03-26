@@ -10,6 +10,7 @@ telegram-bot/.env
 e2e/.env
 e2e/.auth/
 e2e/test-results/
+e2e/.last-smoke-live-order.json
 # Токены и секреты
 *_token.txt
 *_token.md

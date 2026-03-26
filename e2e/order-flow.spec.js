@@ -22,7 +22,25 @@ const {
   saveEditOrder,
 } = require('./helpers');
 
+/** Tests that call fillAndSubmitOrderForm → real POST /rest/v1/orders when not intercepted. */
+const ORDER_FLOW_POST_CREATE_PREFIXES = [
+  'create-order-integration:',
+  'create-order-line-items-integration:',
+  'create-order-paid-extras:',
+  'edit-order-date:',
+  'edit-order-composition:',
+  'cancelled-order:',
+  'save-reopen:',
+  'gifts-save-reopen:',
+];
+
 test.describe('order-flow', () => {
+  test.beforeEach(({}, testInfo) => {
+    const t = testInfo.title;
+    if (!ORDER_FLOW_POST_CREATE_PREFIXES.some((p) => t.startsWith(p))) return;
+    test.skip(process.env.LIVE_SMOKE_ALLOWED !== '1', 'Kill switch: LIVE_SMOKE_ALLOWED=1 required for tests that POST new orders');
+  });
+
   test('create-order-basic: local-safe smoke — расчёт, корзина, форма (без submit)', async ({ page }) => {
     await page.goto('/');
     await expandOrderFormAndWaitCity(page);

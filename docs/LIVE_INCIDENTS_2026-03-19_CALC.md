@@ -1,8 +1,53 @@
 # LIVE INCIDENTS — 2026-03-19 — CALC
 
 **Контур:** greenhouse-calculator-main  
-**Дата:** 2026-03-19 (обновлено 2026-03-21)  
+**Дата:** 2026-03-19 (обновлено 2026-03-24)  
 **Scope:** только симптомы, связанные с калькулятором. Без предложений по исправлению кода.
+
+---
+
+## Status sync 2026-03-24 (docs-only)
+
+- **Legacy active date-only live smoke — PASS:** 2 real active orders (79276687505, 79178183702) backed up in Supabase; date-only edit tested; delivery_date changed; total did not collapse; delivery_cost stayed 1000; composition not broken; TG notification OK; both restored from backup. Final restored: e939569d/79178183702/11.04.2026/1000/71730; 121033f7/79276687505/25.04.2026/1000/53850.
+- **Gifts phantom UI (2026-03-24) — FIXED:** minimal diff (resetEditOrderSessionState_ + fillEditOrderForm hydrate skipNotice=true); payload/save не менялись. Live retest 79276687505: ложный toast больше не появляется; date-only save OK. Broader gifts path — не claim fully fixed.
+- **TG notification (2026-03-24):** confirmed 79276687505 — корректное уведомление только о смене даты. OPEN observation: часть других edit без видимых уведомлений; not confirmed bug; separate audit in telegram_bot_main.
+- Do not claim legacy fully fixed. Do not claim gifts fully fixed. Do not claim notify-path fully reliable. See docs/AUDIT_2026-03-24_LEGACY_ACTIVE_LIVE_SMOKE_AND_GIFTS_RETEST.md.
+
+---
+
+## Status sync 2026-03-23 (docs-only)
+
+- **Existing-order edit:** critical incident existed; total collapse на 79260699646 (Сергей Николаевич). Заказ несколько раз restored из manual backup.
+- **Narrow path verified PASS (23.03.2026):** existing itemized single-item → date-only edit → save. Модалка 56 020; save прошёл; total не схлопнулся; line_items сохранились. **Broader coverage still pending.** Do not present as «existing-order edit fully fixed».
+- **4-smoke plan:** был запущен; временно остановлен после critical failures; после фиксов один критичный путь (Sergey/date-only) дал PASS; remaining smoke coverage still not complete.
+- **Create-order storage for new orders — RESOLVED (23.03.2026):** line_items_v2 + legacy compatibility fixed. Manual PASS: single-item, 2 identical, 2 different, 3-item mixed. Residual risk: low — non-blocking for create path.
+
+### Legacy/manual open-edit total collapse (2026-03-23)
+
+| Status | REPRODUCED, FIX APPLIED, PARTIALLY VERIFIED |
+|--------|---------------------------------------------|
+| **Before fix** | quick preview correct (31 470); after «Редактировать» inside modal total collapsed to 1 000, without save |
+| **After fix** | canonical repro (79202431340, order b983110f) opens with correct total 31 470 |
+| **Still open** | broader legacy validation; legacy add/remove option checks |
+
+Do not write that entire legacy is fully fixed. Do not write that gifts are resolved globally.
+
+### Confirmed incidents 2026-03-23
+
+| # | client_phone | order_id | action | result | remediation |
+|---|--------------|----------|--------|--------|-------------|
+| INC-011 | 79260699646 | 6a936a8b-8bb4-401a-9276-3e67f202e35b | date-only edit 28.04.2026→29.04.2026 | total collapsed 56 020→2 550 | order restored from manual backup (несколько раз) |
+| INC-012 | 79045355637 | — | added timber base + assembly | save path showed success; «Обновить расчёт» error «Заполните все параметры теплицы» | order restored back |
+
+**Incident chain preserved.** INC-011: after fixes, narrow path date-only PASS verified. Save path и recalc path diverge; recalc path для legacy/non-catalog broken.
+
+**Not confirmed:** Supabase "not found" screenshot — UI had extra empty id filter; не evidence of missing-order bug.
+
+---
+
+## Status sync 2026-03-22 (docs-only)
+
+- **Existing single-item main save catalog blocker — RESOLVED by safe mode:** safe mode для legacy single-item внедрён (commits f6a1f47, bced390, d54e24d). Вместо legacy greenhouse form показывается summary-card; default save path не требует current catalog match. Order 5f9a1c7b — manual verification: add extra window, total 62470→63960; старые допы/сборка сохранены. **Note:** full explicit greenhouse-replacement flow («Изменить теплицу» unlock/catalog path) still not fully proven.
 
 ---
 
@@ -98,6 +143,18 @@
 | **Evidence needed** | Root cause investigation; baseline/delivery audit |
 | **Cross-contour** | CALC + TG; не claim closed |
 | **Status** | confirmed symptom; root cause NOT confirmed |
+
+---
+
+## INC-010: 5f9a1c7b — Existing single-item main save catalog blocker (22.03.2026)
+
+| Поле | Содержание |
+|------|-------------|
+| **Confirmed facts** | Order id 5f9a1c7b-b6fd-463e-a326-e313223835d4. model: ТЕПЛИЦА ЦАРСКАЯ ЛЮКС 3М ПРЯМОСТЕННАЯ; extras: Грунтозацепы 14 шт; assembly: Сборка и установка; delivery_cost: 1000; total before: 62470. |
+| **Resolved by** | Safe mode for legacy single-item (commits f6a1f47, bced390, d54e24d). Summary-card UI; default save не требует catalog. Manual verification: add extra window → total 63960; старые допы/сборка сохранены. |
+| **Note** | Full «Изменить теплицу» unlock/catalog flow — not fully proven. |
+| **Cross-contour** | CALC only |
+| **Status** | resolved by safe mode; manual verification evidence |
 
 ---
 

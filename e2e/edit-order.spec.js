@@ -24,11 +24,23 @@ const FIXTURE_ORDER_IDS = [
   'ced4fafd-1602-4aae-874d-70f0f97150e3',
 ].filter(Boolean);
 
+/** Root URL с сохранением path (GitHub Pages /greenhouse-calculator-test/). Не использовать page.goto('/'). */
+function editOrderAppRootUrl() {
+  return (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/';
+}
+
+async function gotoEditOrderAppRoot(page) {
+  const target = editOrderAppRootUrl();
+  console.log('[edit-order] goto target (preserve subpath) =', target);
+  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 10000 });
+  console.log('[edit-order] page.url after goto =', page.url());
+}
+
 /** Open order by fixture ID first (deep link). Fallback to phone search only if IDs fail. */
 async function openOrderByFixtureIdFirst(page) {
   for (const orderId of FIXTURE_ORDER_IDS) {
     try {
-      await page.goto('/');
+      await gotoEditOrderAppRoot(page);
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       await waitForEditOrderReady(page);
@@ -39,7 +51,7 @@ async function openOrderByFixtureIdFirst(page) {
   }
   for (const phone of KNOWN_PHONES) {
     try {
-      await page.goto('/');
+      await gotoEditOrderAppRoot(page);
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       await waitForEditOrderReady(page);
@@ -77,7 +89,7 @@ async function setupPatchIntercept(page, captured) {
 async function openOrderWithFallback(page) {
   for (const phone of KNOWN_PHONES) {
     try {
-      await page.goto('/');
+      await gotoEditOrderAppRoot(page);
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       const orderId = await openEditOrderByPhoneAndGetOrderId(page, phone);
@@ -499,7 +511,8 @@ test.describe('Редактирование заказа', () => {
     const pl = captured[captured.length - 1].payload;
     expect(pl).toBeTruthy();
     expect(pl.delivery_date).toBeTruthy();
-    expect(pl.line_items != null || pl.model != null).toBeTruthy();
+    // Legacy date-only PATCH: server contract is delivery_date only (no line_items/model required).
+    expect(String(pl.delivery_date)).not.toBe(String(before.delivery_date_display));
     if (before.address_part1 && pl.delivery_address != null) {
       expect(String(pl.delivery_address).slice(0, 30)).toContain(before.address_part1.slice(0, 20));
     }

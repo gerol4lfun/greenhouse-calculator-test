@@ -236,7 +236,13 @@ async function openEditOrderById(page, orderId) {
  */
 async function saveEditOrder(page) {
   await page.locator('#edit-order-save-btn').click();
-  await page.locator('#edit-order-modal-body[data-step="1"]').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForFunction(() => {
+    const body = document.getElementById('edit-order-modal-body');
+    const hint = document.getElementById('edit-order-form-hint');
+    const step = body ? body.getAttribute('data-step') : '';
+    const hintText = hint ? (hint.textContent || '') : '';
+    return step === '1' || (step === '2' && /изменены|Данные по заказу изменены/i.test(hintText));
+  }, { timeout: 15000 });
 }
 
 /**

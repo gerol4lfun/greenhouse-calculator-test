@@ -70,6 +70,8 @@
 
 - **docs/SMOKE_CHECKLIST.md** — ручной чек-лист перед выкладкой (не автотест).
 
+**Legacy/manual smoke (2026-03-23):** ручная проверка — legacy/manual open-edit (canonical repro 79202431340, total не схлопывается); legacy/manual date-only save. No broad redesign, no automated promises.
+
 ### 2.4. Legacy / отдельно
 
 - **edit-order.spec.js** — один большой тест «этапы 1–9», зависимость от TEST_PHONE и наличия заказов; sleep-ориентированный. Не входит в обязательный local-safe/integration набор.

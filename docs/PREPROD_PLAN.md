@@ -1,18 +1,39 @@
 # План до прода
 
-**Дата:** 2026-03-15. **Версия калькулятора:** v271.
+**Дата:** 2026-03-15. **Версия калькулятора:** v271 (историческая отметка в шапке; актуальный этап см. baseline ниже).
 
 ---
 
-## ПРОЕКТНЫЙ РЕЖИМ И ФОКУС (20.03.2026)
+## Current baseline (2026-03-25)
 
-**Главный приоритет:** стабилизация рабочей системы, не идеальная нормализация исторической базы. Продукт уже работает; нет времени на exhaustive testing; приоритет — убрать худшие костыли и стабилизировать критичный путь.
+**Baseline doc:** `docs/STATUS_SNAPSHOT_2026-03-25_NATIVE_LEGACY_V283.md` — главный актуальный snapshot этапа; при расхождении с более старыми секциями этого файла **приоритет у snapshot**.
+
+**CONFIRMED (кратко):** staging **v283** (`scripts.js?v=283`, `APP_VERSION = "v283"` — handoff/curl); цепочка **v281→v282→v283** для согласования `line_items` / `line_items_v2` при native composition edit — **не заявлять шире**, чем в snapshot; **kill switch** live create: по умолчанию **выключено**, **`LIVE_SMOKE_ALLOWED=1`**; **legacy** — **date-only** + UI/блокировки; **native:** create, downstream alignment, **date-only** и **address-only** (где заявлено в snapshot — не меняют товарную часть).
+
+**OPEN:** идентичные строки / FIFO; «грязные» smoke-заказы; supplier path не exhaustive; GAS/SQL без excerpt в чате — **не подтверждено** doc-only проходом.
+
+**What not to claim:** каждый edge case закрыт; legacy **full-edit** безопасен; исторические тестовые заказы как контрольные объекты; exhaustive coverage для всех multi-line сценариев.
+
+**No chaotic live smoke:** live create tests остаются **выключенными по умолчанию**; не использовать «грязные» smoke-заказы как контрольные; спокойный maintenance / documentation — **не** хаотичные дополнительные live-прогоны (см. snapshot §5).
+
+---
+
+## ПРОЕКТНЫЙ РЕЖИМ И ФОКУС (23.03.2026)
+
+**Главный приоритет:** стабилизация existing-order edit перед продом. Existing-order edit **был нестабилен**; critical incident подтверждён. Один узкий путь (existing itemized single-item date-only) — PASS после фиксов.
 
 **Editing rules (направление):** untouched existing/recent order fields → preserve literally; date-only edit → must not recalc item price or delivery; address-only change → may recalc delivery; changing one extra → must not recalc whole greenhouse by new prices.
 
+**Ближайший порядок работ (freeze factual 2026-03-23):**
+1. Зафиксировать factual progress as of 2026-03-23.
+2. Продолжить controlled smoke для existing-order edit.
+3. Следующая проверка: address-only / another order without reload.
+4. extra-only / recalc — только после controlled checks. Не go wide.
+
 **Active bug focus (калькулятор):**
-- phantom delivery +1000 — calculator-side hypotheses weakened; delivery probe passed, gift audit showed gift does not explain +1000 in checked code path; issue not globally closed; TG/sheets/diff layer remains more plausible next layer (see AUDIT_2026-03-20_PHANTOM_DELIVERY_PROBE.md, AUDIT_2026-03-20_INC002_GIFT_PLUS1000_READONLY.md)
-- legacy single-item date-only / comment-only total overwrite — fixed and verified 2026-03-20
+- **total collapse on existing order edit** — incident confirmed (79260699646); narrow path date-only — PASS после фиксов; broader coverage still pending.
+- **79045355637:** recalc error; save path и recalc path diverge.
+- phantom delivery +1000 — calculator-side hypotheses weakened; TG/sheets/diff layer remains more plausible next layer
 
 ---
 
@@ -39,6 +60,7 @@
 - **Existing multi-item identical-order update:** manual confirmed на заказе 79000000020. Менялось только `delivery_date` (18.03.2026). quantity=2, line_items=NULL; delivery_date обновился; quantity/status/gift/comment/city/commercial_offer не уехали. Подтверждает только кейс «2 одинаковые позиции через quantity=2».
 - **Existing line_items-order update:** manual confirmed на заказе 79000000018. Менялось только `delivery_date`; line_items сохранился; quantity/status/comment/commercial_offer не уехали. Manual confirmed, не auto verified.
 - **Existing cancel flow:** manual confirmed на заказе 79000000066. status: synced → cancelled; comment получил дописку с причиной отмены; quantity, delivery_date, line_items, commercial_offer не изменились; обычный edit-path после cancel блокируется. Manual confirmed, не auto verified.
+- **Legacy active date-only smoke + gifts retest (2026-03-24):** live smoke on 2 real active orders (79276687505, 79178183702) after backup/restore. delivery_date changed; total did not collapse; delivery_cost stayed 1000; composition not broken; TG notification OK; both restored from backup. Gifts phantom UI minimal fix applied; live retest 79276687505 — ложный toast больше не появляется; date-only edit сохранён; restore успешен. See docs/AUDIT_2026-03-24_LEGACY_ACTIVE_LIVE_SMOKE_AND_GIFTS_RETEST.md.
 - **Восстановление подарков в edit-модалке:** баг исправлен. Причина — parseGiftTextToSelected не распознавал текст вида «2 дополнительные форточки» и не разворачивал количество в слоты (id=window). Ручная проверка на заказе 70000000019: после reopen Подарок 1 и Подарок 2 = Дополнительная форточка. Gifts consistency в целом по-прежнему partial — integration e2e gifts-save-reopen не verified в локальном окружении (зависимость от Supabase/waitOrderSuccess).
 - **Gifts raw-preserve на legacy existing order:** manual confirmed на заказе 8e803d39-db87-4da1-b420-4325a29e0dfb (client_phone 79266302494, Жирнов Сергей). Меняли только delivery_date; gift остался literally «форточка 1 шт.» — legacy gift не переписывается в канонический формат при edit другого поля.
 - **Phantom diff fix (15.03.2026):** при edit existing order, если менеджер менял только дату — diff только по дате. delivery_address и client_phone (dual-phone) не пересобираются, не нормализуются; untouched legacy fields сохраняются literally. Реализовано: _editOrderOriginalAddressRaw, _editOrderAddressTouchedByUser; phone — при !touched всегда original.
@@ -63,7 +85,7 @@
 | 6 | **Ivan dual-phone preserve** | verified |
 | 7 | **Legacy composition/title phantom diff fix** | verified on Svetlana (change only date → diff only date in TG) |
 | 8 | **Passive mutation major branches** | contained |
-| 9 | **Legacy single-item total double-count (20.03.2026)** | fillEditOrderForm: при delivery_cost>0 item_total = total - delivery_cost; date-only save сохраняет total; retest PASS на safe clone |
+| 9 | **Legacy single-item total double-count (20.03.2026)** | fillEditOrderForm: при delivery_cost>0 item_total = total - delivery_cost. Safe-clone retest PASS. **Contradicted by real-base 2026-03-23:** 79260699646 date-only collapse 56 020→2 550; fix not proven sufficient. |
 | 10 | **Stale form / mixed order state (verified 2026-03-20)** | Order A open, user searched order B from modal search → old form collapsed correctly; stale form no longer visible |
 | 11 | **Legacy single-item comment-only total overwrite (20.03.2026)** | buildOrderPayloadFromEditModal: use lastLoadedOrderTotalForDisplay when usePersistedForPayload && single-item; retest PASS: comment-only save preserves total=41480, delivery_cost=2500 |
 | 12 | **Inline vs modal delivery date mismatch (20.03.2026)** | showDeliveryDatesModal(initialCity); edit-order link «даты по городам» passes order city; manual PASS: non-default city with/without assembly. Resolved for checked edit-order cases. |
@@ -83,17 +105,18 @@
 
 | # | Что | Статус |
 |---|-----|--------|
-| 13 | **Safe mode for legacy single-item** | В main: f6a1f47, bced390, d54e24d. locked snapshot path; current catalog не обязателен для default save. |
+| 13 | **Safe mode for legacy single-item** | В main: f6a1f47, bced390, d54e24d. locked snapshot path; current catalog не обязателен для default save. **Not proven sufficient on real-base:** 2026-03-23 smoke — total collapse. |
 | 14 | **Summary-card UI** | Вместо legacy greenhouse form — summary-card с названием, размером, ценой, статусом «🔒 Цена зафиксирована», CTA «Изменить теплицу». |
 
-## line_items_v2 rollout (23.03.2026)
+## line_items_v2 rollout (23.03.2026) — create path PASS
 
-- **Create path:** новые заказы получают line_items_v2, price_snapshot_at, pricing_snapshot_version, warehouse_city_key. Legacy flat-поля без изменений.
-- **Структура:** каждая теплица — отдельная greenhouse-строка (quantity=1). Addon/service/bed с parent_line_id = line_id greenhouse. Delivery — одна строка без parent.
-- **Legacy line_items:** для multi-item (identical и different) всегда заполнен, не null.
-- **Flat extras/assembly:** для multi-item строятся по item-ам, x2 только при нескольких позициях с допом.
-- **SQL:** ALTER TABLE orders ADD COLUMN IF NOT EXISTS для line_items_v2, price_snapshot_at, pricing_snapshot_version (warehouse_city_key может уже быть).
-- **Manual:** проверить create single/identical/different — line_items_v2 заполнен, parent_line_id корректен.
+**Create path for new orders:** stabilized, manual PASS.
+
+**Closed:** dangerous merge identical items removed; each greenhouse stored separately in line_items_v2; legacy line_items restored for identical/multi-item create; top-level extras/assembly aggregated from real items; stale text leak in addToOrderCart fixed.
+
+**Open:** edit-path; TG downstream reading/migration; legacy historical orders; low residual risk (partial stale text mismatch in rare checkbox/recalc edge cases, non-blocking).
+
+**SQL:** ALTER TABLE orders ADD COLUMN IF NOT EXISTS для line_items_v2, price_snapshot_at, pricing_snapshot_version.
 
 ## Open issues / suspected issues
 
@@ -103,6 +126,7 @@
 - **Calendar region→city mapping:** для заказов без orders.city fallback derive из address использует region→canonical mapping (Московская область→Москва и т.п.). Primary fix — source-of-truth (orders.city first) — подтверждён.
 - **Адресный контур / display vs warehouse key:** принято решение — вводим orders.warehouse_city_key. См. TRUTH_MAP.md «Архитектурное решение: warehouse_city_key» и раздел ниже.
 - **Gifts consistency end-to-end** не закрыт полностью
+- **Gifts phantom UI / dirty-state (2026-03-24):** FIXED minimal diff. Был read-only audit; узкий fix: resetEditOrderSessionState_ + fillEditOrderForm hydrate skipNotice=true. Payload/save не менялись. Live retest 79276687505 — ложный toast больше не появляется. Broader gifts path — не claim fully fixed.
 - **Multi-item сценарии** не закрыты полностью.
 - **Inline vs modal delivery date mismatch** — resolved for checked edit-order cases (20.03.2026). Fix: modal receives initialCity from edit context. Remains open: legacy assembly format edge cases; city normalization edge cases; full calendar edge-case coverage not claimed.
 - **Broad legacy/recent stabilization** — не равно full legacy support; проверенные кейсы (date-only, comment-only на safe clone) не покрывают все legacy сценарии. Кейс «2 одинаковые через quantity=2» manual confirmed (заказ 79000000020). Кейс update заказа с line_items manual confirmed (заказ 79000000018). Flaky автотест create-order-line-items — не считать рабочим автотестом.
@@ -120,15 +144,19 @@
 
 ---
 
-## Current priority
+## Current priority (23.03.2026)
 
-**№1:** Existing-order update flow: калькуляторный edit + updated_at signal подтверждены. Автоматизировать edit в e2e (первый сценарий — смена даты доставки) — следующий шаг.
+**P0:** legacy/manual order opens in edit without total collapse. Fix applied; canonical repro verified (79202431340).
 
-**№2:** Gifts consistency end-to-end
+**P1:** legacy/manual date-only save.
 
-**№3:** Multi-item scenarios
+**P2:** legacy/manual add/remove one common option (assembly OR timber base OR ground anchors).
 
-**№4:** Auth migration map / release safety
+**P3:** broader legacy/manual coverage.
+
+**Not now:** gifts cleanup for old manual orders; multi-item identical greenhouse extras; beds; TG/notify related tails.
+
+**Background:** Recalc path для legacy/non-catalog — diverges from save path (79045355637); не расширять scope. Auth migration map — отдельно.
 
 ---
 
