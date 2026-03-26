@@ -7346,7 +7346,14 @@ function renderEditOrderCompositionList() {
         var text = greenhouseTitle_(item.model, item.width, item.length);
         var displayPrice;
         if (item.base_price != null && !isNaN(Number(item.base_price))) {
-            displayPrice = Number(item.base_price);
+            var bpNum = Number(item.base_price);
+            var itLine = item.item_total != null ? Number(item.item_total) : 0;
+            // base_price = каталожный каркас; item_total = полная позиция (сборка/допы). Для multi-line расчёт не «прилипает» к базе как в single-line — иначе колонка цены остаётся на базе при выросшем item_total (PATCH/итого уже верные).
+            if (itLine > bpNum + 1) {
+                displayPrice = itLine;
+            } else {
+                displayPrice = bpNum;
+            }
         } else {
             var extrasSum = parseExtrasAssemblySum(item.extras, item.assembly);
             var itemTotal = item.item_total != null ? Number(item.item_total) : 0;
