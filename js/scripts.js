@@ -7539,7 +7539,6 @@ function openEditOrderAddPanel(index) {
     if (index != null && index >= 0 && index < editOrderComposition.length) {
         var item = editOrderComposition[index];
         city = item.city || city;
-        if (savePosBtn) savePosBtn.classList.remove('hidden');
         modalCityData = [];
         getCityDataForModal(city).then(function (r) {
             if (r && r.data) {
@@ -8625,208 +8624,6 @@ function initEditOrderModal() {
         });
     }
 
-    var saveBtn = document.getElementById('edit-order-save-btn');
-    if (saveBtn) {
-        saveBtn.addEventListener('click', async function () {
-            var hintEl = document.getElementById('edit-order-form-hint');
-            if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; hintEl.className = 'edit-order-hint'; }
-            clearEditOrderFieldErrors_();
-            var errs = validateEditOrderModal();
-            if (errs.length) {
-                applyEditOrderErrors_(errs);
-                if (hintEl) {
-                    hintEl.textContent = 'Заполните: ' + errs.join(', ');
-                    hintEl.className = 'edit-order-hint edit-order-hint--error';
-                    hintEl.style.display = '';
-                }
-                if (typeof showToast === 'function') showToast('Заполните все обязательные поля', 'error');
-                return;
-            }
-            var editAddr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
-            var isOldOrder = currentOrderCreatedAtForEdit && String(currentOrderCreatedAtForEdit).slice(0, 10) < '2026-03-09';
-            if (editAddr1 && typeof checkAddressInDeliveryRegion === 'function' && !isOldOrder) {
-                var editWarehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
-                var regionCheck = await checkAddressInDeliveryRegion(editAddr1, editWarehouseCityKey);
-                if (!regionCheck.inRegion) {
-                    setEditOrderFieldError_('eo-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
-                    if (hintEl) {
-                        hintEl.textContent = regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.';
-                        hintEl.className = 'edit-order-hint edit-order-hint--error';
-                        hintEl.style.display = '';
-                    }
-                    if (typeof showToast === 'function') showToast(regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.', 'error');
-                    return;
-                }
-            }
-            if (!currentOrderIdForEdit) {
-                if (typeof showToast === 'function') showToast('Ошибка: заказ не выбран', 'error');
-                return;
-            }
-            var statusRes = await supabaseClient.from('orders').select('status').eq('id', currentOrderIdForEdit).maybeSingle();
-            if (statusRes.data) {
-                var st = (statusRes.data.status || '').trim().toLowerCase();
-                if (st === 'cancelled' || st === 'canceled' || st === 'отмена') {
-                    if (typeof showToast === 'function') showToast('Отменённый заказ нельзя редактировать', 'error');
-                    if (hintEl) { hintEl.textContent = 'Отменённый заказ нельзя редактировать'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
-                    return;
-                }
-            }
-            var addPanel = document.getElementById('edit-order-add-item-panel');
-            if (addPanel && !addPanel.classList.contains('hidden') && editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length === 1) {
-                var item = editOrderComposition[editOrderEditingIndex];
-                var useLockedSnapshot = item && _editOrderExtrasAssemblyBaseline && isEditOrderGreenhouseIdentityUnchanged(item);
-                if (useLockedSnapshot) {
-                    var merged = mergeExtrasAssemblyWithBaseline(
-                        { extras: item.extras || '', assembly: item.assembly || '' },
-                        _editOrderExtrasAssemblyBaseline.options,
-                        typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
-                        { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
-                    );
-                    var base = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
-                    var total = Math.ceil((base + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
-                    lastModalCalculationResult = {
-                        model: item.model, width: item.width, length: item.length, frame: item.frame, arcStep: item.arc_step, polycarbonate: item.polycarbonate, form: item.form,
-                        item_total: total, base_price: item.base_price, extras: merged.extrasText || '', assembly: merged.assemblyText || '',
-                        height: item.height, snowLoad: item.snowLoad, horizontalTies: item.horizontalTies, equipment: item.equipment
-                    };
-                } else {
-                    var runResult = runEditOrderAddPanelCalculation();
-                    if (runResult === null) {
-                        var hasValidLegacyItem = item && (item.frame || item.polycarbonate || item.base_price != null) && _editOrderExtrasAssemblyBaseline;
-                        if (hasValidLegacyItem) {
-                            var mergedFallback = mergeExtrasAssemblyWithBaseline(
-                                { extras: item.extras || '', assembly: item.assembly || '' },
-                                _editOrderExtrasAssemblyBaseline.options,
-                                typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
-                                { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
-                            );
-                            var baseFb = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
-                            var totalFb = Math.ceil((baseFb + (mergedFallback.extrasCost || 0) + (mergedFallback.assemblyCost || 0)) / 10) * 10;
-                            lastModalCalculationResult = {
-                                model: item.model, width: item.width, length: item.length, frame: item.frame, arcStep: item.arc_step, polycarbonate: item.polycarbonate, form: item.form,
-                                item_total: totalFb, base_price: item.base_price, extras: mergedFallback.extrasText || '', assembly: mergedFallback.assemblyText || '',
-                                height: item.height, snowLoad: item.snowLoad, horizontalTies: item.horizontalTies, equipment: item.equipment
-                            };
-                        } else {
-                            if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
-                            return;
-                        }
-                    } else {
-                        await runResult;
-                        if (!lastModalCalculationResult) return;
-                    }
-                }
-                var hasMaterialChanges = isEditOrderPanelFlushMaterialChange_(item, lastModalCalculationResult);
-                if (hasMaterialChanges && !_editOrderPositionExplicitlySaved) {
-                    if (typeof showToast === 'function') showToast('Сначала сохраните изменения позиции или отмените их.', 'error');
-                    if (hintEl) {
-                        hintEl.textContent = 'Сначала сохраните изменения позиции или отмените их.';
-                        hintEl.className = 'edit-order-hint edit-order-hint--error';
-                        hintEl.style.display = '';
-                    }
-                    return;
-                }
-                if (!hasMaterialChanges) {
-                    if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
-                        editOrderDeliveryCost = _editOrderDeliveryCostPreview;
-                        _editOrderDeliveryCostPreview = null;
-                    } else if (_editOrderDeliveryCostPreview != null) {
-                        _editOrderDeliveryCostPreview = null;
-                    }
-                }
-            }
-            if (typeof calculateDeliveryCostFromAddress === 'function') {
-                var addr1d = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
-                var addr2d = document.getElementById('edit-order-address-part2') ? document.getElementById('edit-order-address-part2').value.trim() : '';
-                var addr3d = document.getElementById('edit-order-address-part3') ? document.getElementById('edit-order-address-part3').value.trim() : '';
-                var noPlotd = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
-                var fullAddrNow = [addr1d, addr2d, noPlotd ? 'без номера участка' : addr3d].filter(Boolean).join(', ');
-                if (_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw != null &&
-                    fullAddrNow.trim() !== String(_editOrderOriginalAddressRaw).trim()) {
-                    var delRes = await calculateDeliveryCostFromAddress(fullAddrNow);
-                    if (delRes.ok) editOrderDeliveryCost = delRes.cost;
-                }
-            }
-            saveBtn.disabled = true;
-            var payload = buildOrderPayloadFromEditModal();
-            if (!payload) {
-                saveBtn.disabled = false;
-                if (typeof showToast === 'function') showToast('Ошибка: состав заказа пуст. Добавьте хотя бы одну позицию.', 'error');
-                if (hintEl) { hintEl.textContent = 'Состав заказа пуст. Добавьте хотя бы одну позицию.'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
-                return;
-            }
-            // STOP-LOSS: legacy flat single-item — не отправлять PATCH если total схлопнулся до доставки (79208034041, 79260699646). Native v2-only исключаем.
-            var isLegacyFlatSingle = payload.line_items === null && payload.model != null &&
-                !(_editOrderNativeLineItemsV2Snapshot && Array.isArray(_editOrderNativeLineItemsV2Snapshot) && _editOrderNativeLineItemsV2Snapshot.length > 0);
-            if (isLegacyFlatSingle) {
-                var dlv = Number(payload.delivery_cost) || 0;
-                var tot = Number(payload.total) || 0;
-                var orig = lastLoadedOrderTotalForDisplay != null ? Number(lastLoadedOrderTotalForDisplay) : null;
-                var hasPosition = (payload.model && String(payload.model).trim()) ||
-                    (payload.unit_price != null && !isNaN(Number(payload.unit_price)) && Number(payload.unit_price) > 0) ||
-                    (payload.extras && String(payload.extras).trim()) ||
-                    (payload.assembly && String(payload.assembly).trim());
-                var collapsed = tot <= dlv && hasPosition && (orig == null ? true : orig > dlv);
-                if (collapsed) {
-                    if (typeof console !== 'undefined' && console.warn) {
-                        var usePersisted = !_editOrderCompositionTouchedByUser && lastPersistedEditOrderState != null;
-                        console.warn('[edit-save-stop-loss] BLOCKED PATCH', {
-                            orderId: currentOrderIdForEdit,
-                            usePersistedForPayload: usePersisted,
-                            compositionSnapshot: (lastPersistedEditOrderState && lastPersistedEditOrderState.composition && lastPersistedEditOrderState.composition.length)
-                                ? lastPersistedEditOrderState.composition.map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; })
-                                : (editOrderComposition || []).map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; }),
-                            deliveryCostForPayload: dlv,
-                            totalForPayload: tot,
-                            originalTotalAtOpen: orig,
-                            shape: 'legacy-flat-single-item'
-                        });
-                    }
-                    saveBtn.disabled = false;
-                    if (typeof showToast === 'function') showToast('Ошибка: сумма заказа некорректно пересчиталась (осталась только доставка). Сохранение отменено. Обратитесь в поддержку.', 'error');
-                    if (hintEl) {
-                        hintEl.textContent = 'Сумма заказа пересчитана некорректно. Сохранение отменено.';
-                        hintEl.className = 'edit-order-hint edit-order-hint--error';
-                        hintEl.style.display = '';
-                    }
-                    return;
-                }
-            }
-            if (typeof console !== 'undefined' && console.log) console.log('[edit-save] PATCH', { orderId: currentOrderIdForEdit, total: payload.total, delivery_cost: payload.delivery_cost, line_items_len: (payload.line_items || '').length });
-            supabaseClient.from('orders').update(payload).eq('id', currentOrderIdForEdit).then(function (res) {
-                if (res.error) throw res.error;
-                if (typeof showToast === 'function') showToast('Данные по заказу изменены.', 'success');
-                if (hintEl) { hintEl.textContent = 'Данные по заказу изменены.'; hintEl.className = 'edit-order-hint'; hintEl.style.display = ''; }
-                var justEditedId = currentOrderIdForEdit;
-                // 5.4.1: остаёмся на шаге 2 (форме) — менеджер видит результат и может сразу ещё раз поправить.
-                // Обновляем lastSaved чтобы форма не считалась «с несохранёнными изменениями».
-                lastSavedEditOrderState = getEditOrderStateSnapshot();
-                lastSavedEditOrderFormState = getEditOrderFormSnapshot();
-                lastPersistedEditOrderState = getEditOrderStateSnapshot();
-                lastPersistedEditOrderFormState = getEditOrderFormSnapshot();
-                if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
-                // Обновляем список в фоне (шаг 1), чтобы при возврате данные были актуальны.
-                if (lastEditOrderSearchedPhone) {
-                    searchOrdersByPhone(lastEditOrderSearchedPhone).then(function (orders) {
-                        renderEditOrderList(orders);
-                        var searchHint = document.getElementById('edit-order-search-hint');
-                        if (searchHint) {
-                            searchHint.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
-                            searchHint.className = 'edit-order-hint';
-                            searchHint.style.display = '';
-                        }
-                    });
-                }
-            }).catch(function (err) {
-                console.error('update order error:', err);
-                if (typeof showToast === 'function') showToast('Ошибка сохранения: ' + (err.message || 'попробуйте позже'), 'error');
-                if (hintEl) { hintEl.textContent = 'Ошибка: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
-            }).finally(function () {
-                saveBtn.disabled = false;
-            });
-        });
-    }
-
     var cancelOrderBtn = document.getElementById('edit-order-cancel-order-btn');
     if (cancelOrderBtn) {
         cancelOrderBtn.addEventListener('click', function () {
@@ -9054,13 +8851,245 @@ function initEditOrderModal() {
             }
             if (typeof updateEditOrderGiftsBlock === 'function') updateEditOrderGiftsBlock(getEditOrderCompositionTotalWithPreview(), true);
             if (editOrderEditingIndex != null && editOrderEditingIndex >= 0 && editOrderComposition.length) {
-                if (savePosBtn) savePosBtn.classList.remove('hidden');
                 if (confirmAddBtn) confirmAddBtn.classList.add('hidden');
+                if (savePosBtn) savePosBtn.classList.add('hidden');
             } else {
                 if (confirmAddBtn) confirmAddBtn.classList.remove('hidden');
                 if (savePosBtn) savePosBtn.classList.add('hidden');
             }
         })();
+    }
+
+    /**
+     * Слить расчёт из add/edit панели в editOrderComposition[i], выставить флаги, закрыть панель.
+     * Без main save (один клик «Сохранить» в UX).
+     * @returns {Promise<boolean>} true при успехе или если панель уже закрыта; false — прервать сохранение.
+     */
+    async function flushEditOrderAddPanelToCompositionAndClose() {
+        var panel = document.getElementById('edit-order-add-item-panel');
+        if (!panel || panel.classList.contains('hidden')) return true;
+        if (editOrderEditingIndex == null || editOrderEditingIndex < 0) return true;
+        if (_editOrderLegacyCompositionLocked) return true;
+        var item = editOrderComposition[editOrderEditingIndex];
+        if (!item) return false;
+        var useLockedSnapshot = editOrderComposition.length === 1 && item && _editOrderExtrasAssemblyBaseline && isEditOrderGreenhouseIdentityUnchanged(item);
+        if (useLockedSnapshot) {
+            var merged = mergeExtrasAssemblyWithBaseline(
+                { extras: item.extras || '', assembly: item.assembly || '' },
+                _editOrderExtrasAssemblyBaseline.options,
+                typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
+                { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
+            );
+            var base = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
+            var total = Math.ceil((base + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
+            lastModalCalculationResult = {
+                model: item.model,
+                width: item.width,
+                length: item.length,
+                frame: item.frame,
+                arcStep: item.arc_step,
+                polycarbonate: item.polycarbonate,
+                form: item.form,
+                item_total: total,
+                base_price: item.base_price,
+                extras: merged.extrasText || '',
+                assembly: merged.assemblyText || '',
+                height: item.height,
+                snowLoad: item.snowLoad,
+                horizontalTies: item.horizontalTies,
+                equipment: item.equipment
+            };
+        } else {
+            var runResult = runEditOrderAddPanelCalculation();
+            if (runResult === null) {
+                if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
+                return false;
+            }
+            await runResult;
+            if (!lastModalCalculationResult) {
+                if (typeof showToast === 'function') showToast('Заполните все параметры теплицы', 'error');
+                return false;
+            }
+        }
+        _editOrderCompositionTouchedByUser = true;
+        if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
+            editOrderDeliveryCost = _editOrderDeliveryCostPreview;
+            _editOrderDeliveryCostPreview = null;
+        } else if (_editOrderDeliveryCostPreview != null) {
+            _editOrderDeliveryCostPreview = null;
+        }
+        _editOrderPositionExplicitlySaved = true;
+        var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
+        editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
+        editOrderStateRedoSample = null;
+        editOrderComposition[editOrderEditingIndex] = {
+            model: lastModalCalculationResult.model,
+            width: lastModalCalculationResult.width,
+            length: lastModalCalculationResult.length,
+            frame: lastModalCalculationResult.frame,
+            arc_step: lastModalCalculationResult.arcStep,
+            polycarbonate: lastModalCalculationResult.polycarbonate,
+            item_total: lastModalCalculationResult.item_total,
+            base_price: lastModalCalculationResult.base_price,
+            form: lastModalCalculationResult.form,
+            city: getEditOrderAddCity(),
+            extras: lastModalCalculationResult.extras || '',
+            assembly: lastModalCalculationResult.assembly || '',
+            options: getEditOrderAddPanelOptionsForStorage(),
+            height: lastModalCalculationResult.height,
+            snowLoad: lastModalCalculationResult.snowLoad,
+            horizontalTies: lastModalCalculationResult.horizontalTies,
+            equipment: lastModalCalculationResult.equipment
+        };
+        renderEditOrderCompositionList();
+        lastSavedEditOrderState = getEditOrderStateSnapshot();
+        updateEditOrderUndoRedoButtons();
+        closeEditOrderAddPanel();
+        lastModalCalculationResult = null;
+        return true;
+    }
+
+    var saveBtn = document.getElementById('edit-order-save-btn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async function () {
+            var hintEl = document.getElementById('edit-order-form-hint');
+            if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; hintEl.className = 'edit-order-hint'; }
+            clearEditOrderFieldErrors_();
+            var errs = validateEditOrderModal();
+            if (errs.length) {
+                applyEditOrderErrors_(errs);
+                if (hintEl) {
+                    hintEl.textContent = 'Заполните: ' + errs.join(', ');
+                    hintEl.className = 'edit-order-hint edit-order-hint--error';
+                    hintEl.style.display = '';
+                }
+                if (typeof showToast === 'function') showToast('Заполните все обязательные поля', 'error');
+                return;
+            }
+            var editAddr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
+            var isOldOrder = currentOrderCreatedAtForEdit && String(currentOrderCreatedAtForEdit).slice(0, 10) < '2026-03-09';
+            if (editAddr1 && typeof checkAddressInDeliveryRegion === 'function' && !isOldOrder) {
+                var editWarehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
+                var regionCheck = await checkAddressInDeliveryRegion(editAddr1, editWarehouseCityKey);
+                if (!regionCheck.inRegion) {
+                    setEditOrderFieldError_('eo-addr1', regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.');
+                    if (hintEl) {
+                        hintEl.textContent = regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.';
+                        hintEl.className = 'edit-order-hint edit-order-hint--error';
+                        hintEl.style.display = '';
+                    }
+                    if (typeof showToast === 'function') showToast(regionCheck.errorMessage || 'Доставка в этот регион не осуществляется.', 'error');
+                    return;
+                }
+            }
+            if (!currentOrderIdForEdit) {
+                if (typeof showToast === 'function') showToast('Ошибка: заказ не выбран', 'error');
+                return;
+            }
+            var statusRes = await supabaseClient.from('orders').select('status').eq('id', currentOrderIdForEdit).maybeSingle();
+            if (statusRes.data) {
+                var st = (statusRes.data.status || '').trim().toLowerCase();
+                if (st === 'cancelled' || st === 'canceled' || st === 'отмена') {
+                    if (typeof showToast === 'function') showToast('Отменённый заказ нельзя редактировать', 'error');
+                    if (hintEl) { hintEl.textContent = 'Отменённый заказ нельзя редактировать'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
+                    return;
+                }
+            }
+            var addPanelFlush = document.getElementById('edit-order-add-item-panel');
+            if (addPanelFlush && !addPanelFlush.classList.contains('hidden') && editOrderEditingIndex != null && editOrderEditingIndex >= 0 && !_editOrderLegacyCompositionLocked) {
+                var flushOk = await flushEditOrderAddPanelToCompositionAndClose();
+                if (!flushOk) return;
+            }
+            if (typeof calculateDeliveryCostFromAddress === 'function') {
+                var addr1d = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
+                var addr2d = document.getElementById('edit-order-address-part2') ? document.getElementById('edit-order-address-part2').value.trim() : '';
+                var addr3d = document.getElementById('edit-order-address-part3') ? document.getElementById('edit-order-address-part3').value.trim() : '';
+                var noPlotd = document.getElementById('edit-order-no-plot') ? document.getElementById('edit-order-no-plot').checked : false;
+                var fullAddrNow = [addr1d, addr2d, noPlotd ? 'без номера участка' : addr3d].filter(Boolean).join(', ');
+                if (_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw != null &&
+                    fullAddrNow.trim() !== String(_editOrderOriginalAddressRaw).trim()) {
+                    var delRes = await calculateDeliveryCostFromAddress(fullAddrNow);
+                    if (delRes.ok) editOrderDeliveryCost = delRes.cost;
+                }
+            }
+            saveBtn.disabled = true;
+            var payload = buildOrderPayloadFromEditModal();
+            if (!payload) {
+                saveBtn.disabled = false;
+                if (typeof showToast === 'function') showToast('Ошибка: состав заказа пуст. Добавьте хотя бы одну позицию.', 'error');
+                if (hintEl) { hintEl.textContent = 'Состав заказа пуст. Добавьте хотя бы одну позицию.'; hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
+                return;
+            }
+            // STOP-LOSS: legacy flat single-item — не отправлять PATCH если total схлопнулся до доставки (79208034041, 79260699646). Native v2-only исключаем.
+            var isLegacyFlatSingle = payload.line_items === null && payload.model != null &&
+                !(_editOrderNativeLineItemsV2Snapshot && Array.isArray(_editOrderNativeLineItemsV2Snapshot) && _editOrderNativeLineItemsV2Snapshot.length > 0);
+            if (isLegacyFlatSingle) {
+                var dlv = Number(payload.delivery_cost) || 0;
+                var tot = Number(payload.total) || 0;
+                var orig = lastLoadedOrderTotalForDisplay != null ? Number(lastLoadedOrderTotalForDisplay) : null;
+                var hasPosition = (payload.model && String(payload.model).trim()) ||
+                    (payload.unit_price != null && !isNaN(Number(payload.unit_price)) && Number(payload.unit_price) > 0) ||
+                    (payload.extras && String(payload.extras).trim()) ||
+                    (payload.assembly && String(payload.assembly).trim());
+                var collapsed = tot <= dlv && hasPosition && (orig == null ? true : orig > dlv);
+                if (collapsed) {
+                    if (typeof console !== 'undefined' && console.warn) {
+                        var usePersisted = !_editOrderCompositionTouchedByUser && lastPersistedEditOrderState != null;
+                        console.warn('[edit-save-stop-loss] BLOCKED PATCH', {
+                            orderId: currentOrderIdForEdit,
+                            usePersistedForPayload: usePersisted,
+                            compositionSnapshot: (lastPersistedEditOrderState && lastPersistedEditOrderState.composition && lastPersistedEditOrderState.composition.length)
+                                ? lastPersistedEditOrderState.composition.map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; })
+                                : (editOrderComposition || []).map(function (i) { return { model: i.model, base_price: i.base_price, item_total: i.item_total }; }),
+                            deliveryCostForPayload: dlv,
+                            totalForPayload: tot,
+                            originalTotalAtOpen: orig,
+                            shape: 'legacy-flat-single-item'
+                        });
+                    }
+                    saveBtn.disabled = false;
+                    if (typeof showToast === 'function') showToast('Ошибка: сумма заказа некорректно пересчиталась (осталась только доставка). Сохранение отменено. Обратитесь в поддержку.', 'error');
+                    if (hintEl) {
+                        hintEl.textContent = 'Сумма заказа пересчитана некорректно. Сохранение отменено.';
+                        hintEl.className = 'edit-order-hint edit-order-hint--error';
+                        hintEl.style.display = '';
+                    }
+                    return;
+                }
+            }
+            if (typeof console !== 'undefined' && console.log) console.log('[edit-save] PATCH', { orderId: currentOrderIdForEdit, total: payload.total, delivery_cost: payload.delivery_cost, line_items_len: (payload.line_items || '').length });
+            supabaseClient.from('orders').update(payload).eq('id', currentOrderIdForEdit).then(function (res) {
+                if (res.error) throw res.error;
+                if (typeof showToast === 'function') showToast('Данные по заказу изменены.', 'success');
+                if (hintEl) { hintEl.textContent = 'Данные по заказу изменены.'; hintEl.className = 'edit-order-hint'; hintEl.style.display = ''; }
+                var justEditedId = currentOrderIdForEdit;
+                // 5.4.1: остаёмся на шаге 2 (форме) — менеджер видит результат и может сразу ещё раз поправить.
+                // Обновляем lastSaved чтобы форма не считалась «с несохранёнными изменениями».
+                lastSavedEditOrderState = getEditOrderStateSnapshot();
+                lastSavedEditOrderFormState = getEditOrderFormSnapshot();
+                lastPersistedEditOrderState = getEditOrderStateSnapshot();
+                lastPersistedEditOrderFormState = getEditOrderFormSnapshot();
+                if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
+                // Обновляем список в фоне (шаг 1), чтобы при возврате данные были актуальны.
+                if (lastEditOrderSearchedPhone) {
+                    searchOrdersByPhone(lastEditOrderSearchedPhone).then(function (orders) {
+                        renderEditOrderList(orders);
+                        var searchHint = document.getElementById('edit-order-search-hint');
+                        if (searchHint) {
+                            searchHint.textContent = orders.length ? 'Найдено заказов: ' + orders.length : '';
+                            searchHint.className = 'edit-order-hint';
+                            searchHint.style.display = '';
+                        }
+                    });
+                }
+            }).catch(function (err) {
+                console.error('update order error:', err);
+                if (typeof showToast === 'function') showToast('Ошибка сохранения: ' + (err.message || 'попробуйте позже'), 'error');
+                if (hintEl) { hintEl.textContent = 'Ошибка: ' + (err.message || 'попробуйте позже'); hintEl.className = 'edit-order-hint edit-order-hint--error'; hintEl.style.display = ''; }
+            }).finally(function () {
+                saveBtn.disabled = false;
+            });
+        });
     }
 
     var calcBtn = document.getElementById('edit-order-add-calc-btn');
@@ -9136,78 +9165,7 @@ function initEditOrderModal() {
     }
     if (savePosBtn) {
         savePosBtn.addEventListener('click', async function () {
-            if (editOrderEditingIndex == null) return;
-            var item = editOrderComposition[editOrderEditingIndex];
-            var useLockedSnapshot = editOrderComposition.length === 1 && item && _editOrderExtrasAssemblyBaseline && isEditOrderGreenhouseIdentityUnchanged(item);
-            if (useLockedSnapshot) {
-                var merged = mergeExtrasAssemblyWithBaseline(
-                    { extras: item.extras || '', assembly: item.assembly || '' },
-                    _editOrderExtrasAssemblyBaseline.options,
-                    typeof getEditOrderAddPanelOptionsForStorage === 'function' ? getEditOrderAddPanelOptionsForStorage() : { bracing: false, assembly: false, groundHooks: false, onWood: false, onConcrete: false, additionalProducts: [] },
-                    { foundationText: '', assemblyText: '', bedsAssemblyText: '', additionalProductsText: '', additionalProductsCost: 0 }
-                );
-                var base = item.base_price != null && !isNaN(Number(item.base_price)) ? Number(item.base_price) : 0;
-                var total = Math.ceil((base + (merged.extrasCost || 0) + (merged.assemblyCost || 0)) / 10) * 10;
-                lastModalCalculationResult = {
-                    model: item.model,
-                    width: item.width,
-                    length: item.length,
-                    frame: item.frame,
-                    arcStep: item.arc_step,
-                    polycarbonate: item.polycarbonate,
-                    form: item.form,
-                    item_total: total,
-                    base_price: item.base_price,
-                    extras: merged.extrasText || '',
-                    assembly: merged.assemblyText || '',
-                    height: item.height,
-                    snowLoad: item.snowLoad,
-                    horizontalTies: item.horizontalTies,
-                    equipment: item.equipment
-                };
-            } else {
-                var runResult = runEditOrderAddPanelCalculation();
-                if (runResult === null) return;
-                await runResult;
-                if (!lastModalCalculationResult) return;
-            }
-            _editOrderCompositionTouchedByUser = true;
-            if (_editOrderDeliveryCostPreview != null && _editOrderAddressTouchedByUser) {
-                editOrderDeliveryCost = _editOrderDeliveryCostPreview;
-                _editOrderDeliveryCostPreview = null;
-            } else if (_editOrderDeliveryCostPreview != null) {
-                _editOrderDeliveryCostPreview = null;
-            }
-            _editOrderPositionExplicitlySaved = true;
-            var snap = lastSavedEditOrderState || getEditOrderStateSnapshot();
-            editOrderStateUndoSample = { composition: snap.composition.map(function (i) { var o = {}; for (var k in i) if (Object.prototype.hasOwnProperty.call(i, k)) o[k] = i[k]; return o; }), gifts: Object.assign({}, snap.gifts) };
-            editOrderStateRedoSample = null;
-            editOrderComposition[editOrderEditingIndex] = {
-                model: lastModalCalculationResult.model,
-                width: lastModalCalculationResult.width,
-                length: lastModalCalculationResult.length,
-                frame: lastModalCalculationResult.frame,
-                arc_step: lastModalCalculationResult.arcStep,
-                polycarbonate: lastModalCalculationResult.polycarbonate,
-                item_total: lastModalCalculationResult.item_total,
-                base_price: lastModalCalculationResult.base_price,
-                form: lastModalCalculationResult.form,
-                city: getEditOrderAddCity(),
-                extras: lastModalCalculationResult.extras || '',
-                assembly: lastModalCalculationResult.assembly || '',
-                options: getEditOrderAddPanelOptionsForStorage(),
-                height: lastModalCalculationResult.height,
-                snowLoad: lastModalCalculationResult.snowLoad,
-                horizontalTies: lastModalCalculationResult.horizontalTies,
-                equipment: lastModalCalculationResult.equipment
-            };
-            renderEditOrderCompositionList();
-            lastSavedEditOrderState = getEditOrderStateSnapshot();
-            updateEditOrderUndoRedoButtons();
-            closeEditOrderAddPanel();
-            lastModalCalculationResult = null;
-            var mainSaveBtn = document.getElementById('edit-order-save-btn');
-            if (mainSaveBtn) mainSaveBtn.click();
+            await flushEditOrderAddPanelToCompositionAndClose();
         });
     }
     var cancelAddBtn = document.getElementById('edit-order-add-cancel-btn');
