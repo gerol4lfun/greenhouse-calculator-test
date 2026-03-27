@@ -1963,13 +1963,16 @@ function getEditOrderAddPanelOptionsForStorage() {
     var onWoodEl = panel.querySelector('#edit-order-add-on-wood');
     var onConcreteEl = panel.querySelector('#edit-order-add-on-concrete');
     var additionalProducts = [];
+    var additionalProductIds = [];
     panel.querySelectorAll('select[id^="edit-order-add-"][id$="-qty"]').forEach(function (select) {
         var id = (select.id || '').replace(/^edit-order-add-/, '').replace(/-qty$/, '');
         if (!id) return;
+        additionalProductIds.push(id);
         var row = select.closest ? select.closest('.edit-order-add-product-item') : null;
         var nameEl = row ? row.querySelector('.edit-order-add-product-name') : null;
         var qty = parseInt(select.value, 10);
         if (isNaN(qty) || qty < 0) qty = 0;
+        if (qty <= 0) return;
         var price = parseFloat(select.getAttribute('data-price')) || 0;
         var cost = price * qty;
         additionalProducts.push({ id: id, name: nameEl ? (nameEl.textContent || '').trim() : '', quantity: qty, cost: cost });
@@ -1980,7 +1983,8 @@ function getEditOrderAddPanelOptionsForStorage() {
         groundHooks: groundHooksEl ? groundHooksEl.checked : false,
         onWood: onWoodEl ? onWoodEl.checked : false,
         onConcrete: onConcreteEl ? onConcreteEl.checked : false,
-        additionalProducts: additionalProducts
+        additionalProducts: additionalProducts,
+        additionalProductIds: additionalProductIds
     };
 }
 
@@ -7078,8 +7082,10 @@ function deriveAdditionalProductsFromExtrasAssembly_(extras, assembly) {
         if (!Object.prototype.hasOwnProperty.call(acc, id)) continue;
         var unit = Number(EDIT_ORDER_ADDITIONAL_PRODUCT_UNIT_PRICES[id]) || 0;
         var totalCost = Number(acc[id].cost) || 0;
-        var quantity = 1;
+        var quantity = 0;
         if (unit > 0 && totalCost > 0) quantity = Math.max(1, Math.round(totalCost / unit));
+        else if (totalCost > 0) quantity = 1;
+        if (quantity <= 0) continue;
         out.push({
             id: id,
             name: acc[id].name,
@@ -7237,6 +7243,11 @@ function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, ca
             var q = Number(p.quantity) || 0;
             currProdQtys[p.id] = q;
             knownPanelProductIds[p.id] = true;
+        });
+    }
+    if (currOpts.additionalProductIds && currOpts.additionalProductIds.length) {
+        currOpts.additionalProductIds.forEach(function (id) {
+            if (id) knownPanelProductIds[String(id)] = true;
         });
     }
     if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
@@ -16085,7 +16096,8 @@ function buildLineItemsV2FromOrderCart(cart, deliveryAmount) {
         var iap = item.additionalProducts || [];
         for (var j = 0; j < iap.length; j++) {
             var p2 = iap[j];
-            var p2q = p2.quantity || 1;
+            var p2q = Number(p2.quantity);
+            if (isNaN(p2q) || p2q <= 0) continue;
             var p2cost = p2.cost != null ? Number(p2.cost) : 0;
             if (p2q > 0) addLine('addon', p2.name || 'Доп. товар', p2q, p2cost > 0 ? p2cost / p2q : null, p2cost, 'fixed', p2.id || null, null, null, ghLineId);
         }
