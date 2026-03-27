@@ -7220,8 +7220,23 @@ function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, ca
         if (mc) assemblyCost = parseInt(String(mc[1]).replace(/\s/g, ''), 10) || 0;
     }
     var currProdQtys = {};
+    var knownPanelProductIds = {};
+    try {
+        var panel = document.getElementById('edit-order-add-item-panel');
+        if (panel) {
+            var selects = panel.querySelectorAll('.edit-order-add-product-item select');
+            for (var ps = 0; ps < selects.length; ps++) {
+                var sid = (selects[ps].id || '').replace(/^edit-order-add-/, '').replace(/-qty$/, '');
+                if (sid) knownPanelProductIds[sid] = true;
+            }
+        }
+    } catch (e) {}
     if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
-        currOpts.additionalProducts.forEach(function (p) { currProdQtys[p.id] = p.quantity || 0; });
+        currOpts.additionalProducts.forEach(function (p) {
+            if (!p || !p.id) return;
+            currProdQtys[p.id] = p.quantity || 0;
+            knownPanelProductIds[p.id] = true;
+        });
     }
     if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
         currOpts.additionalProducts.forEach(function (p) {
@@ -7238,7 +7253,8 @@ function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, ca
         });
     }
     Object.keys(baseProds).forEach(function (id) {
-        if (currProdQtys[id] || !baseProds[id] || !baseProds[id].line) return;
+        // Для управляемых в панели допов qty=0 означает явное удаление, не возвращаем строку из baseline.
+        if (currProdQtys[id] || knownPanelProductIds[id] || !baseProds[id] || !baseProds[id].line) return;
         productsLines.push(baseProds[id].line);
         productsCost += baseProds[id].cost || 0;
     });
