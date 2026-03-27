@@ -197,9 +197,9 @@ test('staging: existing native order — add second line (no new order POST)', a
     } catch (_) {}
   });
 
-  await page.goto('./');
-  await page.locator('#calculator-container').waitFor({ state: 'visible', timeout: 45000 });
+  await page.goto('./', { waitUntil: 'domcontentloaded' });
   await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+  await page.locator('#calculator-container').waitFor({ state: 'visible', timeout: 45000 });
   await waitForEditOrderReady(page);
 
   let orderId = null;
