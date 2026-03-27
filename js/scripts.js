@@ -1963,16 +1963,16 @@ function getEditOrderAddPanelOptionsForStorage() {
     var onWoodEl = panel.querySelector('#edit-order-add-on-wood');
     var onConcreteEl = panel.querySelector('#edit-order-add-on-concrete');
     var additionalProducts = [];
-    panel.querySelectorAll('.edit-order-add-product-item').forEach(function (row) {
-        var select = row.querySelector('select');
-        var nameEl = row.querySelector('.edit-order-add-product-name');
-        if (!select || !nameEl) return;
-        var qty = parseInt(select.value, 10);
-        if (qty <= 0) return;
+    panel.querySelectorAll('select[id^="edit-order-add-"][id$="-qty"]').forEach(function (select) {
         var id = (select.id || '').replace(/^edit-order-add-/, '').replace(/-qty$/, '');
+        if (!id) return;
+        var row = select.closest ? select.closest('.edit-order-add-product-item') : null;
+        var nameEl = row ? row.querySelector('.edit-order-add-product-name') : null;
+        var qty = parseInt(select.value, 10);
+        if (isNaN(qty) || qty < 0) qty = 0;
         var price = parseFloat(select.getAttribute('data-price')) || 0;
         var cost = price * qty;
-        additionalProducts.push({ id: id, name: (nameEl.textContent || '').trim(), quantity: qty, cost: cost });
+        additionalProducts.push({ id: id, name: nameEl ? (nameEl.textContent || '').trim() : '', quantity: qty, cost: cost });
     });
     return {
         bracing: bracingEl ? bracingEl.checked : false,
@@ -7234,19 +7234,23 @@ function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, ca
     if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
         currOpts.additionalProducts.forEach(function (p) {
             if (!p || !p.id) return;
-            currProdQtys[p.id] = p.quantity || 0;
+            var q = Number(p.quantity) || 0;
+            currProdQtys[p.id] = q;
             knownPanelProductIds[p.id] = true;
         });
     }
     if (currOpts.additionalProducts && currOpts.additionalProducts.length) {
         currOpts.additionalProducts.forEach(function (p) {
+            if (!p || !p.id) return;
+            var q = Number(p.quantity) || 0;
+            if (q <= 0) return;
             var baseP = baseProds[p.id];
-            var sameQty = baseP && baseP.qty === (p.quantity || 0);
+            var sameQty = baseP && baseP.qty === q;
             if (sameQty && baseP && baseP.line) {
                 productsLines.push(baseP.line);
                 productsCost += baseP.cost || 0;
             } else {
-                var line = (p.name || '') + (p.quantity > 1 ? ' x ' + p.quantity : '') + ' - ' + (typeof formatPrice === 'function' ? formatPrice(p.cost || 0) : p.cost) + ' рублей';
+                var line = (p.name || '') + (q > 1 ? ' x ' + q : '') + ' - ' + (typeof formatPrice === 'function' ? formatPrice(p.cost || 0) : p.cost) + ' рублей';
                 productsLines.push(line);
                 productsCost += p.cost || 0;
             }
@@ -7254,7 +7258,7 @@ function mergeExtrasAssemblyWithBaseline(baseline, baselineOpts, currentOpts, ca
     }
     Object.keys(baseProds).forEach(function (id) {
         // Для управляемых в панели допов qty=0 означает явное удаление, не возвращаем строку из baseline.
-        if (currProdQtys[id] || knownPanelProductIds[id] || !baseProds[id] || !baseProds[id].line) return;
+        if (Object.prototype.hasOwnProperty.call(currProdQtys, id) || knownPanelProductIds[id] || !baseProds[id] || !baseProds[id].line) return;
         productsLines.push(baseProds[id].line);
         productsCost += baseProds[id].cost || 0;
     });
