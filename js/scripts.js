@@ -7053,6 +7053,43 @@ function parseExtrasAssemblySum(extras, assembly) {
     return sum;
 }
 
+/** Fallback unit prices for restoring edit-panel paid extras when item.options.additionalProducts is absent. */
+var EDIT_ORDER_ADDITIONAL_PRODUCT_UNIT_PRICES = {
+    'drip-irrigation-mech': 1690,
+    'drip-irrigation-auto': 4490,
+    'window-automation': 2590,
+    'additional-window': 1490,
+    'galvanized-tape-30m': 1990,
+    'vapor-permeable-tape-25m': 1590
+};
+
+function deriveAdditionalProductsFromExtrasAssembly_(extras, assembly) {
+    var parsed = parseExtrasAssemblyLegacyBaseline(extras, assembly);
+    var acc = {};
+    for (var i = 0; i < parsed.productLines.length; i++) {
+        var p = parsed.productLines[i];
+        if (!p || !p.id) continue;
+        if (!acc[p.id]) acc[p.id] = { id: p.id, name: '', cost: 0 };
+        acc[p.id].name = acc[p.id].name || (p.line || '');
+        acc[p.id].cost += Number(p.cost) || 0;
+    }
+    var out = [];
+    for (var id in acc) {
+        if (!Object.prototype.hasOwnProperty.call(acc, id)) continue;
+        var unit = Number(EDIT_ORDER_ADDITIONAL_PRODUCT_UNIT_PRICES[id]) || 0;
+        var totalCost = Number(acc[id].cost) || 0;
+        var quantity = 1;
+        if (unit > 0 && totalCost > 0) quantity = Math.max(1, Math.round(totalCost / unit));
+        out.push({
+            id: id,
+            name: acc[id].name,
+            quantity: quantity,
+            cost: unit > 0 ? (unit * quantity) : totalCost
+        });
+    }
+    return out;
+}
+
 /** По тексту extras/assembly восстановить опции чекбоксов (брус, сборка, штыри, монтаж). Для предзаполнения панели «Изменить». */
 function deriveOptionsFromExtrasAssembly(extras, assembly) {
     var combined = ((extras || '') + ' ' + (assembly || '')).replace(/\s+/g, ' ').toLowerCase();
@@ -7062,7 +7099,7 @@ function deriveOptionsFromExtrasAssembly(extras, assembly) {
         groundHooks: /грунтозацепы|штыри\s+\d|штыри\s*-\s*\d/i.test(combined),
         onWood: /монтаж\s+на\s+брус/i.test(combined),
         onConcrete: /монтаж\s+на\s+бетон/i.test(combined),
-        additionalProducts: []
+        additionalProducts: deriveAdditionalProductsFromExtrasAssembly_(extras, assembly)
     };
 }
 

@@ -85,6 +85,28 @@
 
 **NOT CONFIRMED / не расширять автоматически:** другие заказы; другие типы diff; все комбинации повторных правок; отсутствие дедуп/fp edge cases; analytics; полнота таблиц для всех сценариев — см. §3–§4.
 
+### J. Hosted test execution log (2026-03-27) — **what was tested / expected / observed**
+
+**Execution lane:** GitHub Pages test only (`BASE_URL=https://gerol4lfun.github.io/greenhouse-calculator-test/`).  
+**Goal of this block:** не “общий аудит”, а фиксированный прогон-контроль: что уже проверено и чего именно ждали.
+
+| Scenario | Expected result | Observed result | Status |
+|------|------|------|------|
+| Native existing order: **address-only** (`79000000048` / `f4ff4141-d6fa-42fa-9cfd-3a5d6a3267ef`) | Адрес и доставка меняются; товарная часть не плывёт; save успешен | PASS. `Всеволожск -> Подольск`, `delivery 1000 -> 1300`, `total 14990 -> 15290`, `PATCH 204` | **CONFIRMED** |
+| Native existing order: **composition add second greenhouse line** (`d8357800-b2c9-4cff-a0a5-0a4f5068d3ff`) | Добавляется новая позиция; старая цена существующей строки не теряется; доставка стабильна | PASS. `32980 -> 50970`, delivery без изменения, вторая строка добавлена | **CONFIRMED** |
+| Native existing order: **paid-extra toggle** (`671d847f-fdb4-460f-b262-50f7c1a03f8c`) | При смене qty `Доп. форточка` меняется total, адрес/дата/delivery не меняются; reopen показывает новое qty | OPEN. На hosted summary и selector расходятся; повторный прогон не дал устойчивого изменения total | **OPEN** |
+| Legacy existing order: **date-only automation** | Открытие known legacy order + date-only PATCH контракт | Пока нестабильно по harness/open-path в авто-режиме; не использовать как основание заявлять regression legacy path | **NOT PROVEN (automation lane)** |
+
+**Artifacts from this run (workspace):**
+
+- `e2e/.last-staging-live-address-only.json`
+- `e2e/.last-staging-native-composition-smoke.json`
+
+**Important guardrail for next runs:**
+
+- Не склеивать mutating scenarios в один batch-gate.  
+- Прогоны фиксировать по отдельным сценариям (address-only / paid-extra / composition), иначе дрейф baseline-order делает результат нечитаемым.
+
 ---
 
 ## 2. CURRENT WORKING RULES

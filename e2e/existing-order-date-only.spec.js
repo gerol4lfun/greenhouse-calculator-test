@@ -10,6 +10,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
 const {
+  appRootUrl,
   loginIfNeeded,
   waitForEditOrderReady,
   openEditOrderByPhoneAndGetOrderId,
@@ -31,7 +32,7 @@ const FIXTURE_ORDER_IDS = [
 async function openOrderByFixtureIdFirst(page) {
   for (const orderId of FIXTURE_ORDER_IDS) {
     try {
-      await page.goto('/');
+      await page.goto(appRootUrl(), { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       await waitForEditOrderReady(page);
@@ -42,7 +43,7 @@ async function openOrderByFixtureIdFirst(page) {
   }
   for (const phone of KNOWN_PHONES) {
     try {
-      await page.goto('/');
+      await page.goto(appRootUrl(), { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       await waitForEditOrderReady(page);
@@ -57,7 +58,7 @@ async function openOrderByFixtureIdFirst(page) {
 async function openOrderByPhoneOnly(page) {
   for (const phone of KNOWN_PHONES) {
     try {
-      await page.goto('/');
+      await page.goto(appRootUrl(), { waitUntil: 'domcontentloaded' });
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
       await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
       await waitForEditOrderReady(page);

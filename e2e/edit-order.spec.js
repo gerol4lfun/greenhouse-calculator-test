@@ -467,9 +467,6 @@ test.describe('Редактирование заказа', () => {
     const beforeGiftSlots = await page.locator('#edit-order-gifts-selection .edit-order-gift-select').count();
 
     await qtySelect.selectOption(afterQty);
-    await page.locator('#edit-order-save-position-btn:not(.hidden)').waitFor({ state: 'visible', timeout: 15000 });
-    await page.locator('#edit-order-save-position-btn').click();
-    await page.locator('#edit-order-add-item-panel').waitFor({ state: 'hidden', timeout: 5000 });
     await saveEditOrder(page);
 
     await openEditOrderById(page, orderId);
@@ -534,9 +531,6 @@ test.describe('Редактирование заказа', () => {
       { timeout: 10000 }
     ).catch(() => {});
     await page.locator('#edit-order-add-calc-btn').click();
-    await page.locator('#edit-order-save-position-btn:not(.hidden)').waitFor({ state: 'visible', timeout: 15000 });
-    await page.locator('#edit-order-save-position-btn').click();
-    await page.locator('#edit-order-add-item-panel').waitFor({ state: 'hidden', timeout: 5000 });
 
     const afterUI = await getEditOrderSnapshot(page);
     expect(afterUI.address_part1).toBe(fixture.part1);

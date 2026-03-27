@@ -46,13 +46,14 @@ async function waitForEditOrderReady(page, timeout = 15000) {
  */
 async function loginIfNeeded(page, login, password) {
   const auth = page.locator('#auth-container');
-  if (!(await auth.isVisible())) return;
+  if (!(await auth.isVisible().catch(() => false))) return false;
   await page.locator('#login').fill(login);
   await page.locator('#password').fill(password);
   const loginBtn = page.locator('#auth-container button:has-text("Войти")');
   await loginBtn.waitFor({ state: 'visible', timeout: 5000 });
-  await loginBtn.click();
+  await loginBtn.click({ force: true });
   await page.waitForSelector('#auth-container', { state: 'hidden', timeout: 15000 });
+  return true;
 }
 
 /**
@@ -222,13 +223,28 @@ function appUrlWithQuery(queryString) {
   return base + '/?' + queryString;
 }
 
+/** Root URL приложения с сохранением path (важно для GitHub Pages subpath). */
+function appRootUrl() {
+  return (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '') + '/';
+}
+
 /**
  * Открыть модалку редактирования по order id (deep link ?id=).
  * Гарантирует тот же заказ при reopen, не зависит от порядка в списке по телефону.
  */
 async function openEditOrderById(page, orderId) {
-  await page.goto(appUrlWithQuery('id=' + encodeURIComponent(orderId)));
-  await page.locator('#edit-order-modal-body[data-step="2"]').waitFor({ state: 'visible', timeout: 10000 });
+  const url = appUrlWithQuery('id=' + encodeURIComponent(orderId));
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  const didLogin = await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+  if (didLogin) {
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+  }
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await page.locator('#edit-order-loading-overlay.hidden').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+  await page.locator('#edit-order-modal:not(.hidden)').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  await page.locator('#edit-order-modal-body[data-step="2"]').waitFor({ state: 'visible', timeout: 25000 });
+  await page.locator('.edit-order-composition-item').first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('#edit-order-add-item-panel').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
 }
 
 /**
@@ -293,6 +309,11 @@ async function getEditOrderSnapshot(page) {
  */
 async function changeEditOrderDeliveryDate(page, dayIndex = 1) {
   await page.locator('#edit-order-delivery-date-display').click();
+  const otherDayBtn = page.locator('#edit-order-calendar .order-cal-day.available:not(.selected)').first();
+  if (await otherDayBtn.isVisible().catch(() => false)) {
+    await otherDayBtn.click();
+    return;
+  }
   const dayBtn = page.locator('#edit-order-calendar .order-cal-day.available').nth(dayIndex);
   await dayBtn.waitFor({ state: 'visible', timeout: 8000 });
   await dayBtn.click();
@@ -311,6 +332,7 @@ module.exports = {
   ADDRESS_FIXTURES,
   TEST_COMMENT,
   SEARCH_PHONE,
+  appRootUrl,
   appUrlWithQuery,
   testPhone,
   loginIfNeeded,
