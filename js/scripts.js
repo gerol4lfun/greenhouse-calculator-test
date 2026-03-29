@@ -1422,6 +1422,35 @@ function syncEditOrderCalendarSlotsWithMode() {
 }
 
 /**
+ * Есть ли для позиции явный признак сборки, влияющий на календарь доставки.
+ * Для старых заказов избегаем ложных срабатываний по "нулевым" строкам.
+ * @param {Object} item
+ * @returns {boolean}
+ */
+function hasAssemblySignalForEditCalendar_(item) {
+    if (!item || typeof item !== 'object') return false;
+    if (item.options && typeof item.options === 'object' && !!item.options.assembly) return true;
+
+    var combined = [item.assembly || '', item.extras || ''].join('\n');
+    if (!combined || String(combined).trim() === '') return false;
+
+    var lines = String(combined).split(/\r?\n/).map(function (s) { return (s || '').trim(); }).filter(Boolean);
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var low = line.toLowerCase();
+        if (!/сборк|установк/i.test(low)) continue;
+        // Сборка грядок не должна переводить доставку в режим "со сборкой" теплицы.
+        if (/грядок/i.test(low)) continue;
+        var m = line.match(/(\d[\d\s.]*)\s*руб/i);
+        if (!m) return true; // старая строка без явной цены — считаем, что сборка есть
+        var cost = parseOrderPrice_(m[1]);
+        if (cost > 0) return true;
+    }
+    // Нашли только нулевые строки по сборке — считаем "без сборки".
+    return false;
+}
+
+/**
  * Режим сборки для edit-calendar:
  * - если открыта панель редактирования позиции, берём состояние её чекбокса;
  * - иначе используем факт сборки из состава существующего заказа.
@@ -1435,13 +1464,7 @@ function getEditOrderCalendarAssemblyMode_() {
     if (Array.isArray(editOrderComposition)) {
         for (var i = 0; i < editOrderComposition.length; i++) {
             var item = editOrderComposition[i] || {};
-            if (item.options && typeof item.options === 'object' && !!item.options.assembly) return true;
-            var assemblyText = (item.assembly != null ? String(item.assembly) : '').toLowerCase();
-            if (/сборк|установк/i.test(assemblyText)) return true;
-            if (typeof deriveOptionsFromExtrasAssembly === 'function') {
-                var derived = deriveOptionsFromExtrasAssembly(item.extras || '', item.assembly || '');
-                if (derived && derived.assembly) return true;
-            }
+            if (hasAssemblySignalForEditCalendar_(item)) return true;
         }
     }
     return false;
