@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v283"; // v283: multi-line native PATCH — full cart line_items_v2 (unique GH line_ids); merge concat duplicated greenhouse-1
+const APP_VERSION = "v284"; // v284: edit calendar assembly-mode stability + cache-bust
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
