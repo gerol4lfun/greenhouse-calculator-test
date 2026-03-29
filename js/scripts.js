@@ -474,6 +474,34 @@ function isRejectableNumericCityCandidate_(s) {
 }
 
 /**
+ * Привести произвольный city/region-кандидат к каноническому ключу календаря:
+ * alias -> region-map -> dropdown canonical name.
+ * Возвращает null, если кандидат невалидный.
+ */
+function normalizeEditCalendarCityCandidate_(candidate, fullAddr) {
+    if (!candidate || typeof candidate !== 'string') return null;
+    var raw = candidate.trim();
+    if (!raw || isRejectableNumericCityCandidate_(raw)) return null;
+
+    var city = normalizeCityAlias_(raw) || raw;
+
+    if (typeof resolveRegionToCanonicalCity_ === 'function') {
+        var mapped = resolveRegionToCanonicalCity_(fullAddr || '') ||
+            resolveRegionToCanonicalCity_(city) ||
+            resolveRegionToCanonicalCity_(raw);
+        if (mapped) city = (typeof normalizeCityAlias_ === 'function' ? normalizeCityAlias_(mapped) : null) || mapped;
+    }
+
+    if (typeof findCityInDropdown === 'function') {
+        var dropdownCity = findCityInDropdown(city) || findCityInDropdown(raw);
+        if (dropdownCity) city = (typeof normalizeCityAlias_ === 'function' ? normalizeCityAlias_(dropdownCity) : null) || dropdownCity;
+    }
+
+    if (!city || isRejectableNumericCityCandidate_(city)) return null;
+    return city;
+}
+
+/**
  * Приоритетный выбор canonical city для edit calendar existing order.
  * 1) orders.warehouse_city_key — source of truth для delivery readers
  * 2) orders.city (сохранённый при расчёте/создании заказа) — legacy/display field
@@ -481,27 +509,6 @@ function isRejectableNumericCityCandidate_(s) {
  * 4) derive from DOM address — legacy/recovery fallback
  */
 function resolveEditOrderCalendarCity_() {
-    // Priority 1: saved orders.warehouse_city_key
-    if (_editOrderLoadedWarehouseCityKey) {
-        var c0 = normalizeCityAlias_(_editOrderLoadedWarehouseCityKey);
-        if (c0 && !isRejectableNumericCityCandidate_(c0)) return c0;
-    }
-    // Priority 2: saved orders.city
-    if (_editOrderLoadedCityRaw) {
-        var c1 = normalizeCityAlias_(_editOrderLoadedCityRaw);
-        if (c1 && !isRejectableNumericCityCandidate_(c1)) return c1;
-    }
-    // Priority 3: first line_items[].city
-    if (Array.isArray(editOrderComposition) && editOrderComposition.length > 0) {
-        for (var i = 0; i < editOrderComposition.length; i++) {
-            var c2 = (editOrderComposition[i].city || '').trim();
-            if (c2) {
-                c2 = normalizeCityAlias_(c2);
-                if (c2 && !isRejectableNumericCityCandidate_(c2)) return c2;
-            }
-        }
-    }
-    // Priority 4: derive from DOM address (legacy/recovery fallback)
     var part1 = document.getElementById('edit-order-address-part1');
     var part2 = document.getElementById('edit-order-address-part2');
     var part3 = document.getElementById('edit-order-address-part3');
@@ -509,21 +516,31 @@ function resolveEditOrderCalendarCity_() {
     var p2 = (part2 && part2.value) ? part2.value.trim() : '';
     var p3 = (part3 && part3.value) ? part3.value.trim() : '';
     var fullAddr = [p1, p2, p3].filter(Boolean).join(', ');
-    var cityCandidate = (typeof extractCityFromAddress === 'function' ? extractCityFromAddress(fullAddr) : '') || p1;
-    var c3 = cityCandidate && typeof findCityInDropdown === 'function'
-        ? (findCityInDropdown(cityCandidate) || findCityInDropdown(p1) || cityCandidate)
-        : cityCandidate;
-    if (c3 && typeof resolveRegionToCanonicalCity_ === 'function') {
-        var resolved = resolveRegionToCanonicalCity_(fullAddr) || resolveRegionToCanonicalCity_(c3);
-        if (resolved) c3 = (typeof normalizeCityAlias_ === 'function' ? normalizeCityAlias_(resolved) : null) || resolved;
+
+    // Priority 1: saved orders.warehouse_city_key
+    if (_editOrderLoadedWarehouseCityKey) {
+        var c0 = normalizeEditCalendarCityCandidate_(_editOrderLoadedWarehouseCityKey, fullAddr);
+        if (c0) return c0;
     }
-    if (c3 && isRejectableNumericCityCandidate_(c3)) {
-        if (p1 && typeof resolveRegionToCanonicalCity_ === 'function') {
-            var fromPart1 = resolveRegionToCanonicalCity_(p1);
-            if (fromPart1 && !isRejectableNumericCityCandidate_(fromPart1)) return normalizeCityAlias_(fromPart1) || fromPart1;
+    // Priority 2: saved orders.city
+    if (_editOrderLoadedCityRaw) {
+        var c1 = normalizeEditCalendarCityCandidate_(_editOrderLoadedCityRaw, fullAddr);
+        if (c1) return c1;
+    }
+    // Priority 3: first line_items[].city
+    if (Array.isArray(editOrderComposition) && editOrderComposition.length > 0) {
+        for (var i = 0; i < editOrderComposition.length; i++) {
+            var c2 = (editOrderComposition[i].city || '').trim();
+            if (c2) {
+                var c2norm = normalizeEditCalendarCityCandidate_(c2, fullAddr);
+                if (c2norm) return c2norm;
+            }
         }
-        return null;
     }
+    // Priority 4: derive from DOM address (legacy/recovery fallback)
+    var cityCandidate = (typeof extractCityFromAddress === 'function' ? extractCityFromAddress(fullAddr) : '') || p1;
+    var c3 = normalizeEditCalendarCityCandidate_(cityCandidate, fullAddr) ||
+        normalizeEditCalendarCityCandidate_(p1, fullAddr);
     return c3 || null;
 }
 
@@ -1419,11 +1436,12 @@ function getEditOrderCalendarAssemblyMode_() {
         for (var i = 0; i < editOrderComposition.length; i++) {
             var item = editOrderComposition[i] || {};
             if (item.options && typeof item.options === 'object' && !!item.options.assembly) return true;
+            var assemblyText = (item.assembly != null ? String(item.assembly) : '').toLowerCase();
+            if (/сборк|установк/i.test(assemblyText)) return true;
             if (typeof deriveOptionsFromExtrasAssembly === 'function') {
                 var derived = deriveOptionsFromExtrasAssembly(item.extras || '', item.assembly || '');
                 if (derived && derived.assembly) return true;
             }
-            if (typeof parseExtrasAssemblySum === 'function' && parseExtrasAssemblySum(item.extras || '', item.assembly || '') > 0) return true;
         }
     }
     return false;
