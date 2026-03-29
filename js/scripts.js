@@ -15570,6 +15570,9 @@ function renderEditOrderCalendar() {
     var startDow = (firstDay.getDay() + 6) % 7;
     var daysInMonth = new Date(y, m + 1, 0).getDate();
     var withAssemblyEdit = getEditOrderCalendarAssemblyMode_();
+    var legacyManualMode = _editOrderLegacyCompositionLocked
+        ? normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride)
+        : '';
 
     grid.innerHTML = '';
     for (var blank = 0; blank < startDow; blank++) {
@@ -15587,6 +15590,10 @@ function renderEditOrderCalendar() {
 
         if (deliveryDatesFromCalendar) {
             var editCellState = getDeliveryCalendarCellState(cellISO, withAssemblyEdit, todayISO);
+            // Legacy hard gate: режим, выбранный менеджером в popup, имеет приоритет.
+            // "со сборкой" => не показываем only-delivery; "без сборки" => не показываем only-assembly.
+            if (legacyManualMode === 'with' && editCellState === 'only-delivery') editCellState = 'blocked';
+            if (legacyManualMode === 'without' && editCellState === 'only-assembly') editCellState = 'blocked';
             if (isDeliveryCalendarStateSelectable_(editCellState)) {
                 btn.classList.add(editCellState === 'available' ? 'available' : editCellState);
                 btn.setAttribute('data-date', cellISO);
