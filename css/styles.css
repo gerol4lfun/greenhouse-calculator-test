@@ -3311,66 +3311,6 @@ input[type="radio"] {
 .edit-order-dates-link a { color: inherit; text-decoration: none; }
 .edit-order-dates-link a:hover { text-decoration: underline; }
 
-.edit-order-assembly-mode-row {
-  flex: 1 1 100%;
-  width: 100%;
-  margin-top: 4px;
-  padding: 8px 10px;
-  border: 1px solid var(--eo-border-color, #e5e7eb);
-  border-radius: var(--eo-radius, 6px);
-  background: #f8fafc;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.edit-order-assembly-mode-row.hidden {
-  display: none;
-}
-
-.edit-order-assembly-mode-label {
-  font-size: var(--eo-font-label, 0.875rem);
-  color: var(--eo-color-muted, #555);
-  white-space: nowrap;
-}
-
-.edit-order-assembly-mode-buttons {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.edit-order-assembly-mode-btn {
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #4b5563;
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.edit-order-assembly-mode-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
-}
-
-.edit-order-assembly-mode-btn.is-active {
-  background: #dcfce7;
-  border-color: #16a34a;
-  color: #166534;
-  font-weight: 600;
-}
-
-.edit-order-assembly-mode-row .edit-order-field-hint {
-  margin: 0;
-  flex: 1 1 100%;
-}
-
 .edit-order-search-row {
   display: flex;
   gap: var(--eo-space-md);

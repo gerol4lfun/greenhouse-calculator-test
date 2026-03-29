@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v287"; // v287: edit calendar uses raw_status parity with delivery modal + legacy assembly mode toggle (auto/without/with)
+const APP_VERSION = "v288"; // v288: legacy edit calendar asks manager once (with assembly yes/no) and removes inline toggle
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -875,8 +875,8 @@ let _editOrderGiftTierAtOpen = 0;
 let _editOrderLoadedCityRaw = null;
 /** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
 let _editOrderLoadedWarehouseCityKey = null;
-/** Ручной режим календаря для legacy date-only: auto | without | with. */
-let _editOrderCalendarAssemblyOverride = 'auto';
+/** Ручной режим календаря для legacy date-only: '' | without | with (задаётся через popup-вопрос менеджеру). */
+let _editOrderCalendarAssemblyOverride = '';
 /** Raw orders.line_items (JSON string) при загрузке itemized заказа; для preserve при save без изменения состава. null = flat legacy или не загружено. */
 let _editOrderOriginalLineItemsJson = null;
 /** Preview доставки из runEditOrderAddPanelCalculation. Применяется в payload только при «Сохранить позицию»/«Добавить в заказ». */
@@ -1470,48 +1470,37 @@ function normalizeEditOrderCalendarAssemblyOverride_(mode) {
     var m = (mode || '').toString().trim().toLowerCase();
     if (m === 'with') return 'with';
     if (m === 'without') return 'without';
-    return 'auto';
+    return '';
 }
 
-function setEditOrderCalendarAssemblyOverride_(mode) {
-    _editOrderCalendarAssemblyOverride = normalizeEditOrderCalendarAssemblyOverride_(mode);
-    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
-    if (!deliveryDatesFromCalendar) return;
-    syncEditOrderCalendarSlotsWithMode();
-    var cal = document.getElementById('edit-order-calendar');
-    if (cal && cal.classList.contains('open') && typeof renderEditOrderCalendar === 'function') renderEditOrderCalendar();
-}
-
-function updateEditOrderCalendarAssemblyModeUi_() {
-    var row = document.getElementById('edit-order-assembly-mode-row');
-    if (!row) return;
-    var locked = !!_editOrderLegacyCompositionLocked;
-    row.classList.toggle('hidden', !locked);
-    if (!locked) return;
-
-    var current = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
-    row.querySelectorAll('.edit-order-assembly-mode-btn').forEach(function (btn) {
-        var mode = normalizeEditOrderCalendarAssemblyOverride_(btn.getAttribute('data-mode'));
-        btn.classList.toggle('is-active', mode === current);
-        btn.setAttribute('aria-pressed', mode === current ? 'true' : 'false');
-    });
-    var hint = document.getElementById('edit-order-assembly-mode-hint');
-    if (hint) {
-        if (current === 'without') hint.textContent = 'Ручной режим: показываем даты без сборки.';
-        else if (current === 'with') hint.textContent = 'Ручной режим: показываем даты со сборкой.';
-        else hint.textContent = 'Авто: режим дат определяется по составу заказа.';
-    }
+/**
+ * Для legacy date-only при первом открытии календаря уточняем у менеджера, заказ со сборкой или нет.
+ * Вопрос задаётся один раз на сессию редактирования заказа.
+ */
+function ensureLegacyEditOrderAssemblyModeChosen_() {
+    if (!_editOrderLegacyCompositionLocked) return true;
+    var manualMode = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
+    if (manualMode === 'with' || manualMode === 'without') return true;
+    var withAssembly = window.confirm(
+        'Старый заказ: календарю нужно понять режим доставки.\n\n' +
+        'Заказ СО СБОРКОЙ?\n\n' +
+        'ОК = да, со сборкой\n' +
+        'Отмена = нет, без сборки'
+    );
+    _editOrderCalendarAssemblyOverride = withAssembly ? 'with' : 'without';
+    return true;
 }
 
 /**
  * Режим сборки для edit-calendar:
- * - для legacy date-only может быть ручной override (auto/without/with);
+ * - для legacy date-only задаётся popup-вопросом менеджеру (with/without);
  * - в остальных случаях используем факт сборки из сохранённого состава заказа.
  */
 function getEditOrderCalendarAssemblyMode_() {
     var manualMode = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
     if (_editOrderLegacyCompositionLocked && manualMode === 'with') return true;
     if (_editOrderLegacyCompositionLocked && manualMode === 'without') return false;
+    if (_editOrderLegacyCompositionLocked) return false;
 
     // Для стабильности edit-календаря используем только сохранённый состав заказа.
     // Черновые переключения в панели "Изменить/Добавить позицию" не должны
@@ -6738,7 +6727,7 @@ function fillEditOrderForm(order) {
     // primary source of truth для edit calendar
     _editOrderLoadedCityRaw = (order.city || '').trim() || (parsedAddr.part1 || '').trim() || null;
     _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
-    _editOrderCalendarAssemblyOverride = 'auto';
+    _editOrderCalendarAssemblyOverride = '';
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
     _editOrderHybridLineItemsV2Hydrated = false;
@@ -7475,7 +7464,6 @@ function syncEditOrderLegacyDateOnlyUi_() {
     }
     var dateDisp = document.getElementById('edit-order-delivery-date-display');
     if (dateDisp) dateDisp.disabled = false;
-    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
 }
 
 /** Отрисовать список состава в модалке и привязать кнопки Изменить/Удалить. У позиции справа — цена теплицы (base_price), под позицией — разбивка допов, внизу — строка «Итого». */
@@ -8091,7 +8079,7 @@ function resetEditOrderSessionState_() {
     _editOrderHybridLineItemsV2Hydrated = false;
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
-    _editOrderCalendarAssemblyOverride = 'auto';
+    _editOrderCalendarAssemblyOverride = '';
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     if (typeof closeEditOrderAddPanel === 'function') closeEditOrderAddPanel();
@@ -8123,7 +8111,7 @@ function clearEditOrderFormStateOnly() {
     _editOrderHybridLineItemsV2Hydrated = false;
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
-    _editOrderCalendarAssemblyOverride = 'auto';
+    _editOrderCalendarAssemblyOverride = '';
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     lastLoadedOrderTotalForDisplay = null;
@@ -8154,7 +8142,6 @@ function clearEditOrderFormStateOnly() {
     _editOrderDeliveryCostPreview = null;
     _editOrderDeliveryCostAtPanelOpen = null;
     editOrderDeliveryCost = 0;
-    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
     closeEditOrderAddPanel();
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
@@ -8925,17 +8912,6 @@ function initEditOrderModal() {
                 el.addEventListener('change', function () { _editOrderAddressTouchedByUser = true; });
             }
         });
-    })();
-
-    (function initEditOrderAssemblyModeToggle_() {
-        var row = document.getElementById('edit-order-assembly-mode-row');
-        if (!row) return;
-        row.querySelectorAll('.edit-order-assembly-mode-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                setEditOrderCalendarAssemblyOverride_(btn.getAttribute('data-mode'));
-            });
-        });
-        if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
     })();
 
     var addItemBtn = document.getElementById('edit-order-add-item-btn');
@@ -15508,6 +15484,9 @@ function toggleEditOrderCalendar() {
     if (isOpen) {
         closeEditOrderCalendar();
         return;
+    }
+    if (typeof ensureLegacyEditOrderAssemblyModeChosen_ === 'function') {
+        ensureLegacyEditOrderAssemblyModeChosen_();
     }
     var display = document.getElementById('edit-order-delivery-date-display');
     if (display) display.classList.add('active');
