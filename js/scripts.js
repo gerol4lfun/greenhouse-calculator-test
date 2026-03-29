@@ -1456,11 +1456,9 @@ function hasAssemblySignalForEditCalendar_(item) {
  * - иначе используем факт сборки из состава существующего заказа.
  */
 function getEditOrderCalendarAssemblyMode_() {
-    var panel = document.getElementById('edit-order-add-item-panel');
-    var assemblyEditEl = document.getElementById('edit-order-add-assembly');
-    if (panel && assemblyEditEl && !panel.classList.contains('hidden')) {
-        return !!assemblyEditEl.checked;
-    }
+    // Для стабильности edit-календаря используем только сохранённый состав заказа.
+    // Черновые переключения в панели "Изменить/Добавить позицию" не должны
+    // переопределять доступность дат до фактического сохранения позиции.
     if (Array.isArray(editOrderComposition)) {
         for (var i = 0; i < editOrderComposition.length; i++) {
             var item = editOrderComposition[i] || {};
