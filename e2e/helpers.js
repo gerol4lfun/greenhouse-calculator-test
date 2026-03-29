@@ -309,14 +309,27 @@ async function getEditOrderSnapshot(page) {
  */
 async function changeEditOrderDeliveryDate(page, dayIndex = 1) {
   await page.locator('#edit-order-delivery-date-display').click();
-  const otherDayBtn = page.locator('#edit-order-calendar .order-cal-day.available:not(.selected)').first();
-  if (await otherDayBtn.isVisible().catch(() => false)) {
-    await otherDayBtn.click();
-    return;
+  async function pickVisibleAvailable() {
+    const days = page.locator('#edit-order-calendar .order-cal-day.available:not(.other-month):not(.selected)');
+    const count = await days.count();
+    if (count < 1) return false;
+    const idx = Math.min(Math.max(dayIndex, 0), count - 1);
+    await days.nth(idx).click();
+    return true;
   }
-  const dayBtn = page.locator('#edit-order-calendar .order-cal-day.available').nth(dayIndex);
-  await dayBtn.waitFor({ state: 'visible', timeout: 8000 });
-  await dayBtn.click();
+
+  if (await pickVisibleAvailable()) return;
+
+  const nextNav = page.locator('#edit-order-calendar .order-cal-nav').nth(1);
+  for (var i = 0; i < 2; i++) {
+    if (!(await nextNav.isVisible().catch(function () { return false; }))) break;
+    await nextNav.click();
+    if (await pickVisibleAvailable()) return;
+  }
+
+  const anyAvailable = page.locator('#edit-order-calendar .order-cal-day.available:not(.selected)').first();
+  await anyAvailable.waitFor({ state: 'visible', timeout: 8000 });
+  await anyAvailable.click();
 }
 
 /**
