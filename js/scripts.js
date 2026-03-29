@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v284"; // v284: edit calendar assembly-mode stability + cache-bust
+const APP_VERSION = "v285"; // v285: edit calendar uses visible composition, ignores stale options.assembly
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1430,7 +1430,6 @@ function syncEditOrderCalendarSlotsWithMode() {
  */
 function hasAssemblySignalForEditCalendar_(item) {
     if (!item || typeof item !== 'object') return false;
-    if (item.options && typeof item.options === 'object' && !!item.options.assembly) return true;
 
     var combined = [item.assembly || '', item.extras || ''].join('\n');
     if (!combined || String(combined).trim() === '') return false;
