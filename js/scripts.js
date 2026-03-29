@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v286"; // v286: loadDeliveryDate merges city aliases like delivery-dates modal (prevents partial city calendar in edit)
+const APP_VERSION = "v287"; // v287: edit calendar uses raw_status parity with delivery modal + legacy assembly mode toggle (auto/without/with)
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -875,6 +875,8 @@ let _editOrderGiftTierAtOpen = 0;
 let _editOrderLoadedCityRaw = null;
 /** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
 let _editOrderLoadedWarehouseCityKey = null;
+/** Ручной режим календаря для legacy date-only: auto | without | with. */
+let _editOrderCalendarAssemblyOverride = 'auto';
 /** Raw orders.line_items (JSON string) при загрузке itemized заказа; для preserve при save без изменения состава. null = flat legacy или не загружено. */
 let _editOrderOriginalLineItemsJson = null;
 /** Preview доставки из runEditOrderAddPanelCalculation. Применяется в payload только при «Сохранить позицию»/«Добавить в заказ». */
@@ -1373,12 +1375,37 @@ function getCurrentCalendarSlotsByMode(withAssembly) {
     return withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
 }
 
+/**
+ * Нормализованное состояние даты для выбранного режима (со сборкой / без сборки).
+ * Приоритет источника истины:
+ * 1) raw_status из delivery_calendar (ДС/Д/С/X)
+ * 2) bool-флаги available_without_assembly / available_with_assembly
+ */
+function getDeliveryCalendarStateByMode_(meta, withAssembly) {
+    if (!meta) return 'blocked';
+    var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
+    if (rs === 'ДС') return 'available';
+    if (rs === 'Д') return withAssembly ? 'blocked' : 'only-delivery';
+    if (rs === 'С') return withAssembly ? 'only-assembly' : 'blocked';
+    if (rs === 'X' || rs === 'Х') return 'blocked';
+    if (meta.withoutAssembly && meta.withAssembly) return 'available';
+    if (meta.withoutAssembly && !meta.withAssembly) return withAssembly ? 'blocked' : 'only-delivery';
+    if (!meta.withoutAssembly && meta.withAssembly) return withAssembly ? 'only-assembly' : 'blocked';
+    return 'blocked';
+}
+
+/** Состояние календарной ячейки кликабельно в текущем режиме? */
+function isDeliveryCalendarStateSelectable_(state) {
+    return state === 'available' || state === 'only-delivery' || state === 'only-assembly';
+}
+
 /** Дата доступна для режима? delivery_calendar = слой ограничений; future unknown = доступна */
 function isDateAvailableForMode(iso, withAssembly, todayISO) {
     if (!iso || iso <= todayISO) return false;
     var meta = currentDeliveryDateStateMap[iso];
     if (!meta) return true;
-    return withAssembly ? !!meta.withAssembly : !!meta.withoutAssembly;
+    var state = getDeliveryCalendarStateByMode_(meta, withAssembly);
+    return isDeliveryCalendarStateSelectable_(state);
 }
 
 /** Ближайшая доступная дата после todayMoscow для режима (сборка/без) */
@@ -1399,7 +1426,7 @@ function getDeliveryCalendarCellState(cellISO, withAssembly, todayISO) {
     if (cellISO <= todayISO) return 'past';
     var meta = currentDeliveryDateStateMap[cellISO];
     if (!meta) return 'blocked';
-    return withAssembly ? (meta.withAssembly ? 'available' : 'blocked') : (meta.withoutAssembly ? 'available' : 'blocked');
+    return getDeliveryCalendarStateByMode_(meta, withAssembly);
 }
 
 function syncOrderCalendarSlotsWithMode() {
@@ -1439,12 +1466,53 @@ function hasAssemblySignalForEditCalendar_(item) {
     return /сборк|установк/i.test(low);
 }
 
+function normalizeEditOrderCalendarAssemblyOverride_(mode) {
+    var m = (mode || '').toString().trim().toLowerCase();
+    if (m === 'with') return 'with';
+    if (m === 'without') return 'without';
+    return 'auto';
+}
+
+function setEditOrderCalendarAssemblyOverride_(mode) {
+    _editOrderCalendarAssemblyOverride = normalizeEditOrderCalendarAssemblyOverride_(mode);
+    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
+    if (!deliveryDatesFromCalendar) return;
+    syncEditOrderCalendarSlotsWithMode();
+    var cal = document.getElementById('edit-order-calendar');
+    if (cal && cal.classList.contains('open') && typeof renderEditOrderCalendar === 'function') renderEditOrderCalendar();
+}
+
+function updateEditOrderCalendarAssemblyModeUi_() {
+    var row = document.getElementById('edit-order-assembly-mode-row');
+    if (!row) return;
+    var locked = !!_editOrderLegacyCompositionLocked;
+    row.classList.toggle('hidden', !locked);
+    if (!locked) return;
+
+    var current = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
+    row.querySelectorAll('.edit-order-assembly-mode-btn').forEach(function (btn) {
+        var mode = normalizeEditOrderCalendarAssemblyOverride_(btn.getAttribute('data-mode'));
+        btn.classList.toggle('is-active', mode === current);
+        btn.setAttribute('aria-pressed', mode === current ? 'true' : 'false');
+    });
+    var hint = document.getElementById('edit-order-assembly-mode-hint');
+    if (hint) {
+        if (current === 'without') hint.textContent = 'Ручной режим: показываем даты без сборки.';
+        else if (current === 'with') hint.textContent = 'Ручной режим: показываем даты со сборкой.';
+        else hint.textContent = 'Авто: режим дат определяется по составу заказа.';
+    }
+}
+
 /**
  * Режим сборки для edit-calendar:
- * - если открыта панель редактирования позиции, берём состояние её чекбокса;
- * - иначе используем факт сборки из состава существующего заказа.
+ * - для legacy date-only может быть ручной override (auto/without/with);
+ * - в остальных случаях используем факт сборки из сохранённого состава заказа.
  */
 function getEditOrderCalendarAssemblyMode_() {
+    var manualMode = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
+    if (_editOrderLegacyCompositionLocked && manualMode === 'with') return true;
+    if (_editOrderLegacyCompositionLocked && manualMode === 'without') return false;
+
     // Для стабильности edit-календаря используем только сохранённый состав заказа.
     // Черновые переключения в панели "Изменить/Добавить позицию" не должны
     // переопределять доступность дат до фактического сохранения позиции.
@@ -6670,6 +6738,7 @@ function fillEditOrderForm(order) {
     // primary source of truth для edit calendar
     _editOrderLoadedCityRaw = (order.city || '').trim() || (parsedAddr.part1 || '').trim() || null;
     _editOrderLoadedWarehouseCityKey = (order.warehouse_city_key || '').trim() || null;
+    _editOrderCalendarAssemblyOverride = 'auto';
     lastLoadedOrderTotalForDisplay = order.total != null ? parseOrderPrice_(order.total) : null;
     editOrderComposition = [];
     _editOrderHybridLineItemsV2Hydrated = false;
@@ -7406,6 +7475,7 @@ function syncEditOrderLegacyDateOnlyUi_() {
     }
     var dateDisp = document.getElementById('edit-order-delivery-date-display');
     if (dateDisp) dateDisp.disabled = false;
+    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
 }
 
 /** Отрисовать список состава в модалке и привязать кнопки Изменить/Удалить. У позиции справа — цена теплицы (base_price), под позицией — разбивка допов, внизу — строка «Итого». */
@@ -8021,6 +8091,7 @@ function resetEditOrderSessionState_() {
     _editOrderHybridLineItemsV2Hydrated = false;
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
+    _editOrderCalendarAssemblyOverride = 'auto';
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     if (typeof closeEditOrderAddPanel === 'function') closeEditOrderAddPanel();
@@ -8052,6 +8123,7 @@ function clearEditOrderFormStateOnly() {
     _editOrderHybridLineItemsV2Hydrated = false;
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
+    _editOrderCalendarAssemblyOverride = 'auto';
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     lastLoadedOrderTotalForDisplay = null;
@@ -8082,6 +8154,7 @@ function clearEditOrderFormStateOnly() {
     _editOrderDeliveryCostPreview = null;
     _editOrderDeliveryCostAtPanelOpen = null;
     editOrderDeliveryCost = 0;
+    if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
     closeEditOrderAddPanel();
     if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
     if (typeof updateEditOrderUndoRedoButtons === 'function') updateEditOrderUndoRedoButtons();
@@ -8852,6 +8925,17 @@ function initEditOrderModal() {
                 el.addEventListener('change', function () { _editOrderAddressTouchedByUser = true; });
             }
         });
+    })();
+
+    (function initEditOrderAssemblyModeToggle_() {
+        var row = document.getElementById('edit-order-assembly-mode-row');
+        if (!row) return;
+        row.querySelectorAll('.edit-order-assembly-mode-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                setEditOrderCalendarAssemblyOverride_(btn.getAttribute('data-mode'));
+            });
+        });
+        if (typeof updateEditOrderCalendarAssemblyModeUi_ === 'function') updateEditOrderCalendarAssemblyModeUi_();
     })();
 
     var addItemBtn = document.getElementById('edit-order-add-item-btn');
@@ -15312,8 +15396,8 @@ function renderOrderCalendar() {
 
         if (deliveryDatesFromCalendar) {
             var cellState = getDeliveryCalendarCellState(cellISO, withAssembly, todayISO);
-            if (cellState === 'available') {
-                btn.classList.add('available');
+            if (isDeliveryCalendarStateSelectable_(cellState)) {
+                btn.classList.add(cellState === 'available' ? 'available' : cellState);
                 btn.setAttribute('data-date', cellISO);
                 btn.onclick = (function(iso) {
                     return function() {
@@ -15328,6 +15412,7 @@ function renderOrderCalendar() {
                 btn.style.cursor = 'not-allowed';
                 btn.disabled = true;
             } else {
+                if (cellState === 'past') btn.classList.add('past');
                 btn.disabled = true;
             }
         } else if (slotsSet[cellISO]) {
@@ -15523,8 +15608,8 @@ function renderEditOrderCalendar() {
 
         if (deliveryDatesFromCalendar) {
             var editCellState = getDeliveryCalendarCellState(cellISO, withAssemblyEdit, todayISO);
-            if (editCellState === 'available') {
-                btn.classList.add('available');
+            if (isDeliveryCalendarStateSelectable_(editCellState)) {
+                btn.classList.add(editCellState === 'available' ? 'available' : editCellState);
                 btn.setAttribute('data-date', cellISO);
                 btn.onclick = (function(iso) {
                     return function() {
@@ -15539,6 +15624,7 @@ function renderEditOrderCalendar() {
                 btn.style.cursor = 'not-allowed';
                 btn.disabled = true;
             } else {
+                if (editCellState === 'past') btn.classList.add('past');
                 btn.disabled = true;
             }
         } else if (slotsSet[cellISO]) {

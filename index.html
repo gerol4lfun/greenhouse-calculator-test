@@ -138,6 +138,15 @@
                     <div class="order-cal-grid" id="edit-order-cal-grid"></div>
                   </div>
                 </div>
+                <div id="edit-order-assembly-mode-row" class="edit-order-assembly-mode-row hidden" role="group" aria-label="Режим календаря по сборке">
+                  <span class="edit-order-assembly-mode-label">Режим дат:</span>
+                  <div class="edit-order-assembly-mode-buttons">
+                    <button type="button" class="edit-order-assembly-mode-btn is-active" data-mode="auto" aria-pressed="true">Авто</button>
+                    <button type="button" class="edit-order-assembly-mode-btn" data-mode="without" aria-pressed="false">Без сборки</button>
+                    <button type="button" class="edit-order-assembly-mode-btn" data-mode="with" aria-pressed="false">Со сборкой</button>
+                  </div>
+                  <span id="edit-order-assembly-mode-hint" class="edit-order-field-hint">Авто: режим дат определяется по составу заказа.</span>
+                </div>
                 <span class="edit-order-validation-msg" aria-live="polite"></span>
               </div>
               <div class="edit-order-field" id="eo-addr1">
