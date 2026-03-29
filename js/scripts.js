@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v285"; // v285: edit calendar uses visible composition, ignores stale options.assembly
+const APP_VERSION = "v286"; // v286: loadDeliveryDate merges city aliases like delivery-dates modal (prevents partial city calendar in edit)
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1510,64 +1510,65 @@ async function loadDeliveryDate(cityName) {
     var todayMoscow = getTodayMoscowISO();
 
     try {
-        var calRes = await supabaseClient
+        var calSelect = 'city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status';
+        var calResExact = await supabaseClient
             .from('delivery_calendar')
-            .select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status')
+            .select(calSelect)
             .eq('city_name', cityName)
             .order('delivery_date');
 
-        if (!calRes.error && calRes.data && calRes.data.length > 0) {
-            applyDeliveryCalendarRows(calRes.data, todayMoscow);
+        var exactRows = (!calResExact.error && calResExact.data) ? calResExact.data : [];
+        var likeRows = [];
+        if (!calResExact.error) {
+            var calResLike = await supabaseClient
+                .from('delivery_calendar')
+                .select(calSelect)
+                .ilike('city_name', '%' + cityName + '%')
+                .order('delivery_date');
+            if (!calResLike.error && calResLike.data) likeRows = calResLike.data;
+        }
+
+        var allRows = exactRows.concat(likeRows);
+        var dedupRows = [];
+        var seen = {};
+        for (var i = 0; i < allRows.length; i++) {
+            var row = allRows[i] || {};
+            var isoKey = normalizeDeliveryCalendarISO(row.delivery_date) || String(row.delivery_date || '').trim();
+            var key = String(row.city_name || '').trim() + '|' + isoKey;
+            if (!isoKey || seen[key]) continue;
+            seen[key] = true;
+            dedupRows.push(row);
+        }
+
+        var cityKey = typeof getModalCityGroupKey === 'function'
+            ? getModalCityGroupKey(cleanDeliveryCityName(cityName))
+            : normalizeCityName(cleanDeliveryCityName(cityName));
+        var keySet = {};
+        keySet[cityKey] = true;
+        if (cityKey === 'москва') keySet['москва и мо'] = true;
+        if (cityKey === 'москва и мо') keySet['москва'] = true;
+        if (cityKey === 'санкт-петербург') {
+            keySet['санкт-петербург и обл.'] = true;
+            keySet['санкт-петербург и ло'] = true;
+        }
+        if (cityKey === 'санкт-петербург и обл.' || cityKey === 'санкт-петербург и ло') {
+            keySet['санкт-петербург'] = true;
+        }
+
+        var matchedRows = dedupRows.filter(function(item) {
+            var itemKey = typeof getModalCityGroupKey === 'function'
+                ? getModalCityGroupKey(cleanDeliveryCityName(item.city_name))
+                : normalizeCityName(cleanDeliveryCityName(item.city_name));
+            return !!keySet[itemKey];
+        });
+
+        if (matchedRows.length === 0 && exactRows.length > 0) matchedRows = exactRows;
+        if (matchedRows.length > 0) {
+            applyDeliveryCalendarRows(matchedRows, todayMoscow);
             return currentDeliveryDate;
         }
 
-        if (!calRes.error && calRes.data && calRes.data.length === 0) {
-            var aliasToTry = [];
-            var cn = (cityName || '').trim();
-            if (/^москва$/i.test(cn)) aliasToTry = ['Москва и МО'];
-            else if (/москва\s+и\s+м\.?о\.?/i.test(cn)) aliasToTry = ['Москва'];
-            else if (/^санкт-петербург$/i.test(cn)) aliasToTry = ['Санкт-Петербург и обл.', 'Санкт-Петербург и ЛО'];
-            else if (/санкт-петербург\s+и\s+(обл\.?|ло)/i.test(cn)) aliasToTry = ['Санкт-Петербург'];
-            for (var a = 0; a < aliasToTry.length; a++) {
-                var altRes = await supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').eq('city_name', aliasToTry[a]).order('delivery_date');
-                if (!altRes.error && altRes.data && altRes.data.length > 0) {
-                    applyDeliveryCalendarRows(altRes.data, todayMoscow);
-                    return currentDeliveryDate;
-                }
-            }
-            var normalizedCity = normalizeCityName(cityName);
-            var calAltRes = await supabaseClient
-                .from('delivery_calendar')
-                .select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status')
-                .ilike('city_name', '%' + cityName + '%')
-                .order('delivery_date');
-
-            if (!calAltRes.error && calAltRes.data && calAltRes.data.length > 0) {
-                var matchedRow = calAltRes.data.find(function(item) {
-                    var cleanedItem = cleanDeliveryCityName(item.city_name);
-                    var normalizedItem = normalizeCityName(cleanedItem);
-                    return normalizedItem === normalizedCity ||
-                           normalizedCity.includes(normalizedItem) ||
-                           normalizedItem.includes(normalizedCity);
-                });
-                if (matchedRow) {
-                    var matchedNormalizedCity = normalizeCityName(cleanDeliveryCityName(matchedRow.city_name));
-                    var matchedRows = calAltRes.data.filter(function(item) {
-                        return normalizeCityName(cleanDeliveryCityName(item.city_name)) === matchedNormalizedCity;
-                    });
-                    var isMoscowWithRegion = function(s) { return /москва\s+и\s+м\.?о\.?/i.test((s || '').trim()); };
-                    var reqWithRegion = isMoscowWithRegion(cityName);
-                    var moscowFiltered = matchedRows.filter(function(r) { return isMoscowWithRegion(cleanDeliveryCityName(r.city_name)) === reqWithRegion; });
-                    if (moscowFiltered.length > 0) matchedRows = moscowFiltered;
-                    if (matchedRows.length > 0) {
-                        applyDeliveryCalendarRows(matchedRows, todayMoscow);
-                        return currentDeliveryDate;
-                    }
-                }
-            }
-        }
-
-        if (calRes.error || !calRes.data || calRes.data.length === 0) {
+        if (calResExact.error || exactRows.length === 0) {
             deliveryDatesFromCalendar = false;
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
