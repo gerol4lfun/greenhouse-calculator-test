@@ -1423,7 +1423,8 @@ function syncEditOrderCalendarSlotsWithMode() {
 
 /**
  * Есть ли для позиции явный признак сборки, влияющий на календарь доставки.
- * Для старых заказов избегаем ложных срабатываний по "нулевым" строкам.
+ * Бизнес-правило: если в заказе есть любая сборка (включая сборку грядок) —
+ * календарь работает в режиме "со сборкой".
  * @param {Object} item
  * @returns {boolean}
  */
@@ -1434,20 +1435,9 @@ function hasAssemblySignalForEditCalendar_(item) {
     var combined = [item.assembly || '', item.extras || ''].join('\n');
     if (!combined || String(combined).trim() === '') return false;
 
-    var lines = String(combined).split(/\r?\n/).map(function (s) { return (s || '').trim(); }).filter(Boolean);
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        var low = line.toLowerCase();
-        if (!/сборк|установк/i.test(low)) continue;
-        // Сборка грядок не должна переводить доставку в режим "со сборкой" теплицы.
-        if (/грядок/i.test(low)) continue;
-        var m = line.match(/(\d[\d\s.]*)\s*руб/i);
-        if (!m) return true; // старая строка без явной цены — считаем, что сборка есть
-        var cost = parseOrderPrice_(m[1]);
-        if (cost > 0) return true;
-    }
-    // Нашли только нулевые строки по сборке — считаем "без сборки".
-    return false;
+    var low = String(combined).toLowerCase();
+    if (/без\s*сборк/i.test(low)) return false;
+    return /сборк|установк/i.test(low);
 }
 
 /**
