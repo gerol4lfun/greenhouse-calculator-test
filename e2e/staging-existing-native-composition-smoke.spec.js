@@ -397,11 +397,10 @@ test('staging: two-line — edit second line assembly (or hooks) + main save + P
   try {
     dbg('before: load calculator shell');
     await page.goto('./');
-    await page.locator('#calculator-container').waitFor({ state: 'visible', timeout: TW.calculator });
-    dbg('after: calculator visible');
-
     dbg('before: login + edit-order ready');
     await loginIfNeeded(page, process.env.TEST_LOGIN, process.env.TEST_PASSWORD);
+    await page.locator('#calculator-container').waitFor({ state: 'visible', timeout: TW.calculator });
+    dbg('after: calculator visible');
     await waitForEditOrderReady(page);
     dbg('after: login / edit-order ready');
 
@@ -578,8 +577,10 @@ test('staging: two-line — edit second line assembly (or hooks) + main save + P
     dbg(`FAIL: ${/** @type {Error} */ (e).message}`);
     await attachDomFacts('on-failure');
     await fs.promises.mkdir(path.dirname(failShot), { recursive: true });
-    await page.screenshot({ path: failShot, fullPage: true });
-    await test.info().attach('twoline-fail-screenshot', { path: failShot, contentType: 'image/png' });
+    try {
+      await page.screenshot({ path: failShot, fullPage: true });
+      await test.info().attach('twoline-fail-screenshot', { path: failShot, contentType: 'image/png' });
+    } catch (_) {}
     throw e;
   }
 });

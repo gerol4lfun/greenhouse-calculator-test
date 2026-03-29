@@ -47,8 +47,17 @@ async function waitForEditOrderReady(page, timeout = 15000) {
 async function loginIfNeeded(page, login, password) {
   const auth = page.locator('#auth-container');
   if (!(await auth.isVisible().catch(() => false))) return false;
-  await page.locator('#login').fill(login);
-  await page.locator('#password').fill(password);
+  // В hosted lane поля логина могут быть в коротком переходном состоянии (видимость дергается),
+  // поэтому заполняем через DOM без требования visible/editable.
+  await page.evaluate(
+    ({ l, p }) => {
+      const loginEl = document.getElementById('login');
+      const passEl = document.getElementById('password');
+      if (loginEl) loginEl.value = l || '';
+      if (passEl) passEl.value = p || '';
+    },
+    { l: String(login || ''), p: String(password || '') }
+  );
   const loginBtn = page.locator('#auth-container button:has-text("Войти")');
   await loginBtn.waitFor({ state: 'visible', timeout: 5000 });
   await loginBtn.click({ force: true });
@@ -307,7 +316,7 @@ async function getEditOrderSnapshot(page) {
 /**
  * Изменить дату доставки в модалке: клик по календарю, выбор available day по индексу (0 = первый).
  */
-async function changeEditOrderDeliveryDate(page, dayIndex = 1) {
+async function changeEditOrderDeliveryDate(page, dayIndex = 1, maxMonthJumps = 2) {
   await page.locator('#edit-order-delivery-date-display').click();
   async function pickVisibleAvailable() {
     const days = page.locator('#edit-order-calendar .order-cal-day.available:not(.other-month):not(.selected)');
@@ -321,15 +330,12 @@ async function changeEditOrderDeliveryDate(page, dayIndex = 1) {
   if (await pickVisibleAvailable()) return;
 
   const nextNav = page.locator('#edit-order-calendar .order-cal-nav').nth(1);
-  for (var i = 0; i < 2; i++) {
+  for (var i = 0; i < Math.max(0, maxMonthJumps); i++) {
     if (!(await nextNav.isVisible().catch(function () { return false; }))) break;
     await nextNav.click();
     if (await pickVisibleAvailable()) return;
   }
-
-  const anyAvailable = page.locator('#edit-order-calendar .order-cal-day.available:not(.selected)').first();
-  await anyAvailable.waitFor({ state: 'visible', timeout: 8000 });
-  await anyAvailable.click();
+  throw new Error('No available delivery date in allowed calendar window');
 }
 
 /**
