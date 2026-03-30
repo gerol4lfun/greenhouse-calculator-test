@@ -3225,6 +3225,125 @@ input[type="radio"] {
   background: #dd6b20;
 }
 
+/* Диалог выбора режима дат для legacy-заказа */
+.edit-order-assembly-confirm {
+  --eo-space-sm: 8px;
+  --eo-space-md: 12px;
+  --eo-space-lg: 16px;
+  --eo-space-xl: 24px;
+  --eo-space-2xl: 30px;
+  --eo-primary: #16a34a;
+  --eo-primary-hover: #15803d;
+  --eo-color-text: #2c3e50;
+  --eo-color-muted: #555;
+  --eo-font-body: 14px;
+  --eo-bg-subtle: #fafbfc;
+  --eo-border-color: #e8ecf0;
+
+  position: fixed;
+  inset: 0;
+  z-index: 100003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--eo-space-xl);
+}
+.edit-order-assembly-confirm.hidden {
+  display: none !important;
+  pointer-events: none !important;
+}
+.edit-order-assembly-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+.edit-order-assembly-confirm-content {
+  position: relative;
+  background: #fff;
+  border-radius: 12px;
+  padding: var(--eo-space-2xl);
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--eo-border-color);
+  border-left: 4px solid #16a34a;
+}
+.edit-order-assembly-confirm-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.edit-order-assembly-confirm-close:hover {
+  background: #e2e8f0;
+}
+.edit-order-assembly-confirm-close:focus-visible {
+  outline: 2px solid var(--eo-primary);
+  outline-offset: 2px;
+}
+.edit-order-assembly-confirm-title {
+  margin: 0 0 var(--eo-space-sm);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--eo-color-text);
+  letter-spacing: -0.01em;
+}
+.edit-order-assembly-confirm-text {
+  margin: 0 0 var(--eo-space-2xl);
+  font-size: var(--eo-font-body);
+  color: var(--eo-color-muted);
+  line-height: 1.5;
+}
+.edit-order-assembly-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--eo-space-md);
+  justify-content: flex-end;
+}
+.edit-order-assembly-confirm-btn {
+  padding: 10px 20px;
+  min-height: 40px;
+  border-radius: 8px;
+  font-size: var(--eo-font-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+.edit-order-assembly-confirm-btn:focus-visible {
+  outline: 2px solid var(--eo-primary);
+  outline-offset: 2px;
+}
+.edit-order-assembly-confirm-btn--yes {
+  background: var(--eo-primary);
+  color: #fff;
+  border: none;
+}
+.edit-order-assembly-confirm-btn--yes:hover {
+  background: var(--eo-primary-hover);
+}
+.edit-order-assembly-confirm-btn--no {
+  background: #fff;
+  color: var(--eo-color-text);
+  border: 2px solid var(--eo-border-color);
+}
+.edit-order-assembly-confirm-btn--no:hover {
+  background: var(--eo-bg-subtle);
+  border-color: #d1d5db;
+}
+
 .edit-order-modal-content {
   background: #fff !important;
   border-radius: 12px;

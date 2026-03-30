@@ -847,6 +847,10 @@ let lastPersistedEditOrderState = null;
 let lastPersistedEditOrderFormState = null;
 /** Колбэк при нажатии «Закрыть без сохранения» в диалоге подтверждения (пока диалог виден). */
 let editOrderCloseConfirmCallback = null;
+/** Колбэк выбора режима дат legacy-заказа ('with' | 'without' | ''). */
+let editOrderLegacyAssemblyConfirmCallback = null;
+/** После выбора режима legacy автоматически открыть календарь, если он был запрошен кликом по полю даты. */
+let editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
 /** Флаг: идёт восстановление из undo/redo, не пушить новый undo из onEditOrderGiftSelectChange. */
 let editOrderRestoringState = false;
 /** Флаг: пересборка блока подарков из-за смены выбора (чтобы скрыть занятый слот window-auto), не пушить undo во вложенном onEditOrderGiftSelectChange. */
@@ -1481,14 +1485,24 @@ function ensureLegacyEditOrderAssemblyModeChosen_() {
     if (!_editOrderLegacyCompositionLocked) return true;
     var manualMode = normalizeEditOrderCalendarAssemblyOverride_(_editOrderCalendarAssemblyOverride);
     if (manualMode === 'with' || manualMode === 'without') return true;
-    var withAssembly = window.confirm(
-        'Старый заказ: календарю нужно понять режим доставки.\n\n' +
-        'Заказ СО СБОРКОЙ?\n\n' +
-        'ОК = да, со сборкой\n' +
-        'Отмена = нет, без сборки'
-    );
-    _editOrderCalendarAssemblyOverride = withAssembly ? 'with' : 'without';
-    return true;
+    editOrderLegacyAssemblyConfirmPendingCalendarOpen = true;
+    if (typeof showEditOrderLegacyAssemblyConfirm === 'function') {
+        showEditOrderLegacyAssemblyConfirm(function(choice) {
+            var resolved = normalizeEditOrderCalendarAssemblyOverride_(choice);
+            if (resolved === 'with' || resolved === 'without') {
+                _editOrderCalendarAssemblyOverride = resolved;
+            }
+            if (typeof syncEditOrderLegacyDateOnlyUi_ === 'function') syncEditOrderLegacyDateOnlyUi_();
+            var needOpen = !!editOrderLegacyAssemblyConfirmPendingCalendarOpen;
+            editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+            if (needOpen && (resolved === 'with' || resolved === 'without')) {
+                setTimeout(function() {
+                    if (typeof toggleEditOrderCalendar === 'function') toggleEditOrderCalendar();
+                }, 0);
+            }
+        });
+    }
+    return false;
 }
 
 /**
@@ -5962,6 +5976,8 @@ function closeEditOrderModal() {
     if (listContainer) listContainer.innerHTML = '<p class="edit-order-list-placeholder">Введите телефон и нажмите «Найти».</p>';
     var searchHint = document.getElementById('edit-order-search-hint');
     if (searchHint) { searchHint.style.display = 'none'; searchHint.textContent = ''; }
+    if (typeof hideEditOrderLegacyAssemblyConfirm === 'function') hideEditOrderLegacyAssemblyConfirm('');
+    editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
     modal.classList.add('hidden');
     modal.style.display = 'none';
     document.body.style.overflow = '';
@@ -5986,11 +6002,39 @@ function hideEditOrderCloseConfirm() {
     editOrderCloseConfirmCallback = null;
 }
 
+/** Показать диалог выбора режима legacy-календаря (сборка/без). */
+function showEditOrderLegacyAssemblyConfirm(callbackOnChoice) {
+    var el = document.getElementById('edit-order-assembly-confirm');
+    if (!el) {
+        if (typeof callbackOnChoice === 'function') callbackOnChoice('');
+        return;
+    }
+    editOrderLegacyAssemblyConfirmCallback = typeof callbackOnChoice === 'function' ? callbackOnChoice : null;
+    el.classList.remove('hidden');
+    var yesBtn = document.getElementById('edit-order-assembly-confirm-yes');
+    if (yesBtn) setTimeout(function () { yesBtn.focus(); }, 0);
+}
+
+/** Скрыть диалог выбора режима legacy-календаря и вернуть выбор ('with'|'without'|''). */
+function hideEditOrderLegacyAssemblyConfirm(choice) {
+    var el = document.getElementById('edit-order-assembly-confirm');
+    if (el) el.classList.add('hidden');
+    var cb = editOrderLegacyAssemblyConfirmCallback;
+    editOrderLegacyAssemblyConfirmCallback = null;
+    if (typeof cb === 'function') cb(normalizeEditOrderCalendarAssemblyOverride_(choice));
+}
+
 /** Запросить закрытие модалки: при несохранённых изменениях — кастомный диалог. Возвращает true, если модалка закрыта или не открыта; иначе false. */
 function requestCloseEditOrderModal() {
     var modal = document.getElementById('edit-order-modal');
     var confirmEl = document.getElementById('edit-order-close-confirm');
+    var assemblyConfirmEl = document.getElementById('edit-order-assembly-confirm');
     if (!modal || modal.classList.contains('hidden')) return true;
+    if (assemblyConfirmEl && !assemblyConfirmEl.classList.contains('hidden')) {
+        hideEditOrderLegacyAssemblyConfirm('');
+        editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+        return false;
+    }
     if (confirmEl && !confirmEl.classList.contains('hidden')) {
         hideEditOrderCloseConfirm();
         return false;
@@ -7410,7 +7454,7 @@ function updateEditOrderLegacyCompositionUi_() {
         addBtn.disabled = !!_editOrderLegacyCompositionLocked;
         addBtn.style.opacity = _editOrderLegacyCompositionLocked ? '0.5' : '';
         addBtn.title = _editOrderLegacyCompositionLocked
-            ? 'Старый заказ: через калькулятор можно менять только дату доставки'
+            ? 'Старый заказ: дату меняем в калькуляторе. По изменениям состава отправьте Павлу номер в формате 79XXXXXXXXX и описание изменений.'
             : '';
     }
 }
@@ -7423,7 +7467,7 @@ function syncEditOrderLegacyDateOnlyUi_() {
     var locked = !!_editOrderLegacyCompositionLocked;
     var notice = document.getElementById('edit-order-legacy-date-only-notice');
     if (notice) {
-        notice.textContent = 'Старый заказ: через калькулятор можно менять только дату доставки';
+        notice.textContent = 'Старый заказ: в калькуляторе меняем только дату. По изменениям состава отправьте Павлу номер в формате 79XXXXXXXXX и описание изменений.';
         notice.classList.toggle('hidden', !locked);
     }
     var fieldIds = [
@@ -7452,15 +7496,9 @@ function syncEditOrderLegacyDateOnlyUi_() {
     });
     var cityLink = document.getElementById('edit-order-dates-by-city-link');
     if (cityLink) {
-        if (locked) {
-            cityLink.style.pointerEvents = 'none';
-            cityLink.style.opacity = '0.45';
-            cityLink.setAttribute('aria-disabled', 'true');
-        } else {
-            cityLink.style.pointerEvents = '';
-            cityLink.style.opacity = '';
-            cityLink.removeAttribute('aria-disabled');
-        }
+        cityLink.style.pointerEvents = '';
+        cityLink.style.opacity = '';
+        cityLink.removeAttribute('aria-disabled');
     }
     var dateDisp = document.getElementById('edit-order-delivery-date-display');
     if (dateDisp) dateDisp.disabled = false;
@@ -7675,7 +7713,7 @@ function setEditOrderGreenhouseControlsDisabled(disabled) {
 
 function openEditOrderAddPanel(index) {
     if (_editOrderLegacyCompositionLocked) {
-        if (typeof showToast === 'function') showToast('Старый заказ: через калькулятор можно менять только дату доставки.', 'info');
+        if (typeof showToast === 'function') showToast('Старый заказ: состав здесь не меняется. Отправьте Павлу номер в формате 79XXXXXXXXX и описание изменений.', 'info');
         if (typeof console !== 'undefined' && console.warn) console.warn('[edit-legacy-composition-locked] panel_open_blocked');
         return;
     }
@@ -8080,6 +8118,8 @@ function resetEditOrderSessionState_() {
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
     _editOrderCalendarAssemblyOverride = '';
+    editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+    editOrderLegacyAssemblyConfirmCallback = null;
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     if (typeof closeEditOrderAddPanel === 'function') closeEditOrderAddPanel();
@@ -8112,6 +8152,8 @@ function clearEditOrderFormStateOnly() {
     _editOrderNativeLineItemsV2Snapshot = null;
     _editOrderLegacyCompositionLocked = false;
     _editOrderCalendarAssemblyOverride = '';
+    editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+    editOrderLegacyAssemblyConfirmCallback = null;
     _editOrderCompositionAtOpen = null;
     _editOrderOriginalDeliveryCost = null;
     lastLoadedOrderTotalForDisplay = null;
@@ -8675,6 +8717,13 @@ function initEditOrderModal() {
     }
 
     document.addEventListener('keydown', function (e) {
+        var legacyAssemblyDialog = document.getElementById('edit-order-assembly-confirm');
+        if (e.key === 'Escape' && legacyAssemblyDialog && !legacyAssemblyDialog.classList.contains('hidden')) {
+            e.preventDefault();
+            hideEditOrderLegacyAssemblyConfirm('');
+            editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+            return;
+        }
         var confirmDialog = document.getElementById('edit-order-close-confirm');
         if (e.key === 'Escape' && confirmDialog && !confirmDialog.classList.contains('hidden')) {
             e.preventDefault();
@@ -8759,6 +8808,25 @@ function initEditOrderModal() {
     if (confirmDiscardBtn) confirmDiscardBtn.addEventListener('click', function () {
         if (typeof editOrderCloseConfirmCallback === 'function') editOrderCloseConfirmCallback();
         else hideEditOrderCloseConfirm();
+    });
+
+    var legacyAssemblyYesBtn = document.getElementById('edit-order-assembly-confirm-yes');
+    var legacyAssemblyNoBtn = document.getElementById('edit-order-assembly-confirm-no');
+    var legacyAssemblyCloseBtn = document.getElementById('edit-order-assembly-confirm-close');
+    var legacyAssemblyBackdrop = document.getElementById('edit-order-assembly-confirm-backdrop');
+    if (legacyAssemblyYesBtn) legacyAssemblyYesBtn.addEventListener('click', function () {
+        hideEditOrderLegacyAssemblyConfirm('with');
+    });
+    if (legacyAssemblyNoBtn) legacyAssemblyNoBtn.addEventListener('click', function () {
+        hideEditOrderLegacyAssemblyConfirm('without');
+    });
+    if (legacyAssemblyCloseBtn) legacyAssemblyCloseBtn.addEventListener('click', function () {
+        hideEditOrderLegacyAssemblyConfirm('');
+        editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
+    });
+    if (legacyAssemblyBackdrop) legacyAssemblyBackdrop.addEventListener('click', function () {
+        hideEditOrderLegacyAssemblyConfirm('');
+        editOrderLegacyAssemblyConfirmPendingCalendarOpen = false;
     });
 
     var undoBtn = document.getElementById('edit-order-undo-btn');
@@ -15486,7 +15554,8 @@ function toggleEditOrderCalendar() {
         return;
     }
     if (typeof ensureLegacyEditOrderAssemblyModeChosen_ === 'function') {
-        ensureLegacyEditOrderAssemblyModeChosen_();
+        var modeReady = ensureLegacyEditOrderAssemblyModeChosen_();
+        if (modeReady !== true) return;
     }
     var display = document.getElementById('edit-order-delivery-date-display');
     if (display) display.classList.add('active');

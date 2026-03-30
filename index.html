@@ -45,15 +45,15 @@
   .edit-order-legacy-date-only-notice{margin:0 0 12px;padding:10px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;font-size:.9rem;color:#78350f;line-height:1.35}
   .edit-order-legacy-date-only-notice.hidden{display:none!important}
   </style>
-  <link rel="preload" href="css/styles.css?v=271" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link rel="stylesheet" href="css/styles.css?v=271"></noscript>
+  <link rel="preload" href="css/styles.css?v=272" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="css/styles.css?v=272"></noscript>
   <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
   <script src="js/products-data.js?v=231" defer></script>
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=288" defer></script>
+  <script src="js/scripts.js?v=289" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -441,6 +441,20 @@
         <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--save" id="edit-order-close-confirm-save">Сохранить</button>
         <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--stay" id="edit-order-close-confirm-stay">Остаться</button>
         <button type="button" class="edit-order-close-confirm-btn edit-order-close-confirm-btn--discard" id="edit-order-close-confirm-discard">Закрыть без сохранения</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Диалог выбора режима дат для legacy-заказа -->
+  <div class="edit-order-assembly-confirm hidden" id="edit-order-assembly-confirm" role="dialog" aria-modal="true" aria-labelledby="edit-order-assembly-confirm-title" aria-describedby="edit-order-assembly-confirm-text">
+    <div class="edit-order-assembly-confirm-backdrop" id="edit-order-assembly-confirm-backdrop"></div>
+    <div class="edit-order-assembly-confirm-content">
+      <button type="button" class="edit-order-assembly-confirm-close" id="edit-order-assembly-confirm-close" aria-label="Закрыть">×</button>
+      <p class="edit-order-assembly-confirm-title" id="edit-order-assembly-confirm-title">Режим доставки</p>
+      <p class="edit-order-assembly-confirm-text" id="edit-order-assembly-confirm-text">В заказе есть сборка?</p>
+      <div class="edit-order-assembly-confirm-actions">
+        <button type="button" class="edit-order-assembly-confirm-btn edit-order-assembly-confirm-btn--yes" id="edit-order-assembly-confirm-yes">Да</button>
+        <button type="button" class="edit-order-assembly-confirm-btn edit-order-assembly-confirm-btn--no" id="edit-order-assembly-confirm-no">Нет</button>
       </div>
     </div>
   </div>
