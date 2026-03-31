@@ -997,12 +997,108 @@ function updateEditOrderUndoRedoButtons() {
 // Кеширование для оптимизации производительности
 let citiesCache = null; // Кеш списка городов
 let cityDataCache = {}; // Кеш данных по городам {cityName: data}
+let localPricesRowsCache = null; // Аварийный локальный snapshot цен при недоступном Supabase
 
 // Инициализация Supabase
 const SUPABASE_URL = 'https://dyoibmfdohpvjltfaygr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5b2libWZkb2hwdmpsdGZheWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM5ODAxMzcsImV4cCI6MjA0OTU1NjEzN30.ZHj1JJsmSN45-0cv83uJDpaqtv3R6_U7CZmbkK-H24s'; // Ваш Anon Public Key
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function parseCsvText_(text) {
+    var rows = [];
+    var row = [];
+    var cell = '';
+    var inQuotes = false;
+    for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') {
+                    cell += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                cell += ch;
+            }
+            continue;
+        }
+        if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === ',') {
+            row.push(cell);
+            cell = '';
+        } else if (ch === '\n') {
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = '';
+        } else if (ch !== '\r') {
+            cell += ch;
+        }
+    }
+    if (cell.length > 0 || row.length > 0) {
+        row.push(cell);
+        rows.push(row);
+    }
+    return rows;
+}
+
+function normalizeLocalPriceRow_(rowObj) {
+    return {
+        city_name: (rowObj.city_name || '').trim(),
+        form_name: rowObj.form_name || '',
+        polycarbonate_type: rowObj.polycarbonate_type || '',
+        width: rowObj.width ? parseFloat(rowObj.width) : null,
+        length: rowObj.length ? parseFloat(rowObj.length) : null,
+        frame_description: rowObj.frame_description || '',
+        price: rowObj.price ? parseFloat(rowObj.price) : null,
+        snow_load: rowObj.snow_load || '',
+        height: rowObj.height || '',
+        horizontal_ties: rowObj.horizontal_ties || '',
+        equipment: rowObj.equipment || ''
+    };
+}
+
+async function loadLocalPricesRows_() {
+    if (Array.isArray(localPricesRowsCache)) return localPricesRowsCache;
+    var response = await fetch('prices_rows.csv', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Не удалось загрузить локальный snapshot цен: HTTP ' + response.status);
+    var text = await response.text();
+    var rows = parseCsvText_(text);
+    if (!rows || rows.length < 2) throw new Error('Локальный snapshot цен пустой или повреждён');
+    var header = rows[0];
+    var mapped = [];
+    for (var i = 1; i < rows.length; i++) {
+        var src = rows[i];
+        if (!src || !src.length) continue;
+        var obj = {};
+        for (var j = 0; j < header.length; j++) {
+            obj[header[j]] = src[j] || '';
+        }
+        if (!obj.city_name) continue;
+        mapped.push(normalizeLocalPriceRow_(obj));
+    }
+    localPricesRowsCache = mapped;
+    return mapped;
+}
+
+async function getLocalPricesByCity_(cityName) {
+    var city = (cityName || '').trim();
+    if (!city) return [];
+    var rows = await loadLocalPricesRows_();
+    return rows.filter(function (item) {
+        return (item.city_name || '').trim() === city;
+    });
+}
+
+async function getLocalCities_() {
+    var rows = await loadLocalPricesRows_();
+    var unique = [...new Set(rows.map(function (item) { return item.city_name; }).filter(Boolean))];
+    return unique;
+}
 
 let mapInstance;
 let currentRoute;
@@ -1829,11 +1925,21 @@ async function loadCities() {
         page++;
         } catch (err) {
             console.error("Критическая ошибка при загрузке городов:", err);
+            allCities = [];
+            break;
+        }
+    }
+
+    if (allCities.length === 0) {
+        try {
+            allCities = await getLocalCities_();
+            console.warn('loadCities: используем локальный snapshot цен');
+        } catch (fallbackErr) {
+            console.error('Ошибка fallback загрузки городов:', fallbackErr);
             const cityDropdown = document.getElementById('city');
             if (cityDropdown) {
                 cityDropdown.innerHTML = '<option value="" disabled selected>Ошибка загрузки данных</option>';
             }
-            // Не показываем alert для сетевых ошибок
             return;
         }
     }
@@ -1889,22 +1995,35 @@ async function onCityChange() {
     if (cityDataCache[city]) {
         currentCityData = cityDataCache[city];
     } else {
-    let { data, error } = await supabaseClient
-        .from('prices')
-        .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment') // Добавлены новые поля
-        .eq('city_name', city)
-        .limit(30000);
+    let data = null;
+    let error = null;
+    try {
+        let response = await supabaseClient
+            .from('prices')
+            .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment')
+            .eq('city_name', city)
+            .limit(30000);
+        data = response.data;
+        error = response.error;
+    } catch (supabaseErr) {
+        error = supabaseErr;
+    }
 
-    if (error) {
-        console.error('Ошибка при получении данных по городу:', error);
-            // Показываем понятное сообщение пользователю
-            showError("Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
-        return;
+    if (error || !data || data.length === 0) {
+        if (error) console.error('Ошибка при получении данных по городу:', error);
+        try {
+            data = await getLocalPricesByCity_(city);
+            if (data && data.length > 0) {
+                console.warn('onCityChange: используем локальный snapshot цен для города', city);
+            }
+        } catch (fallbackErr) {
+            console.error('Ошибка fallback загрузки данных по городу:', fallbackErr);
+        }
     }
 
     if (!data || data.length === 0) {
-        showWarning("Данные для выбранного города не найдены. Попробуйте другой город.", 'Данные не найдены');
-        return; // Остановить выполнение функции
+        showError("Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
+        return;
     }
 
         // Сохраняем в кеш
@@ -2125,6 +2244,11 @@ async function getCityDataForModal(cityName) {
                 cityDataCache[city] = res.data;
                 return { data: res.data, usedFallback: false };
             }
+            var localRows = await getLocalPricesByCity_(city);
+            if (localRows && localRows.length > 0) {
+                cityDataCache[city] = localRows;
+                return { data: localRows, usedFallback: false };
+            }
         }
         var toTry = EDIT_ORDER_FALLBACK_CITIES.filter(function (c) { return c && c !== city; });
         for (var j = 0; j < toTry.length; j++) {
@@ -2135,6 +2259,11 @@ async function getCityDataForModal(cityName) {
                 cityDataCache[fallbackCity] = resF.data;
                 return { data: resF.data, usedFallback: true };
             }
+            var localFallbackRows = await getLocalPricesByCity_(fallbackCity);
+            if (localFallbackRows && localFallbackRows.length > 0) {
+                cityDataCache[fallbackCity] = localFallbackRows;
+                return { data: localFallbackRows, usedFallback: true };
+            }
         }
         var anyRes = await supabaseClient.from('prices').select('city_name').limit(1);
         if (anyRes.data && anyRes.data[0] && anyRes.data[0].city_name) {
@@ -2144,6 +2273,16 @@ async function getCityDataForModal(cityName) {
             if (!resAny.error && resAny.data && resAny.data.length > 0) {
                 cityDataCache[firstCity] = resAny.data;
                 return { data: resAny.data, usedFallback: true };
+            }
+        }
+        var localCities = await getLocalCities_();
+        if (localCities && localCities[0]) {
+            var firstLocalCity = localCities[0];
+            if (cityDataCache[firstLocalCity]) return { data: cityDataCache[firstLocalCity], usedFallback: true };
+            var localAnyRows = await getLocalPricesByCity_(firstLocalCity);
+            if (localAnyRows && localAnyRows.length > 0) {
+                cityDataCache[firstLocalCity] = localAnyRows;
+                return { data: localAnyRows, usedFallback: true };
             }
         }
         return { data: null, usedFallback: false };
