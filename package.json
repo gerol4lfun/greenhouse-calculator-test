@@ -2,7 +2,7 @@
   "name": "greenhouse-calculator",
   "version": "1.0.0",
   "description": "Greenhouse calculator with knowledge base",
-  "_projectVersion": "v271",
+  "_projectVersion": "v288",
   "main": "index.js",
   "scripts": {
     "kb:import": "node scripts/import_kb.js",

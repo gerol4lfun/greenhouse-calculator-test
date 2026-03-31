@@ -1,5 +1,28 @@
 # История изменений проекта
 
+## v288 — legacy edit calendar: single assembly-mode decision (31.03.2026)
+
+**Что зафиксировано по текущему рабочему состоянию:**
+
+- edit existing order для legacy-заказов больше не держит inline toggle режима сборки;
+- сценарий редактирования спрашивает режим сборки один раз в понятном popup-потоке;
+- это снижает путаницу в legacy edit path и убирает лишнее переключение внутри календаря.
+
+**Что не менялось этим housekeeping-обновлением:**
+
+- create path;
+- native order edit semantics;
+- pricing logic;
+- downstream TG/sync контур.
+
+**Version note:**
+
+- `APP_VERSION` в `js/scripts.js` — `v288`;
+- `index.html` использует `scripts.js?v=289` как cache-bust query;
+- metadata-файлы проекта синхронизированы под текущую рабочую feature-версию `v288`.
+
+---
+
 ## Create path stage closeout (23.03.2026)
 
 **Добавлено:** line_items_v2 (jsonb), price_snapshot_at, pricing_snapshot_version, warehouse_city_key для новых заказов. Fix create-order storage: dangerous identical merge removed; legacy line_items restored для multi-item; flat extras/assembly aggregated from real per-item composition; stale text guard в addToOrderCart. Manual PASS: single, 2 identical, 2 different, 3-item mixed. Edit-path, TG runtime, legacy historical orders — not touched.
