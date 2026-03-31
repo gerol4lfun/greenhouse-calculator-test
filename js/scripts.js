@@ -1004,6 +1004,11 @@ const SUPABASE_URL = 'https://dyoibmfdohpvjltfaygr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5b2libWZkb2hwdmpsdGZheWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM5ODAxMzcsImV4cCI6MjA0OTU1NjEzN30.ZHj1JJsmSN45-0cv83uJDpaqtv3R6_U7CZmbkK-H24s'; // Ваш Anon Public Key
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const EMERGENCY_CALC_2026_03_31_ENABLED = true;
+const EMERGENCY_CALC_2026_03_31_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwFg1iJDjcjDVVZFbAT0DNr71H5xJwFc_mSqLA1hlVNBholf72WmYj-lHCC9b2e1VOe7g/exec';
+const EMERGENCY_CALC_MODE_STORAGE_KEY = 'emergencyCalcMode';
+const EMERGENCY_CALC_LOGIN_STORAGE_KEY = 'emergencyCalcLogin';
+const EMERGENCY_CALC_PASSWORD_STORAGE_KEY = 'emergencyCalcPassword';
 
 function parseCsvText_(text) {
     var rows = [];
@@ -1100,6 +1105,133 @@ async function getLocalCities_() {
     return unique;
 }
 
+function isEmergencyCalcMode_() {
+    try {
+        return localStorage.getItem(EMERGENCY_CALC_MODE_STORAGE_KEY) === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function setEmergencyCalcSession_(login, password) {
+    try {
+        localStorage.setItem(EMERGENCY_CALC_MODE_STORAGE_KEY, 'true');
+        localStorage.setItem(EMERGENCY_CALC_LOGIN_STORAGE_KEY, login || '');
+        localStorage.setItem(EMERGENCY_CALC_PASSWORD_STORAGE_KEY, password || '');
+        localStorage.setItem('savedLogin', login || '');
+        localStorage.setItem('currentUser', login || '');
+        localStorage.setItem('passwordVersion', 'emergency');
+        localStorage.setItem('appVersion', APP_VERSION);
+        localStorage.setItem('userId', 'emergency-mode');
+        localStorage.removeItem(ADMIN_KEY);
+    } catch (e) {
+        console.warn('Не удалось сохранить emergency session:', e);
+    }
+}
+
+function clearEmergencyCalcSession_() {
+    try {
+        localStorage.removeItem(EMERGENCY_CALC_MODE_STORAGE_KEY);
+        localStorage.removeItem(EMERGENCY_CALC_LOGIN_STORAGE_KEY);
+        localStorage.removeItem(EMERGENCY_CALC_PASSWORD_STORAGE_KEY);
+    } catch (e) {}
+}
+
+function renderEmergencyCalcBanner_() {
+    var calcContainer = document.getElementById('calculator-container');
+    if (!calcContainer) return;
+    var existing = document.getElementById('emergency-calc-banner');
+    if (!isEmergencyCalcMode_()) {
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+        return;
+    }
+    if (!existing) {
+        existing = document.createElement('div');
+        existing.id = 'emergency-calc-banner';
+        existing.style.cssText = 'margin:12px 0;padding:12px 14px;border:1px solid #f59e0b;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:14px;line-height:1.45;';
+        calcContainer.insertBefore(existing, calcContainer.firstChild);
+    }
+    existing.innerHTML = '<strong>Аварийный режим.</strong> Если прямой доступ к Supabase недоступен, вход и оформление заказа идут через резервный серверный контур.';
+}
+
+async function callEmergencyCalcApi_(action, payload) {
+    var response = await fetch(EMERGENCY_CALC_2026_03_31_WEBAPP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({
+            emergency_calc_api: '2026-03-31',
+            action: action
+        }, payload || {}))
+    });
+    if (!response.ok) throw new Error('Emergency API HTTP ' + response.status);
+    return await response.json();
+}
+
+async function tryEmergencyCalcAuth_(login, password) {
+    if (!EMERGENCY_CALC_2026_03_31_ENABLED) return { ok: false, error: 'disabled' };
+    var res = await callEmergencyCalcApi_('auth', { login: login, password: password });
+    if (res && res.ok) {
+        setEmergencyCalcSession_(login, password);
+    }
+    return res;
+}
+
+async function tryEmergencyCalcSaveOrder_(orderData) {
+    if (!EMERGENCY_CALC_2026_03_31_ENABLED || !isEmergencyCalcMode_()) return { ok: false, error: 'disabled' };
+    var login = localStorage.getItem(EMERGENCY_CALC_LOGIN_STORAGE_KEY) || '';
+    var password = localStorage.getItem(EMERGENCY_CALC_PASSWORD_STORAGE_KEY) || '';
+    if (!login || !password) return { ok: false, error: 'missing_credentials' };
+    return await callEmergencyCalcApi_('save_order', { login: login, password: password, orderData: orderData });
+}
+
+function finalizeSubmitOrderSuccess_(resultDiv, btn, orderData, clientPhone) {
+    resultDiv.innerHTML = '<span class="order-result-message">✅ Заказ оформлен!</span><span class="order-result-celebrate">Ура, готово! 🎉</span><button type="button" class="order-result-edit-btn" tabindex="0">Изменить заказ</button>';
+    resultDiv.className = 'success';
+    resultDiv.style.display = '';
+    if (btn) { btn.textContent = 'Оформить заказ'; btn.disabled = false; }
+    var editBtn = resultDiv.querySelector('.order-result-edit-btn');
+    if (editBtn && typeof openEditOrderModalWithPhone === 'function') {
+        var submittedPhone = clientPhone;
+        editBtn.onclick = function () { openEditOrderModalWithPhone(submittedPhone); };
+    }
+
+    var clientOfferEl = document.getElementById('commercial-offer-client');
+    if (clientOfferEl) clientOfferEl.value = orderData.commercial_offer;
+    updateCharCounter('commercial-offer-client');
+    orderTextFilledBySubmit = true;
+    setOfferTab('client');
+
+    clearingFormAfterSubmit = true;
+    document.getElementById('order-client-name').value = '';
+    document.getElementById('order-client-phone').value = '';
+    var phone2El = document.getElementById('order-client-phone-2');
+    if (phone2El) { phone2El.value = ''; }
+    var ofPhone2 = document.getElementById('of-phone2');
+    var addPhone2Row = document.getElementById('order-phone2-add-row');
+    if (ofPhone2) ofPhone2.classList.add('hidden');
+    if (addPhone2Row) addPhone2Row.classList.remove('hidden');
+    var similarWarn = document.getElementById('order-similar-order-warning');
+    if (similarWarn) { similarWarn.classList.add('hidden'); similarWarn.textContent = ''; }
+    var dateHidden = document.getElementById('order-delivery-date');
+    var dateDisplay = document.getElementById('order-delivery-date-display');
+    if (dateHidden) dateHidden.value = '';
+    if (dateDisplay) { dateDisplay.value = ''; dateDisplay.placeholder = ''; }
+    populateOrderDeliveryDate();
+    const part3 = document.getElementById('order-address-part3');
+    const noPlotCb = document.getElementById('order-no-plot');
+    document.getElementById('order-address-part1').value = '';
+    document.getElementById('order-address-part2').value = '';
+    if (part3) { part3.value = ''; part3.disabled = false; part3.setAttribute('required', 'required'); }
+    if (noPlotCb) noPlotCb.checked = false;
+    document.getElementById('order-source').value = '';
+    document.getElementById('order-manager').value = '';
+    document.getElementById('order-comment').value = '';
+    orderCart = [];
+    orderCartEditingIndex = null;
+    updateOrderCartUI();
+    clearingFormAfterSubmit = false;
+}
+
 let mapInstance;
 let currentRoute;
 
@@ -1167,8 +1299,23 @@ async function authenticate() {
         if (error) {
             const errorMessage = error.message || '';
             if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+                if (EMERGENCY_CALC_2026_03_31_ENABLED) {
+                    try {
+                        var emergencyAuth = await tryEmergencyCalcAuth_(login, password);
+                        if (emergencyAuth && emergencyAuth.ok) {
+                            authError.style.display = "none";
+                            document.getElementById("auth-container").classList.add("hidden");
+                            document.getElementById("calculator-container").classList.remove("hidden");
+                            await initializeCalculator();
+                            renderEmergencyCalcBanner_();
+                            return;
+                        }
+                    } catch (fallbackErr) {
+                        console.error('Emergency auth error:', fallbackErr);
+                    }
+                }
                 if (authError) {
-                    authError.textContent = "Ошибка подключения к серверу. Проверьте интернет-соединение и попробуйте снова.";
+                    authError.textContent = "Ошибка подключения к серверу. Если у вас есть аварийные доступы, войдите ими повторно.";
                     authError.style.display = "block";
                 }
                 return;
@@ -1199,9 +1346,11 @@ async function authenticate() {
 
         authError.style.display = "none";
         localStorage.setItem('savedLogin', data.login || login);
+        localStorage.setItem('currentUser', data.login || login);
         localStorage.setItem('appVersion', APP_VERSION);
         localStorage.setItem('passwordVersion', String(data.password_version || 0));
         localStorage.setItem('userId', data.user_id);
+        clearEmergencyCalcSession_();
 
         if (login && login.trim().toLowerCase() === 'admin') {
             localStorage.setItem(ADMIN_KEY, 'true');
@@ -1236,6 +1385,8 @@ function logout() {
         localStorage.removeItem('passwordVersion');
         localStorage.removeItem('userId');
         localStorage.removeItem(ADMIN_KEY);
+        localStorage.removeItem('currentUser');
+        clearEmergencyCalcSession_();
         
         const authContainer = document.getElementById("auth-container");
         const calcContainer = document.getElementById("calculator-container");
@@ -1291,6 +1442,7 @@ function logout() {
 
 // Функция проверки актуальности пароля пользователя (через RPC, без чтения users)
 async function checkPasswordVersion() {
+    if (isEmergencyCalcMode_()) return true;
     const savedLogin = localStorage.getItem('savedLogin');
     const savedPasswordVersion = localStorage.getItem('passwordVersion');
 
@@ -4915,6 +5067,14 @@ window.onload = async function () {
     var didRunCalculator = false;
     
     if (savedLogin) {
+        if (isEmergencyCalcMode_()) {
+            document.getElementById("login").value = savedLogin;
+            document.getElementById("auth-container").classList.add("hidden");
+            document.getElementById("calculator-container").classList.remove("hidden");
+            await initializeCalculator();
+            renderEmergencyCalcBanner_();
+            didRunCalculator = true;
+        } else {
         // Убеждаемся, что admin флаг установлен, если это admin (ДО проверки пароля)
         if (savedLogin === 'admin' || savedLogin.toLowerCase() === 'admin') {
             localStorage.setItem(ADMIN_KEY, 'true');
@@ -4934,6 +5094,7 @@ window.onload = async function () {
             // Версия пароля не совпадает - разлогиниваем
             localStorage.clear();
             document.getElementById("login").value = savedLogin;
+        }
         }
     }
     if (/[?&]editPhone=/.test(window.location.search)) {
@@ -16763,57 +16924,21 @@ async function submitOrder() {
         // Бот при /sync выбирает только заказы с status=eq.new — без этого новый заказ не попадёт в синхронизацию.
         orderData.status = 'new';
 
+        if (isEmergencyCalcMode_()) {
+            const emergencySave = await tryEmergencyCalcSaveOrder_(orderData);
+            if (!emergencySave || !emergencySave.ok) {
+                throw new Error('Аварийное сохранение не удалось');
+            }
+            finalizeSubmitOrderSuccess_(resultDiv, btn, orderData, clientPhone);
+            return;
+        }
+
         const { data, error } = await supabaseClient
             .from('orders')
             .insert([orderData]);
 
         if (error) throw error;
-
-        resultDiv.innerHTML = '<span class="order-result-message">✅ Заказ оформлен!</span><span class="order-result-celebrate">Ура, готово! 🎉</span><button type="button" class="order-result-edit-btn" tabindex="0">Изменить заказ</button>';
-        resultDiv.className = 'success';
-        resultDiv.style.display = '';
-        if (btn) { btn.textContent = 'Оформить заказ'; btn.disabled = false; }
-        var editBtn = resultDiv.querySelector('.order-result-edit-btn');
-        if (editBtn && typeof openEditOrderModalWithPhone === 'function') {
-            var submittedPhone = clientPhone;
-            editBtn.onclick = function () { openEditOrderModalWithPhone(submittedPhone); };
-        }
-
-        var clientOfferEl = document.getElementById('commercial-offer-client');
-        if (clientOfferEl) clientOfferEl.value = orderData.commercial_offer;
-        updateCharCounter('commercial-offer-client');
-        orderTextFilledBySubmit = true;
-        setOfferTab('client');
-
-        clearingFormAfterSubmit = true;
-        document.getElementById('order-client-name').value = '';
-        document.getElementById('order-client-phone').value = '';
-        var phone2El = document.getElementById('order-client-phone-2');
-        if (phone2El) { phone2El.value = ''; }
-        var ofPhone2 = document.getElementById('of-phone2');
-        var addPhone2Row = document.getElementById('order-phone2-add-row');
-        if (ofPhone2) ofPhone2.classList.add('hidden');
-        if (addPhone2Row) addPhone2Row.classList.remove('hidden');
-        var similarWarn = document.getElementById('order-similar-order-warning');
-        if (similarWarn) { similarWarn.classList.add('hidden'); similarWarn.textContent = ''; }
-        var dateHidden = document.getElementById('order-delivery-date');
-        var dateDisplay = document.getElementById('order-delivery-date-display');
-        if (dateHidden) dateHidden.value = '';
-        if (dateDisplay) { dateDisplay.value = ''; dateDisplay.placeholder = ''; }
-        populateOrderDeliveryDate();
-        const part3 = document.getElementById('order-address-part3');
-        const noPlotCb = document.getElementById('order-no-plot');
-        document.getElementById('order-address-part1').value = '';
-        document.getElementById('order-address-part2').value = '';
-        if (part3) { part3.value = ''; part3.disabled = false; part3.setAttribute('required', 'required'); }
-        if (noPlotCb) noPlotCb.checked = false;
-        document.getElementById('order-source').value = '';
-        document.getElementById('order-manager').value = '';
-        document.getElementById('order-comment').value = '';
-        orderCart = [];
-        orderCartEditingIndex = null;
-        updateOrderCartUI();
-        clearingFormAfterSubmit = false;
+        finalizeSubmitOrderSuccess_(resultDiv, btn, orderData, clientPhone);
 
     } catch (err) {
         console.error('Order submit error:', err);
