@@ -2087,13 +2087,8 @@ async function loadCities() {
 
         if (error) {
             console.error("Ошибка при загрузке городов из Supabase:", error);
-                // Показываем пользователю понятное сообщение
-                const cityDropdown = document.getElementById('city');
-                if (cityDropdown) {
-                    cityDropdown.innerHTML = '<option value="" disabled selected>Ошибка загрузки данных</option>';
-                }
-                // Не показываем alert для сетевых ошибок
-            return;
+            allCities = [];
+            break;
         }
 
         // Если данных на странице меньше, чем pageSize, значит, это последняя страница
