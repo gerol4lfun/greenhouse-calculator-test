@@ -653,47 +653,47 @@ const additionalServicesData = {
 // Структура данных для сборки теплиц (по документу СБОРКА: кат.1 арочные/каплевидные 2.5–3.5; кат.2 прямостенные/двускатные 2.5–3.5; кат.3 каплевидная 3.5, арочная 4, прямостенная 4, домиком 4, миттлайдер; кат.4 промышленные)
 const assemblyPrices = {
     "Арочная": {
-        "2.5М": { 4: 5490, 6: 6990, 8: 8490, 10: 9490, 12: 11490 },
-        "3М": { 4: 5490, 6: 6990, 8: 8490, 10: 9490, 12: 11490 },
-        "3.5М": { 4: 5490, 6: 6990, 8: 8490, 10: 9490, 12: 11490 },
-        "4М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "2.5М": { 4: 6990, 6: 8490, 8: 9990, 10: 11490, 12: 12990 },
+        "3М": { 4: 6990, 6: 8490, 8: 9990, 10: 11490, 12: 12990 },
+        "3.5М": { 4: 6990, 6: 8490, 8: 9990, 10: 11490, 12: 12990 },
+        "4М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Каплевидная": {
-        "2.5М": { 4: 5490, 6: 6990, 8: 8490, 10: 9490, 12: 11490 },
-        "3М": { 4: 5490, 6: 6990, 8: 8490, 10: 9490, 12: 11490 },
-        "3.5М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "2.5М": { 4: 6990, 6: 8490, 8: 9990, 10: 11490, 12: 12990 },
+        "3М": { 4: 6990, 6: 8490, 8: 9990, 10: 11490, 12: 12990 },
+        "3.5М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Прямостенная": {
-        "2.5М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "3М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "3.5М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "4М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "2.5М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "3М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "3.5М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "4М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Домиком": {
-        "2.5М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "3М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "3.5М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "4М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "2.5М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "3М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "3.5М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "4М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Пристенная": {
-        "2.5М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 },
-        "3М": { 4: 6490, 6: 8490, 8: 10490, 10: 12490, 12: 14490 }
+        "2.5М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 },
+        "3М": { 4: 8490, 6: 10490, 8: 12490, 10: 14490, 12: 16490 }
     },
     "Миттлайдер арочная": {
-        "3М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 },
-        "3.5М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "3М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 },
+        "3.5М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Миттлайдер прямостенная": {
-        "3М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 },
-        "3.5М": { 4: 7990, 6: 11490, 8: 14990, 10: 18490, 12: 22490 }
+        "3М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 },
+        "3.5М": { 4: 10990, 6: 14490, 8: 17990, 10: 21490, 12: 24990 }
     },
     "Промышленная прямостенная": {
-        "5М": { 4: 11990, 6: 16990, 8: 21990, 10: 26990, 12: 31990, 14: 36990, 16: 41990 },
-        "6М": { 4: 11990, 6: 16990, 8: 21990, 10: 26990, 12: 31990, 14: 36990, 16: 41990 }
+        "5М": { 4: 15990, 6: 20990, 8: 25990, 10: 30990, 12: 35990, 14: 40990, 16: 45990 },
+        "6М": { 4: 15990, 6: 20990, 8: 25990, 10: 30990, 12: 35990, 14: 40990, 16: 45990 }
     },
     "Промышленная домиком": {
-        "7М": { 4: 11990, 6: 16990, 8: 21990, 10: 26990, 12: 31990, 14: 36990, 16: 41990 },
-        "8М": { 4: 11990, 6: 16990, 8: 21990, 10: 26990, 12: 31990, 14: 36990, 16: 41990 }
+        "7М": { 4: 15990, 6: 20990, 8: 25990, 10: 30990, 12: 35990, 14: 40990, 16: 45990 },
+        "8М": { 4: 15990, 6: 20990, 8: 25990, 10: 30990, 12: 35990, 14: 40990, 16: 45990 }
     }
 };
 
@@ -998,6 +998,7 @@ function updateEditOrderUndoRedoButtons() {
 let citiesCache = null; // Кеш списка городов
 let cityDataCache = {}; // Кеш данных по городам {cityName: data}
 let localPricesRowsCache = null; // Аварийный локальный snapshot цен при недоступном Supabase
+let emergencyPricesSnapshotCache = null; // Временный snapshot цен из GAS
 
 // Инициализация Supabase
 const SUPABASE_URL = 'https://dyoibmfdohpvjltfaygr.supabase.co';
@@ -1182,6 +1183,32 @@ async function tryEmergencyCalcSaveOrder_(orderData) {
     var password = localStorage.getItem(EMERGENCY_CALC_PASSWORD_STORAGE_KEY) || '';
     if (!login || !password) return { ok: false, error: 'missing_credentials' };
     return await callEmergencyCalcApi_('save_order', { login: login, password: password, orderData: orderData });
+}
+
+async function getEmergencyPricesSnapshot_() {
+    if (Array.isArray(emergencyPricesSnapshotCache)) return emergencyPricesSnapshotCache;
+    var res = await callEmergencyCalcApi_('prices_snapshot', {});
+    if (!res || !res.ok || !Array.isArray(res.rows)) {
+        throw new Error('Emergency prices snapshot unavailable');
+    }
+    emergencyPricesSnapshotCache = res.rows.map(function (rowObj) {
+        return normalizeLocalPriceRow_(rowObj || {});
+    });
+    return emergencyPricesSnapshotCache;
+}
+
+async function getEmergencyPricesByCity_(cityName) {
+    var city = (cityName || '').trim();
+    if (!city) return [];
+    var rows = await getEmergencyPricesSnapshot_();
+    return rows.filter(function (item) {
+        return (item.city_name || '').trim() === city;
+    });
+}
+
+async function getEmergencyCities_() {
+    var rows = await getEmergencyPricesSnapshot_();
+    return [...new Set(rows.map(function (item) { return item.city_name; }).filter(Boolean))];
 }
 
 function finalizeSubmitOrderSuccess_(resultDiv, btn, orderData, clientPhone) {
@@ -2084,15 +2111,20 @@ async function loadCities() {
 
     if (allCities.length === 0) {
         try {
-            allCities = await getLocalCities_();
-            console.warn('loadCities: используем локальный snapshot цен');
-        } catch (fallbackErr) {
-            console.error('Ошибка fallback загрузки городов:', fallbackErr);
-            const cityDropdown = document.getElementById('city');
-            if (cityDropdown) {
-                cityDropdown.innerHTML = '<option value="" disabled selected>Ошибка загрузки данных</option>';
+            allCities = await getEmergencyCities_();
+            console.warn('loadCities: используем emergency snapshot цен из GAS');
+        } catch (snapshotErr) {
+            try {
+                allCities = await getLocalCities_();
+                console.warn('loadCities: используем локальный snapshot цен');
+            } catch (fallbackErr) {
+                console.error('Ошибка fallback загрузки городов:', snapshotErr, fallbackErr);
+                const cityDropdown = document.getElementById('city');
+                if (cityDropdown) {
+                    cityDropdown.innerHTML = '<option value="" disabled selected>Ошибка загрузки данных</option>';
+                }
+                return;
             }
-            return;
         }
     }
 
@@ -2164,12 +2196,19 @@ async function onCityChange() {
     if (error || !data || data.length === 0) {
         if (error) console.error('Ошибка при получении данных по городу:', error);
         try {
-            data = await getLocalPricesByCity_(city);
+            data = await getEmergencyPricesByCity_(city);
             if (data && data.length > 0) {
-                console.warn('onCityChange: используем локальный snapshot цен для города', city);
+                console.warn('onCityChange: используем emergency snapshot цен для города', city);
             }
-        } catch (fallbackErr) {
-            console.error('Ошибка fallback загрузки данных по городу:', fallbackErr);
+        } catch (snapshotErr) {
+            try {
+                data = await getLocalPricesByCity_(city);
+                if (data && data.length > 0) {
+                    console.warn('onCityChange: используем локальный snapshot цен для города', city);
+                }
+            } catch (fallbackErr) {
+                console.error('Ошибка fallback загрузки данных по городу:', snapshotErr, fallbackErr);
+            }
         }
     }
 
@@ -2396,6 +2435,13 @@ async function getCityDataForModal(cityName) {
                 cityDataCache[city] = res.data;
                 return { data: res.data, usedFallback: false };
             }
+            try {
+                var emergencyRows = await getEmergencyPricesByCity_(city);
+                if (emergencyRows && emergencyRows.length > 0) {
+                    cityDataCache[city] = emergencyRows;
+                    return { data: emergencyRows, usedFallback: false };
+                }
+            } catch (eEmergencyCity) {}
             var localRows = await getLocalPricesByCity_(city);
             if (localRows && localRows.length > 0) {
                 cityDataCache[city] = localRows;
@@ -2411,6 +2457,13 @@ async function getCityDataForModal(cityName) {
                 cityDataCache[fallbackCity] = resF.data;
                 return { data: resF.data, usedFallback: true };
             }
+            try {
+                var emergencyFallbackRows = await getEmergencyPricesByCity_(fallbackCity);
+                if (emergencyFallbackRows && emergencyFallbackRows.length > 0) {
+                    cityDataCache[fallbackCity] = emergencyFallbackRows;
+                    return { data: emergencyFallbackRows, usedFallback: true };
+                }
+            } catch (eEmergencyFallback) {}
             var localFallbackRows = await getLocalPricesByCity_(fallbackCity);
             if (localFallbackRows && localFallbackRows.length > 0) {
                 cityDataCache[fallbackCity] = localFallbackRows;
@@ -2427,6 +2480,18 @@ async function getCityDataForModal(cityName) {
                 return { data: resAny.data, usedFallback: true };
             }
         }
+        try {
+            var emergencyCities = await getEmergencyCities_();
+            if (emergencyCities && emergencyCities[0]) {
+                var firstEmergencyCity = emergencyCities[0];
+                if (cityDataCache[firstEmergencyCity]) return { data: cityDataCache[firstEmergencyCity], usedFallback: true };
+                var emergencyAnyRows = await getEmergencyPricesByCity_(firstEmergencyCity);
+                if (emergencyAnyRows && emergencyAnyRows.length > 0) {
+                    cityDataCache[firstEmergencyCity] = emergencyAnyRows;
+                    return { data: emergencyAnyRows, usedFallback: true };
+                }
+            }
+        } catch (eEmergencyAny) {}
         var localCities = await getLocalCities_();
         if (localCities && localCities[0]) {
             var firstLocalCity = localCities[0];
