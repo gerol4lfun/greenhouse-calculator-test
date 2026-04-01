@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v288"; // v288: legacy edit calendar asks manager once (with assembly yes/no) and removes inline toggle
+const APP_VERSION = "v291"; // v291: manager roster updated (Юлия, Ольга, Алексей, Татьяна), Ирина removed from order form
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -15551,8 +15551,15 @@ function toggleOrderForm() {
     }
 }
 
-/** Привязка логина калькулятора к имени менеджера в форме: Юлия/Ольга — логин = имя; Ирина — логин Manager10 */
-var ORDER_FORM_LOGIN_TO_MANAGER = { 'manager10': 'Ирина' };
+/** Привязка логина калькулятора к имени менеджера в форме. */
+var ORDER_FORM_LOGIN_TO_MANAGER = {
+  'alexey': 'Алексей',
+  'aleksey': 'Алексей',
+  'алексей': 'Алексей',
+  'tatyana': 'Татьяна',
+  'tatiana': 'Татьяна',
+  'татьяна': 'Татьяна'
+};
 
 /** При открытии формы подставляем менеджера по умолчанию = текущий пользователь калькулятора (если есть в списке); источник не выбираем автоматом */
 function applyOrderFormDefaults() {
