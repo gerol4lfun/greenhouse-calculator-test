@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v291"; // v291: manager roster updated (Юлия, Ольга, Алексей, Татьяна), Ирина removed from order form
+const APP_VERSION = "v292"; // v292: auto-reset price caches by day/TTL/focus to prevent stale prices in long-open tabs
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -999,6 +999,10 @@ let citiesCache = null; // Кеш списка городов
 let cityDataCache = {}; // Кеш данных по городам {cityName: data}
 let localPricesRowsCache = null; // Аварийный локальный snapshot цен при недоступном Supabase
 let emergencyPricesSnapshotCache = null; // Временный snapshot цен из GAS
+const PRICES_CACHE_TTL_MS = 15 * 60 * 1000;
+const PRICES_CACHE_DAY_STORAGE_KEY = 'pricesCacheDay';
+const PRICES_CACHE_TS_STORAGE_KEY = 'pricesCacheTs';
+const PRICES_CACHE_VERSION_STORAGE_KEY = 'pricesCacheVersion';
 
 // Инициализация Supabase
 const SUPABASE_URL = 'https://dyoibmfdohpvjltfaygr.supabase.co';
@@ -1010,6 +1014,58 @@ const EMERGENCY_CALC_2026_03_31_WEBAPP_URL = 'https://script.google.com/macros/s
 const EMERGENCY_CALC_MODE_STORAGE_KEY = 'emergencyCalcMode';
 const EMERGENCY_CALC_LOGIN_STORAGE_KEY = 'emergencyCalcLogin';
 const EMERGENCY_CALC_PASSWORD_STORAGE_KEY = 'emergencyCalcPassword';
+
+function getTodayStamp_() {
+    var now = new Date();
+    var yyyy = now.getFullYear();
+    var mm = String(now.getMonth() + 1).padStart(2, '0');
+    var dd = String(now.getDate()).padStart(2, '0');
+    return yyyy + '-' + mm + '-' + dd;
+}
+
+function persistPricesCacheMeta_(ts) {
+    try {
+        localStorage.setItem(PRICES_CACHE_DAY_STORAGE_KEY, getTodayStamp_());
+        localStorage.setItem(PRICES_CACHE_TS_STORAGE_KEY, String(ts || Date.now()));
+        localStorage.setItem(PRICES_CACHE_VERSION_STORAGE_KEY, APP_VERSION);
+    } catch (e) {}
+}
+
+function resetRuntimePricesCaches_(reason) {
+    citiesCache = null;
+    cityDataCache = {};
+    localPricesRowsCache = null;
+    emergencyPricesSnapshotCache = null;
+    persistPricesCacheMeta_(Date.now());
+    if (typeof console !== 'undefined' && console.warn) {
+        console.warn('Prices cache reset:', reason || 'unspecified');
+    }
+}
+
+function ensureFreshPricesCaches_(reason) {
+    var nowTs = Date.now();
+    var today = getTodayStamp_();
+    try {
+        var savedDay = localStorage.getItem(PRICES_CACHE_DAY_STORAGE_KEY) || '';
+        var savedVersion = localStorage.getItem(PRICES_CACHE_VERSION_STORAGE_KEY) || '';
+        var savedTsRaw = localStorage.getItem(PRICES_CACHE_TS_STORAGE_KEY) || '';
+        var savedTs = parseInt(savedTsRaw, 10);
+        var needsVersionReset = !!savedVersion && savedVersion !== APP_VERSION;
+        var needsDayReset = !!savedDay && savedDay !== today;
+        var needsTtlReset = Number.isFinite(savedTs) && (nowTs - savedTs) >= PRICES_CACHE_TTL_MS;
+
+        if (needsVersionReset || needsDayReset || needsTtlReset) {
+            resetRuntimePricesCaches_(reason || 'stale');
+            return;
+        }
+
+        if (!savedDay || !Number.isFinite(savedTs) || !savedVersion) {
+            persistPricesCacheMeta_(nowTs);
+        }
+    } catch (e) {
+        resetRuntimePricesCaches_(reason || 'meta_error');
+    }
+}
 
 function parseCsvText_(text) {
     var rows = [];
@@ -1069,6 +1125,7 @@ function normalizeLocalPriceRow_(rowObj) {
 }
 
 async function loadLocalPricesRows_() {
+    ensureFreshPricesCaches_('load_local_prices');
     if (Array.isArray(localPricesRowsCache)) return localPricesRowsCache;
     var response = await fetch('prices_rows.csv', { cache: 'no-store' });
     if (!response.ok) throw new Error('Не удалось загрузить локальный snapshot цен: HTTP ' + response.status);
@@ -1088,6 +1145,7 @@ async function loadLocalPricesRows_() {
         mapped.push(normalizeLocalPriceRow_(obj));
     }
     localPricesRowsCache = mapped;
+    persistPricesCacheMeta_(Date.now());
     return mapped;
 }
 
@@ -1186,6 +1244,7 @@ async function tryEmergencyCalcSaveOrder_(orderData) {
 }
 
 async function getEmergencyPricesSnapshot_() {
+    ensureFreshPricesCaches_('load_emergency_prices');
     if (Array.isArray(emergencyPricesSnapshotCache)) return emergencyPricesSnapshotCache;
     var res = await callEmergencyCalcApi_('prices_snapshot', {});
     if (!res || !res.ok || !Array.isArray(res.rows)) {
@@ -1194,6 +1253,7 @@ async function getEmergencyPricesSnapshot_() {
     emergencyPricesSnapshotCache = res.rows.map(function (rowObj) {
         return normalizeLocalPriceRow_(rowObj || {});
     });
+    persistPricesCacheMeta_(Date.now());
     return emergencyPricesSnapshotCache;
 }
 
@@ -2170,6 +2230,8 @@ async function onCityChange() {
         return;
     }
 
+    ensureFreshPricesCaches_('city_change');
+
     // Проверяем кеш
     if (cityDataCache[city]) {
         currentCityData = cityDataCache[city];
@@ -2214,6 +2276,7 @@ async function onCityChange() {
 
         // Сохраняем в кеш
         cityDataCache[city] = data;
+    persistPricesCacheMeta_(Date.now());
     currentCityData = data;
     }
 
@@ -2422,24 +2485,28 @@ function setEditOrderAddPanelOptions(options) {
 /** Данные цен по городу для модалки. При ошибке или пустом ответе возвращает { data: null }. */
 async function getCityDataForModal(cityName) {
     try {
+        ensureFreshPricesCaches_('modal_city_data');
         var city = (cityName || '').trim();
         if (city) {
             if (cityDataCache[city]) return { data: cityDataCache[city], usedFallback: false };
             var res = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', city).limit(30000);
             if (!res.error && res.data && res.data.length > 0) {
                 cityDataCache[city] = res.data;
+                persistPricesCacheMeta_(Date.now());
                 return { data: res.data, usedFallback: false };
             }
             try {
                 var emergencyRows = await getEmergencyPricesByCity_(city);
                 if (emergencyRows && emergencyRows.length > 0) {
                     cityDataCache[city] = emergencyRows;
+                    persistPricesCacheMeta_(Date.now());
                     return { data: emergencyRows, usedFallback: false };
                 }
             } catch (eEmergencyCity) {}
             var localRows = await getLocalPricesByCity_(city);
             if (localRows && localRows.length > 0) {
                 cityDataCache[city] = localRows;
+                persistPricesCacheMeta_(Date.now());
                 return { data: localRows, usedFallback: false };
             }
         }
@@ -2450,18 +2517,21 @@ async function getCityDataForModal(cityName) {
             var resF = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', fallbackCity).limit(30000);
             if (!resF.error && resF.data && resF.data.length > 0) {
                 cityDataCache[fallbackCity] = resF.data;
+                persistPricesCacheMeta_(Date.now());
                 return { data: resF.data, usedFallback: true };
             }
             try {
                 var emergencyFallbackRows = await getEmergencyPricesByCity_(fallbackCity);
                 if (emergencyFallbackRows && emergencyFallbackRows.length > 0) {
                     cityDataCache[fallbackCity] = emergencyFallbackRows;
+                    persistPricesCacheMeta_(Date.now());
                     return { data: emergencyFallbackRows, usedFallback: true };
                 }
             } catch (eEmergencyFallback) {}
             var localFallbackRows = await getLocalPricesByCity_(fallbackCity);
             if (localFallbackRows && localFallbackRows.length > 0) {
                 cityDataCache[fallbackCity] = localFallbackRows;
+                persistPricesCacheMeta_(Date.now());
                 return { data: localFallbackRows, usedFallback: true };
             }
         }
@@ -2472,6 +2542,7 @@ async function getCityDataForModal(cityName) {
             var resAny = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', firstCity).limit(30000);
             if (!resAny.error && resAny.data && resAny.data.length > 0) {
                 cityDataCache[firstCity] = resAny.data;
+                persistPricesCacheMeta_(Date.now());
                 return { data: resAny.data, usedFallback: true };
             }
         }
@@ -2483,6 +2554,7 @@ async function getCityDataForModal(cityName) {
                 var emergencyAnyRows = await getEmergencyPricesByCity_(firstEmergencyCity);
                 if (emergencyAnyRows && emergencyAnyRows.length > 0) {
                     cityDataCache[firstEmergencyCity] = emergencyAnyRows;
+                    persistPricesCacheMeta_(Date.now());
                     return { data: emergencyAnyRows, usedFallback: true };
                 }
             }
@@ -2494,6 +2566,7 @@ async function getCityDataForModal(cityName) {
             var localAnyRows = await getLocalPricesByCity_(firstLocalCity);
             if (localAnyRows && localAnyRows.length > 0) {
                 cityDataCache[firstLocalCity] = localAnyRows;
+                persistPricesCacheMeta_(Date.now());
                 return { data: localAnyRows, usedFallback: true };
             }
         }
@@ -5119,6 +5192,7 @@ window.onload = async function () {
     if (localStorage.getItem('appVersion') !== APP_VERSION) {
         localStorage.clear();
     }
+    ensureFreshPricesCaches_('window_load');
     
     // Загружаем данные грядок из Supabase
     await loadBedsFromSupabase();
@@ -5165,11 +5239,16 @@ window.onload = async function () {
     // Проверка версии пароля при возврате во вкладку (мгновенный выкид при смене пароля)
     document.addEventListener('visibilitychange', async () => {
         if (document.visibilityState === 'visible') {
+            ensureFreshPricesCaches_('visibilitychange');
             const savedLogin = localStorage.getItem('savedLogin');
             if (savedLogin && document.getElementById("calculator-container") && !document.getElementById("calculator-container").classList.contains("hidden")) {
                 await checkPasswordVersion();
             }
         }
+    });
+
+    window.addEventListener('focus', () => {
+        ensureFreshPricesCaches_('window_focus');
     });
 
     // Периодическая проверка версии пароля каждые 30 секунд
