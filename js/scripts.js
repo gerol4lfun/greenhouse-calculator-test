@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v293"; // v293: assembly special-price flow for selected cities + internal order comment marker
+const APP_VERSION = "v294"; // v294: auto-apply assembly special price for selected cities without manager interaction
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1214,19 +1214,12 @@ function isAssemblySpecialPriceCity_(cityRaw) {
 
 function shouldUseAssemblySpecialPrice_(cityRaw) {
     var assemblyCheckbox = document.getElementById('assembly');
-    var specialCheckbox = document.getElementById('assembly-special-price');
-    return !!(assemblyCheckbox && assemblyCheckbox.checked && specialCheckbox && specialCheckbox.checked && isAssemblySpecialPriceCity_(cityRaw));
+    return !!(assemblyCheckbox && assemblyCheckbox.checked && isAssemblySpecialPriceCity_(cityRaw));
 }
 
 function refreshAssemblySpecialPriceUi_() {
     var wrap = document.getElementById('assembly-special-price-wrap');
-    var checkbox = document.getElementById('assembly-special-price');
-    var assemblyCheckbox = document.getElementById('assembly');
-    var city = (typeof resolveCreateWarehouseCityKey_ === 'function') ? (resolveCreateWarehouseCityKey_() || '') : '';
-    var visible = !!(wrap && checkbox && assemblyCheckbox && assemblyCheckbox.checked && isAssemblySpecialPriceCity_(city));
-    if (!wrap || !checkbox) return;
-    wrap.style.display = visible ? '' : 'none';
-    if (!visible) checkbox.checked = false;
+    if (wrap) wrap.style.display = 'none';
 }
 
 function getAssemblySpecialPriceAdjusted_(price) {
@@ -2942,8 +2935,6 @@ function resetAdditionalOptions() {
     if (assemblyCheckbox) {
         assemblyCheckbox.checked = false;
     }
-    var assemblySpecialCheckbox = document.getElementById('assembly-special-price');
-    if (assemblySpecialCheckbox) assemblySpecialCheckbox.checked = false;
     refreshAssemblySpecialPriceUi_();
 }
 
@@ -16408,7 +16399,6 @@ function getOrderCartOptionsSnapshot() {
   var bracingEl = document.getElementById('bracing');
   var groundHooksEl = document.getElementById('ground-hooks');
   var assemblyEl = document.getElementById('assembly');
-  var assemblySpecialEl = document.getElementById('assembly-special-price');
   var onWoodEl = document.getElementById('on-wood');
   var onConcreteEl = document.getElementById('on-concrete');
   var selectedBeds = {};
@@ -16435,7 +16425,7 @@ function getOrderCartOptionsSnapshot() {
     bracing: bracingEl ? bracingEl.checked : false,
     groundHooks: groundHooksEl ? groundHooksEl.checked : false,
     assembly: assemblyEl ? assemblyEl.checked : false,
-    assemblySpecialPrice: assemblySpecialEl ? assemblySpecialEl.checked : false,
+    assemblySpecialPrice: shouldUseAssemblySpecialPrice_((typeof resolveCreateWarehouseCityKey_ === 'function') ? (resolveCreateWarehouseCityKey_() || '') : ''),
     onWood: onWoodEl ? onWoodEl.checked : false,
     onConcrete: onConcreteEl ? onConcreteEl.checked : false,
     selectedBeds: selectedBeds,
