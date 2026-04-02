@@ -53,7 +53,7 @@
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=292" defer></script>
+  <script src="js/scripts.js?v=293" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -818,6 +818,12 @@
               <span>Штыри</span>
             </label>
           </div>
+        </div>
+        <div id="assembly-special-price-wrap" style="display:none; margin-top:8px;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:#4b5563; cursor:pointer;">
+            <input type="checkbox" id="assembly-special-price" onchange="calculateGreenhouseCost()">
+            <span>Спец. цена сборки</span>
+          </label>
         </div>
         
         <!-- Здесь перемещаем кнопки для расчёта и сброса стоимости теплицы -->
