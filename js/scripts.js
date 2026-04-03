@@ -9029,6 +9029,12 @@ function isEditOrderPanelFlushMaterialChange_(before, r) {
 /** Валидация полей формы редактирования в модалке. Возвращает массив строк с ошибками (пустой — всё ок). */
 function validateEditOrderModal() {
     var errors = [];
+    if (_editOrderLegacyCompositionLocked) {
+        var legacyDateInput = document.getElementById('edit-order-delivery-date');
+        var legacyDeliveryDate = legacyDateInput ? legacyDateInput.value.trim() : '';
+        if (!legacyDeliveryDate) errors.push('дата доставки');
+        return errors;
+    }
     var name = document.getElementById('edit-order-client-name') ? document.getElementById('edit-order-client-name').value.trim() : '';
     var phone1 = document.getElementById('edit-order-client-phone') ? document.getElementById('edit-order-client-phone').value.trim() : '';
     var phone2 = document.getElementById('edit-order-client-phone-2') ? document.getElementById('edit-order-client-phone-2').value.trim() : '';
@@ -9693,7 +9699,7 @@ function initEditOrderModal() {
             }
             var editAddr1 = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
             var isOldOrder = currentOrderCreatedAtForEdit && String(currentOrderCreatedAtForEdit).slice(0, 10) < '2026-03-09';
-            if (editAddr1 && typeof checkAddressInDeliveryRegion === 'function' && !isOldOrder) {
+            if (!_editOrderLegacyCompositionLocked && editAddr1 && typeof checkAddressInDeliveryRegion === 'function' && !isOldOrder) {
                 var editWarehouseCityKey = (typeof resolveEditOrderCalendarCity_ === 'function') ? (resolveEditOrderCalendarCity_() || '') : '';
                 var regionCheck = await checkAddressInDeliveryRegion(editAddr1, editWarehouseCityKey);
                 if (!regionCheck.inRegion) {
@@ -9725,7 +9731,7 @@ function initEditOrderModal() {
                 var flushOk = await flushEditOrderAddPanelToCompositionAndClose();
                 if (!flushOk) return;
             }
-            if (typeof calculateDeliveryCostFromAddress === 'function') {
+            if (!_editOrderLegacyCompositionLocked && typeof calculateDeliveryCostFromAddress === 'function') {
                 var addr1d = document.getElementById('edit-order-address-part1') ? document.getElementById('edit-order-address-part1').value.trim() : '';
                 var addr2d = document.getElementById('edit-order-address-part2') ? document.getElementById('edit-order-address-part2').value.trim() : '';
                 var addr3d = document.getElementById('edit-order-address-part3') ? document.getElementById('edit-order-address-part3').value.trim() : '';
