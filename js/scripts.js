@@ -879,6 +879,8 @@ let _editOrderGiftTierAtOpen = 0;
 let _editOrderLoadedCityRaw = null;
 /** Сохранённый orders.warehouse_city_key на момент открытия заказа. Source of truth для delivery readers. null = не установлен. */
 let _editOrderLoadedWarehouseCityKey = null;
+/** ISO дата доставки заказа на момент открытия. Используется для бизнес-ограничений редактирования. */
+let _editOrderOriginalDeliveryDateISO = '';
 /** Ручной режим календаря для legacy date-only: '' | without | with (задаётся через popup-вопрос менеджеру). */
 let _editOrderCalendarAssemblyOverride = '';
 /** Raw orders.line_items (JSON string) при загрузке itemized заказа; для preserve при save без изменения состава. null = flat legacy или не загружено. */
@@ -1757,6 +1759,87 @@ function getMoscowTodayDateObject() {
     return new Date(+parts[0], +parts[1] - 1, +parts[2]);
 }
 
+function getMoscowNowParts_() {
+    var utcMs = Date.now();
+    var moscowMs = utcMs + 3 * 60 * 60 * 1000;
+    var d = new Date(moscowMs);
+    return {
+        year: d.getUTCFullYear(),
+        month: d.getUTCMonth() + 1,
+        day: d.getUTCDate(),
+        hours: d.getUTCHours(),
+        minutes: d.getUTCMinutes()
+    };
+}
+
+function getMoscowNowMinutes_() {
+    var now = getMoscowNowParts_();
+    return now.hours * 60 + now.minutes;
+}
+
+function addDaysToISO_(iso, days) {
+    if (!iso || typeof iso !== 'string') return '';
+    var parts = iso.split('-');
+    if (parts.length !== 3) return '';
+    var d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + Number(days || 0));
+    return formatISOLocal(d);
+}
+
+function normalizeAnyDeliveryDateToISO_(value) {
+    if (!value) return '';
+    var str = String(value).trim();
+    if (!str) return '';
+    if (str.indexOf('-') !== -1 && str.length >= 10) return str.split('T')[0];
+    if (str.indexOf('.') !== -1 && typeof deliveryDateDdMmToISO === 'function') return deliveryDateDdMmToISO(str) || '';
+    return '';
+}
+
+function getCreateOrderDateBusinessRule_(iso) {
+    if (!iso) return { ok: true, message: '' };
+    var todayISO = getTodayMoscowISO();
+    if (iso <= todayISO) {
+        return { ok: false, message: 'Нельзя оформить заказ на сегодня или прошедшую дату.' };
+    }
+    var tomorrowISO = addDaysToISO_(todayISO, 1);
+    if (iso === tomorrowISO && getMoscowNowMinutes_() >= 17 * 60) {
+        return { ok: false, message: 'Заказ на завтра можно оформить только до 17:00 МСК.' };
+    }
+    return { ok: true, message: '' };
+}
+
+function getEditOrderDateBusinessRule_(originalIso, targetIso) {
+    var todayISO = getTodayMoscowISO();
+    var tomorrowISO = addDaysToISO_(todayISO, 1);
+    if (originalIso && originalIso < todayISO) {
+        return { ok: false, message: 'Заказ с прошедшей датой нельзя редактировать через калькулятор.' };
+    }
+    if (!targetIso) return { ok: true, message: '' };
+    if (targetIso <= todayISO) {
+        return { ok: false, message: 'Нельзя сохранить заказ на сегодня или прошедшую дату.' };
+    }
+    if ((originalIso === tomorrowISO || targetIso === tomorrowISO) && getMoscowNowMinutes_() >= 11 * 60) {
+        return { ok: false, message: 'Заказы на завтра можно редактировать только до 11:00 МСК.' };
+    }
+    return { ok: true, message: '' };
+}
+
+function isCreateOrderDateAllowedByBusiness_(iso) {
+    return getCreateOrderDateBusinessRule_(iso).ok;
+}
+
+function isEditOrderDateAllowedByBusiness_(iso) {
+    return getEditOrderDateBusinessRule_(_editOrderOriginalDeliveryDateISO || '', iso).ok;
+}
+
+function getDefaultCreateDeliveryDateISO_() {
+    var todayISO = getTodayMoscowISO();
+    var tomorrowISO = addDaysToISO_(todayISO, 1);
+    if (getCreateOrderDateBusinessRule_(tomorrowISO).ok) return tomorrowISO;
+    return addDaysToISO_(todayISO, 2);
+}
+
 function getCurrentCalendarSlotsByMode(withAssembly) {
     return withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
 }
@@ -1820,8 +1903,18 @@ function syncOrderCalendarSlotsWithMode() {
     var assemblyEl = document.getElementById('assembly');
     var withAssembly = assemblyEl ? assemblyEl.checked : false;
     var todayISO = getTodayMoscowISO();
-    if (_orderCalSelected && isDateAvailableForMode(_orderCalSelected, withAssembly, todayISO)) return true;
-    selectOrderCalDate(getNearestAvailableDate(withAssembly) || '');
+    if (_orderCalSelected &&
+        isDateAvailableForMode(_orderCalSelected, withAssembly, todayISO) &&
+        isCreateOrderDateAllowedByBusiness_(_orderCalSelected)) return true;
+    var nearest = getNearestAvailableDate(withAssembly) || '';
+    while (nearest && !isCreateOrderDateAllowedByBusiness_(nearest)) {
+        nearest = addDaysToISO_(nearest, 1);
+        if (!nearest || !isDateAvailableForMode(nearest, withAssembly, todayISO)) {
+            nearest = '';
+            break;
+        }
+    }
+    selectOrderCalDate(nearest || '');
     return true;
 }
 
@@ -1829,8 +1922,18 @@ function syncEditOrderCalendarSlotsWithMode() {
     if (!deliveryDatesFromCalendar) return false;
     var withAssemblyEdit = getEditOrderCalendarAssemblyMode_();
     var todayISO = getTodayMoscowISO();
-    if (_editOrderCalSelected && isDateAvailableForMode(_editOrderCalSelected, withAssemblyEdit, todayISO)) return true;
-    selectEditOrderCalDate(getNearestAvailableDate(withAssemblyEdit) || '');
+    if (_editOrderCalSelected &&
+        isDateAvailableForMode(_editOrderCalSelected, withAssemblyEdit, todayISO) &&
+        isEditOrderDateAllowedByBusiness_(_editOrderCalSelected)) return true;
+    var nearest = getNearestAvailableDate(withAssemblyEdit) || '';
+    while (nearest && !isEditOrderDateAllowedByBusiness_(nearest)) {
+        nearest = addDaysToISO_(nearest, 1);
+        if (!nearest || !isDateAvailableForMode(nearest, withAssemblyEdit, todayISO)) {
+            nearest = '';
+            break;
+        }
+    }
+    selectEditOrderCalDate(nearest || '');
     return true;
 }
 
@@ -7238,6 +7341,7 @@ function fillEditOrderForm(order) {
     }
     setEditOrderFieldValue('edit-order-delivery-date', isoForDate);
     setEditOrderFieldValue('edit-order-delivery-date-display', displayDate);
+    _editOrderOriginalDeliveryDateISO = isoForDate || '';
     _editOrderCalSelected = isoForDate;
     if (isoForDate) {
         var p = isoForDate.split('-');
@@ -8657,6 +8761,7 @@ function clearEditOrderFormStateOnly() {
     editOrderGiftSlotsPrev = -1;
     _editOrderLoadedCityRaw = null;
     _editOrderLoadedWarehouseCityKey = null;
+    _editOrderOriginalDeliveryDateISO = '';
     _editOrderOriginalLineItemsJson = null;
     _editOrderOriginalAddressRaw = null;
     _editOrderAddressTouchedByUser = false;
@@ -9033,6 +9138,10 @@ function validateEditOrderModal() {
         var legacyDateInput = document.getElementById('edit-order-delivery-date');
         var legacyDeliveryDate = legacyDateInput ? legacyDateInput.value.trim() : '';
         if (!legacyDeliveryDate) errors.push('дата доставки');
+        if (legacyDeliveryDate) {
+            var legacyEditRule = getEditOrderDateBusinessRule_(_editOrderOriginalDeliveryDateISO || '', legacyDeliveryDate);
+            if (!legacyEditRule.ok) errors.push(legacyEditRule.message);
+        }
         return errors;
     }
     var name = document.getElementById('edit-order-client-name') ? document.getElementById('edit-order-client-name').value.trim() : '';
@@ -9055,6 +9164,10 @@ function validateEditOrderModal() {
         if (!isValidPhoneForSave_(phoneCombined)) errors.push('телефон: 11 цифр, с 7 (второй номер опционален)');
     }
     if (!deliveryDate) errors.push('дата доставки');
+    if (deliveryDate) {
+        var editRule = getEditOrderDateBusinessRule_(_editOrderOriginalDeliveryDateISO || '', deliveryDate);
+        if (!editRule.ok) errors.push(editRule.message);
+    }
     if (typeof isOrderFormAddressRequired === 'function' && isOrderFormAddressRequired()) {
         if (!addr1) errors.push('регион/город');
         if (!addr2) errors.push('улица');
@@ -9088,6 +9201,9 @@ function applyEditOrderErrors_(errors) {
         'имя клиента': ['eo-name', 'Введите имя клиента'],
         'телефон: 11 цифр, с 7': ['eo-phone', 'Введите 11 цифр, начиная с 7 (например 79211234567)'],
         'дата доставки': ['eo-date', 'Укажите дату доставки'],
+        'Заказ с прошедшей датой нельзя редактировать через калькулятор.': ['eo-date', 'Заказ с прошедшей датой нельзя редактировать через калькулятор'],
+        'Нельзя сохранить заказ на сегодня или прошедшую дату.': ['eo-date', 'Нельзя сохранить заказ на сегодня или прошедшую дату'],
+        'Заказы на завтра можно редактировать только до 11:00 МСК.': ['eo-date', 'Заказы на завтра можно редактировать только до 11:00 МСК'],
         'регион/город': ['eo-addr1', 'Введите регион и город'],
         'улица': ['eo-addr2', 'Введите улицу'],
         'дом/участок': ['eo-addr3', 'Введите дом и участок'],
@@ -9140,6 +9256,14 @@ function startEditOrder(orderId, optFinally) {
         }
         if (orderStatus === 'completed') {
             if (typeof showToast === 'function') showToast('Выполненный заказ нельзя редактировать. Используйте «Новый заказ для этого клиента».', 'error');
+            showEditOrderStep(1);
+            if (typeof optFinally === 'function') optFinally();
+            return;
+        }
+        var orderDeliveryIso = normalizeAnyDeliveryDateToISO_(order.delivery_date);
+        var editBusinessRule = getEditOrderDateBusinessRule_(orderDeliveryIso, orderDeliveryIso);
+        if (!editBusinessRule.ok) {
+            if (typeof showToast === 'function') showToast(editBusinessRule.message, 'error');
             showEditOrderStep(1);
             if (typeof optFinally === 'function') optFinally();
             return;
@@ -15722,16 +15846,13 @@ function applyOrderFormDefaults() {
   }
 }
 
-/** Установить дату доставки по умолчанию «сегодня», если ещё не задана (нет города/даты из калькулятора). */
+/** Установить дату доставки по умолчанию по бизнес-правилу create-flow. */
 function setOrderDeliveryDateDefaultToday_() {
     var hidden = document.getElementById('order-delivery-date');
     var display = document.getElementById('order-delivery-date-display');
     if (!hidden || !display || hidden.value) return;
-    var now = new Date();
-    var dd = String(now.getDate()).padStart(2, '0');
-    var mm = String(now.getMonth() + 1).padStart(2, '0');
-    var yyyy = now.getFullYear();
-    var todayStr = dd + '.' + mm + '.' + yyyy;
+    var defaultIso = getDefaultCreateDeliveryDateISO_();
+    var todayStr = defaultIso ? formatDateRu(defaultIso) : '';
     _orderCalSlots = buildDeliverySlots(todayStr);
     if (_orderCalSlots.length > 0) {
         _initCalendarWithDate(_orderCalSlots[0]);
@@ -15947,7 +16068,7 @@ function renderOrderCalendar() {
 
         if (deliveryDatesFromCalendar) {
             var cellState = getDeliveryCalendarCellState(cellISO, withAssembly, todayISO);
-            if (isDeliveryCalendarStateSelectable_(cellState)) {
+            if (isDeliveryCalendarStateSelectable_(cellState) && isCreateOrderDateAllowedByBusiness_(cellISO)) {
                 btn.classList.add(cellState === 'available' ? 'available' : cellState);
                 btn.setAttribute('data-date', cellISO);
                 btn.onclick = (function(iso) {
@@ -15967,15 +16088,22 @@ function renderOrderCalendar() {
                 btn.disabled = true;
             }
         } else if (slotsSet[cellISO]) {
-            btn.classList.add('available');
-            btn.setAttribute('data-date', cellISO);
-            btn.onclick = (function(iso) {
-                return function() {
-                    selectOrderCalDate(iso);
-                    renderOrderCalendar();
-                    closeOrderCalendar();
-                };
-            })(cellISO);
+            if (isCreateOrderDateAllowedByBusiness_(cellISO)) {
+                btn.classList.add('available');
+                btn.setAttribute('data-date', cellISO);
+                btn.onclick = (function(iso) {
+                    return function() {
+                        selectOrderCalDate(iso);
+                        renderOrderCalendar();
+                        closeOrderCalendar();
+                    };
+                })(cellISO);
+            } else {
+                btn.style.background = '#fee2e2';
+                btn.style.color = '#b91c1c';
+                btn.style.cursor = 'not-allowed';
+                btn.disabled = true;
+            }
         }
         if (cellISO === _orderCalSelected) btn.classList.add('selected');
         if (!deliveryDatesFromCalendar && cellISO === todayISO) btn.classList.add('today');
@@ -16170,7 +16298,7 @@ function renderEditOrderCalendar() {
             // "со сборкой" => не показываем only-delivery; "без сборки" => не показываем only-assembly.
             if (legacyManualMode === 'with' && editCellState === 'only-delivery') editCellState = 'blocked';
             if (legacyManualMode === 'without' && editCellState === 'only-assembly') editCellState = 'blocked';
-            if (isDeliveryCalendarStateSelectable_(editCellState)) {
+            if (isDeliveryCalendarStateSelectable_(editCellState) && isEditOrderDateAllowedByBusiness_(cellISO)) {
                 btn.classList.add(editCellState === 'available' ? 'available' : editCellState);
                 btn.setAttribute('data-date', cellISO);
                 btn.onclick = (function(iso) {
@@ -16190,15 +16318,22 @@ function renderEditOrderCalendar() {
                 btn.disabled = true;
             }
         } else if (slotsSet[cellISO]) {
-            btn.classList.add('available');
-            btn.setAttribute('data-date', cellISO);
-            btn.onclick = (function(iso) {
-                return function() {
-                    selectEditOrderCalDate(iso);
-                    renderEditOrderCalendar();
-                    closeEditOrderCalendar();
-                };
-            })(cellISO);
+            if (isEditOrderDateAllowedByBusiness_(cellISO)) {
+                btn.classList.add('available');
+                btn.setAttribute('data-date', cellISO);
+                btn.onclick = (function(iso) {
+                    return function() {
+                        selectEditOrderCalDate(iso);
+                        renderEditOrderCalendar();
+                        closeEditOrderCalendar();
+                    };
+                })(cellISO);
+            } else {
+                btn.style.background = '#fee2e2';
+                btn.style.color = '#b91c1c';
+                btn.style.cursor = 'not-allowed';
+                btn.disabled = true;
+            }
         }
         if (cellISO === _editOrderCalSelected) btn.classList.add('selected');
         if (!deliveryDatesFromCalendar && cellISO === todayISO) btn.classList.add('today');
@@ -17022,6 +17157,7 @@ async function submitOrder() {
     const clientPhone2 = (document.getElementById('order-client-phone-2') && document.getElementById('order-client-phone-2').value) ? document.getElementById('order-client-phone-2').value.trim() : '';
     const clientPhone = combinePhonesForPayload_(clientPhone1, clientPhone2) || clientPhone1;
     const deliveryDate = document.getElementById('order-delivery-date').value;
+    const deliveryDateIso = normalizeAnyDeliveryDateToISO_(deliveryDate);
     const addr1 = document.getElementById('order-address-part1')?.value?.trim() || '';
     const addr2 = document.getElementById('order-address-part2')?.value?.trim() || '';
     const addr3 = document.getElementById('order-address-part3')?.value?.trim() || '';
@@ -17049,6 +17185,14 @@ async function submitOrder() {
         setOrderFieldError_('of-date', 'Выберите дату доставки');
         errors.push('дата доставки');
         hasErrors = true;
+    }
+    if (deliveryDate) {
+        var createRule = getCreateOrderDateBusinessRule_(deliveryDateIso || deliveryDate);
+        if (!createRule.ok) {
+            setOrderFieldError_('of-date', createRule.message);
+            errors.push(createRule.message);
+            hasErrors = true;
+        }
     }
 
     if (isOrderFormAddressRequired()) {
