@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v300"; // v300: safer fast fallback timeouts for city prices
+const APP_VERSION = "v301"; // v301: request emergency prices by selected city
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1369,6 +1369,17 @@ async function getEmergencyPricesSnapshot_() {
 async function getEmergencyPricesByCity_(cityName) {
     var city = (cityName || '').trim();
     if (!city) return [];
+    try {
+        var res = await callEmergencyCalcApi_('prices_by_city', { city: city });
+        if (res && res.ok && Array.isArray(res.rows)) {
+            persistPricesCacheMeta_(Date.now());
+            return res.rows.map(function (rowObj) {
+                return normalizeLocalPriceRow_(rowObj || {});
+            });
+        }
+    } catch (cityErr) {
+        console.warn('getEmergencyPricesByCity_: prices_by_city unavailable, fallback to full snapshot', cityErr);
+    }
     var rows = await getEmergencyPricesSnapshot_();
     return rows.filter(function (item) {
         return (item.city_name || '').trim() === city;
