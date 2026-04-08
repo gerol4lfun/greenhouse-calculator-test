@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v295"; // v295: update base assembly prices so special-price discount applies from the current tariff grid
+const APP_VERSION = "v297"; // v297: unify delivery-calendar edit mode fallback and keep selected date color truthful
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -452,6 +452,54 @@ function normalizeCityAlias_(cityRaw) {
         'челны': 'Набережные Челны'
     };
     return aliasMap[lower] || cityRaw.trim();
+}
+
+function getDeliveryCalendarLookupKeys_(cityRaw, fullAddr) {
+    var keys = Object.create(null);
+    function addKey(value) {
+        if (!value || typeof value !== 'string') return;
+        var cleaned = cleanDeliveryCityName(value);
+        var normalized = normalizeCityName(cleaned);
+        if (normalized) keys[normalized] = true;
+    }
+
+    var raw = (cityRaw && typeof cityRaw === 'string') ? cityRaw.trim() : '';
+    if (raw) {
+        addKey(raw);
+        var alias = normalizeCityAlias_(raw);
+        if (alias) addKey(alias);
+    }
+
+    var mapped = null;
+    if (typeof resolveRegionToCanonicalCity_ === 'function') {
+        mapped = resolveRegionToCanonicalCity_(fullAddr || '') ||
+            resolveRegionToCanonicalCity_(raw) ||
+            resolveRegionToCanonicalCity_(normalizeCityAlias_(raw) || raw);
+    }
+    if (mapped) {
+        addKey(mapped);
+        var mappedAlias = normalizeCityAlias_(mapped);
+        if (mappedAlias) addKey(mappedAlias);
+    }
+
+    if (typeof findCityInDropdown === 'function') {
+        var dropdownCity = findCityInDropdown(raw) ||
+            findCityInDropdown(normalizeCityAlias_(raw) || raw) ||
+            (mapped ? findCityInDropdown(mapped) : null);
+        if (dropdownCity) addKey(dropdownCity);
+    }
+
+    if (keys['москва'] || keys['москва и мо']) {
+        addKey('Москва');
+        addKey('Москва и МО');
+    }
+    if (keys['санкт-петербург'] || keys['санкт-петербург и обл.'] || keys['санкт-петербург и ло']) {
+        addKey('Санкт-Петербург');
+        addKey('Санкт-Петербург и обл.');
+        addKey('Санкт-Петербург и ЛО');
+    }
+
+    return Object.keys(keys);
 }
 
 /**
@@ -1844,6 +1892,27 @@ function getCurrentCalendarSlotsByMode(withAssembly) {
     return withAssembly ? (currentAvailableDatesWithAssembly || []) : (currentAvailableDatesWithoutAssembly || []);
 }
 
+function normalizeDeliveryCalendarRawStatus_(rawStatus) {
+    var rs = (rawStatus || '').toString().toUpperCase().trim();
+    if (rs === 'ДС' || rs === 'Д' || rs === 'С' || rs === 'X' || rs === 'Х') return rs;
+    return '';
+}
+
+function buildDeliveryCalendarStateMap_(rows) {
+    var stateMap = Object.create(null);
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var iso = normalizeDeliveryCalendarISO(r && r.delivery_date);
+        if (!iso) continue;
+        stateMap[iso] = {
+            withoutAssembly: !!(r && r.available_without_assembly),
+            withAssembly: !!(r && r.available_with_assembly),
+            rawStatus: normalizeDeliveryCalendarRawStatus_(r && r.raw_status)
+        };
+    }
+    return stateMap;
+}
+
 /**
  * Нормализованное состояние даты для выбранного режима (со сборкой / без сборки).
  * Приоритет источника истины:
@@ -1852,7 +1921,7 @@ function getCurrentCalendarSlotsByMode(withAssembly) {
  */
 function getDeliveryCalendarStateByMode_(meta, withAssembly) {
     if (!meta) return 'blocked';
-    var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
+    var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return withAssembly ? 'blocked' : 'only-delivery';
     if (rs === 'С') return withAssembly ? 'only-assembly' : 'blocked';
@@ -1868,27 +1937,46 @@ function isDeliveryCalendarStateSelectable_(state) {
     return state === 'available' || state === 'only-delivery' || state === 'only-assembly';
 }
 
-/** Дата доступна для режима? delivery_calendar = слой ограничений; future unknown = доступна */
-function isDateAvailableForMode(iso, withAssembly, todayISO) {
-    if (!iso || iso <= todayISO) return false;
-    var meta = currentDeliveryDateStateMap[iso];
-    if (!meta) return true;
-    var state = getDeliveryCalendarStateByMode_(meta, withAssembly);
-    return isDeliveryCalendarStateSelectable_(state);
+function getDeliveryCalendarLegendState_(meta) {
+    if (!meta) return 'blocked';
+    var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
+    if (rs === 'ДС') return 'available';
+    if (rs === 'Д') return 'only-delivery';
+    if (rs === 'С') return 'only-assembly';
+    if (rs === 'X' || rs === 'Х') return 'blocked';
+    if (meta.withoutAssembly && meta.withAssembly) return 'available';
+    if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
+    if (!meta.withoutAssembly && meta.withAssembly) return 'only-assembly';
+    return 'blocked';
 }
 
-/** Ближайшая доступная дата после todayMoscow для режима (сборка/без) */
-function getNearestAvailableDate(withAssembly) {
-    if (!deliveryDatesFromCalendar) return null;
-    var todayISO = getTodayMoscowISO();
+function isDateAvailableForModeInStateMap_(stateMap, iso, withAssembly, todayISO) {
+    if (!iso || iso <= todayISO) return false;
+    var meta = stateMap && stateMap[iso];
+    if (!meta) return false;
+    return isDeliveryCalendarStateSelectable_(getDeliveryCalendarStateByMode_(meta, withAssembly));
+}
+
+function getNearestAvailableDateInStateMap_(stateMap, todayISO, withAssembly) {
     var p = todayISO.split('-');
     var d = new Date(+p[0], +p[1] - 1, +p[2]);
     for (var i = 0; i < 400; i++) {
         d.setDate(d.getDate() + 1);
         var iso = formatISOLocal(d);
-        if (isDateAvailableForMode(iso, withAssembly, todayISO)) return iso;
+        if (isDateAvailableForModeInStateMap_(stateMap, iso, withAssembly, todayISO)) return iso;
     }
     return null;
+}
+
+/** Дата доступна для режима? delivery_calendar = source of truth; future unknown = blocked */
+function isDateAvailableForMode(iso, withAssembly, todayISO) {
+    return isDateAvailableForModeInStateMap_(currentDeliveryDateStateMap, iso, withAssembly, todayISO);
+}
+
+/** Ближайшая доступная дата после todayMoscow для режима (сборка/без) */
+function getNearestAvailableDate(withAssembly) {
+    if (!deliveryDatesFromCalendar) return null;
+    return getNearestAvailableDateInStateMap_(currentDeliveryDateStateMap, getTodayMoscowISO(), withAssembly);
 }
 
 function getDeliveryCalendarCellState(cellISO, withAssembly, todayISO) {
@@ -1955,6 +2043,20 @@ function hasAssemblySignalForEditCalendar_(item) {
     return /сборк|установк/i.test(low);
 }
 
+function hasAssemblySignalInLineItemsV2ForEditCalendar_(lines) {
+    if (!Array.isArray(lines) || lines.length === 0) return false;
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line || typeof line !== 'object') continue;
+        var kind = String(line.kind || '').toLowerCase().trim();
+        if (kind !== 'service') continue;
+        var displayName = String(line.display_name || '').toLowerCase();
+        if (!displayName || /без\s*сборк/i.test(displayName)) continue;
+        if (/сборк|установк/i.test(displayName)) return true;
+    }
+    return false;
+}
+
 function normalizeEditOrderCalendarAssemblyOverride_(mode) {
     var m = (mode || '').toString().trim().toLowerCase();
     if (m === 'with') return 'with';
@@ -2010,25 +2112,23 @@ function getEditOrderCalendarAssemblyMode_() {
             if (hasAssemblySignalForEditCalendar_(item)) return true;
         }
     }
+    // Native fallback: line_items can be stale/partial while line_items_v2 keeps service rows.
+    // This affects only date-calendar mode, not order save/payload.
+    if (hasAssemblySignalInLineItemsV2ForEditCalendar_(_editOrderNativeLineItemsV2Snapshot)) return true;
     return false;
 }
 
 function applyDeliveryCalendarRows(rows, todayMoscow) {
     var withoutAssembly = [];
     var withAssembly = [];
-    var stateMap = Object.create(null);
+    var stateMap = buildDeliveryCalendarStateMap_(rows);
     for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
-        var iso = normalizeDeliveryCalendarISO(r.delivery_date);
+        var iso = normalizeDeliveryCalendarISO(r && r.delivery_date);
         if (!iso) continue;
-        stateMap[iso] = {
-            withoutAssembly: !!r.available_without_assembly,
-            withAssembly: !!r.available_with_assembly,
-            rawStatus: r.raw_status || null
-        };
         if (iso <= todayMoscow) continue;
-        if (r.available_without_assembly) withoutAssembly.push(iso);
-        if (r.available_with_assembly) withAssembly.push(iso);
+        if (r && r.available_without_assembly) withoutAssembly.push(iso);
+        if (r && r.available_with_assembly) withAssembly.push(iso);
     }
     deliveryDatesFromCalendar = true;
     currentAvailableDatesWithoutAssembly = withoutAssembly;
@@ -2065,6 +2165,7 @@ async function loadDeliveryDate(cityName) {
 
     var todayMoscow = getTodayMoscowISO();
 
+    var calendarQueryResolved = false;
     try {
         var calSelect = 'city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status';
         var calResExact = await supabaseClient
@@ -2096,20 +2197,9 @@ async function loadDeliveryDate(cityName) {
             dedupRows.push(row);
         }
 
-        var cityKey = typeof getModalCityGroupKey === 'function'
-            ? getModalCityGroupKey(cleanDeliveryCityName(cityName))
-            : normalizeCityName(cleanDeliveryCityName(cityName));
-        var keySet = {};
-        keySet[cityKey] = true;
-        if (cityKey === 'москва') keySet['москва и мо'] = true;
-        if (cityKey === 'москва и мо') keySet['москва'] = true;
-        if (cityKey === 'санкт-петербург') {
-            keySet['санкт-петербург и обл.'] = true;
-            keySet['санкт-петербург и ло'] = true;
-        }
-        if (cityKey === 'санкт-петербург и обл.' || cityKey === 'санкт-петербург и ло') {
-            keySet['санкт-петербург'] = true;
-        }
+        var keyList = getDeliveryCalendarLookupKeys_(cityName, cityName);
+        var keySet = Object.create(null);
+        for (var keyIdx = 0; keyIdx < keyList.length; keyIdx++) keySet[keyList[keyIdx]] = true;
 
         var matchedRows = dedupRows.filter(function(item) {
             var itemKey = typeof getModalCityGroupKey === 'function'
@@ -2120,21 +2210,50 @@ async function loadDeliveryDate(cityName) {
 
         if (matchedRows.length === 0 && exactRows.length > 0) matchedRows = exactRows;
         if (matchedRows.length > 0) {
+            calendarQueryResolved = true;
             applyDeliveryCalendarRows(matchedRows, todayMoscow);
             return currentDeliveryDate;
         }
 
-        if (calResExact.error || exactRows.length === 0) {
-            deliveryDatesFromCalendar = false;
+        var hasAnyCalendarRows = dedupRows.length > 0;
+        if (hasAnyCalendarRows) {
+            calendarQueryResolved = true;
+            deliveryDatesFromCalendar = true;
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
-            currentDeliveryDateStateMap = Object.create(null);
+            currentDeliveryDateStateMap = buildDeliveryCalendarStateMap_([]);
+            currentDeliveryRestrictions = null;
+            currentDeliveryDate = null;
+            currentDeliveryAssemblyDate = null;
+            updateDeliveryDateDisplay();
+            return null;
+        }
+
+        if (!calResExact.error) {
+            calendarQueryResolved = true;
+            deliveryDatesFromCalendar = true;
+            currentAvailableDatesWithoutAssembly = [];
+            currentAvailableDatesWithAssembly = [];
+            currentDeliveryDateStateMap = buildDeliveryCalendarStateMap_([]);
+            currentDeliveryRestrictions = null;
+            currentDeliveryDate = null;
+            currentDeliveryAssemblyDate = null;
+            updateDeliveryDateDisplay();
+            return null;
         }
     } catch (e) {
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
         currentDeliveryDateStateMap = Object.create(null);
+    }
+
+    if (calendarQueryResolved) {
+        currentDeliveryDate = null;
+        currentDeliveryAssemblyDate = null;
+        currentDeliveryRestrictions = null;
+        updateDeliveryDateDisplay();
+        return null;
     }
 
     try {
@@ -6078,33 +6197,11 @@ function closeDeliveryDatesModal() {
 }
 
 function buildStateMapFromRows(rows, todayMoscow) {
-    var stateMap = Object.create(null);
-    for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        var iso = normalizeDeliveryCalendarISO(r.delivery_date);
-        if (!iso) continue;
-        stateMap[iso] = {
-            withoutAssembly: !!r.available_without_assembly,
-            withAssembly: !!r.available_with_assembly,
-            rawStatus: r.raw_status || null
-        };
-    }
-    return stateMap;
+    return buildDeliveryCalendarStateMap_(rows);
 }
 
 function getNearestFromStateMap(stateMap, todayISO, withAssembly) {
-    var p = todayISO.split('-');
-    var d = new Date(+p[0], +p[1] - 1, +p[2]);
-    for (var i = 0; i < 400; i++) {
-        d.setDate(d.getDate() + 1);
-        var iso = formatISOLocal(d);
-        if (iso <= todayISO) continue;
-        var meta = stateMap[iso];
-        if (!meta) return iso;
-        var ok = withAssembly ? meta.withAssembly : meta.withoutAssembly;
-        if (ok) return iso;
-    }
-    return null;
+    return getNearestAvailableDateInStateMap_(stateMap, todayISO, withAssembly);
 }
 
 function getModalCityGroupKey(cn) {
@@ -6116,16 +6213,7 @@ function getModalCityGroupKey(cn) {
 function getDeliveryModalCellState(cellISO, todayISO, stateMap) {
     if (cellISO <= todayISO) return 'past';
     var meta = stateMap[cellISO];
-    if (!meta) return 'blocked';
-    var rs = (meta.rawStatus || '').toString().toUpperCase().trim();
-    if (rs === 'ДС') return 'available';
-    if (rs === 'Д') return 'only-delivery';
-    if (rs === 'С') return 'only-assembly';
-    if (rs === 'X' || rs === 'Х') return 'blocked';
-    if (meta.withoutAssembly && meta.withAssembly) return 'available';
-    if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
-    if (!meta.withoutAssembly && meta.withAssembly) return 'only-assembly';
-    return 'blocked';
+    return getDeliveryCalendarLegendState_(meta);
 }
 
 async function loadDeliveryDatesModalData(initialCity) {
@@ -6266,12 +6354,10 @@ async function loadDeliveryDatesModalData(initialCity) {
     var moscowOrSpb = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'москва' || s === 'москва и мо' || s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s); });
     var defaultCity = moscowOrSpb || cityList[0] || null;
     if (initialCity && typeof initialCity === 'string' && (initialCity = initialCity.trim())) {
+        var initialKeys = getDeliveryCalendarLookupKeys_(initialCity, initialCity);
         var found = cityList.find(function (c) {
-            var s = (c || '').trim().toLowerCase();
-            var p = initialCity.toLowerCase();
-            if (s === p) return true;
-            if (typeof normalizeCityName === 'function' && normalizeCityName(c) === normalizeCityName(initialCity)) return true;
-            return false;
+            var cityKey = getModalCityGroupKey(c);
+            return initialKeys.indexOf(cityKey) !== -1;
         });
         if (!found && (initialCity === 'москва' || /москва\s+и\s+м\.?о\.?/.test(initialCity))) found = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'москва' || s === 'москва и мо'; });
         if (!found && (initialCity === 'санкт-петербург' || /санкт-петербург\s+и\s+(обл\.?|ло)/.test(initialCity))) found = cityList.find(function (c) { var s = (c || '').toLowerCase().trim(); return s === 'санкт-петербург' || /^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s); });
