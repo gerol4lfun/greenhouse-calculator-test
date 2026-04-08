@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v299"; // v299: fast fallback when city prices are slow/unavailable
+const APP_VERSION = "v300"; // v300: safer fast fallback timeouts for city prices
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1059,9 +1059,9 @@ const PRICE_CITY_LIST = [
     'Челябинск', 'Черкесск', 'Ярославль'
 ];
 const PRICES_CACHE_TTL_MS = 15 * 60 * 1000;
-const PRICE_CITY_SUPABASE_TIMEOUT_MS = 2000;
+const PRICE_CITY_SUPABASE_TIMEOUT_MS = 4000;
 const PRICE_CITY_EMERGENCY_TIMEOUT_MS = 3000;
-const PRICE_CITY_LOCAL_TIMEOUT_MS = 7000;
+const PRICE_CITY_LOCAL_TIMEOUT_MS = 12000;
 const PRICES_CACHE_DAY_STORAGE_KEY = 'pricesCacheDay';
 const PRICES_CACHE_TS_STORAGE_KEY = 'pricesCacheTs';
 const PRICES_CACHE_VERSION_STORAGE_KEY = 'pricesCacheVersion';
