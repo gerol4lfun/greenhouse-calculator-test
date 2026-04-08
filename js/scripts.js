@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v297"; // v297: unify delivery-calendar edit mode fallback and keep selected date color truthful
+const APP_VERSION = "v298"; // v298: load city list locally instead of scanning all prices on startup
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1049,6 +1049,15 @@ let citiesCache = null; // Кеш списка городов
 let cityDataCache = {}; // Кеш данных по городам {cityName: data}
 let localPricesRowsCache = null; // Аварийный локальный snapshot цен при недоступном Supabase
 let emergencyPricesSnapshotCache = null; // Временный snapshot цен из GAS
+const PRICE_CITY_LIST = [
+    'Белгород', 'Великий Новгород', 'Владимир', 'Вологда', 'Воронеж',
+    'Екатеринбург', 'Иваново', 'Йошкар-Ола', 'Казань', 'Калуга',
+    'Кемерово', 'Кострома', 'Краснодар', 'Курск', 'Липецк',
+    'Майкоп', 'Москва', 'Набережные челны', 'Нижний Новгород',
+    'Новосибирск', 'Орел', 'Рязань', 'Санкт-Петербург', 'Ставрополь',
+    'Тамбов', 'Тверь', 'Тула', 'Ульяновск', 'Чебоксары',
+    'Челябинск', 'Черкесск', 'Ярославль'
+];
 const PRICES_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRICES_CACHE_DAY_STORAGE_KEY = 'pricesCacheDay';
 const PRICES_CACHE_TS_STORAGE_KEY = 'pricesCacheTs';
@@ -2392,91 +2401,37 @@ function updateDeliveryResultDate() {
     resultDiv.innerHTML = renderDeliveryResultBlock(costText, dateData);
 }
 
-// Функция для загрузки городов из Supabase с учётом пагинации
+function getFastPriceCityList_() {
+    return PRICE_CITY_LIST.slice();
+}
+
+function renderCityDropdown_(cities) {
+    var cityDropdown = document.getElementById('city');
+    if (!cityDropdown) return;
+    var uniqueCities = [...new Set((cities || []).filter(Boolean))];
+    var priorityCities = ['Москва', 'Санкт-Петербург'];
+    uniqueCities = uniqueCities.filter(function (city) { return priorityCities.indexOf(city) === -1; });
+    uniqueCities.sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+    var finalCities = priorityCities.concat(uniqueCities);
+
+    cityDropdown.innerHTML = '<option value="" disabled selected>Выберите город</option>';
+    finalCities.forEach(function (city) {
+        cityDropdown.innerHTML += '<option value="' + city + '">' + city + '</option>';
+    });
+    citiesCache = finalCities;
+}
+
+// Функция для быстрой загрузки списка городов.
+// Цены по-прежнему грузятся отдельно при выборе города.
 async function loadCities() {
-    // Проверяем кеш
     if (citiesCache) {
         const cityDropdown = document.getElementById('city');
         if (cityDropdown && cityDropdown.options.length > 1) {
-            return; // Уже загружено
-        }
-    }
-    
-    const pageSize = 1000; // Максимальное количество строк за один запрос
-    let allCities = [];
-    let page = 0;
-
-    while (true) {
-        try {
-        // Запрос данных с пагинацией
-        let { data, error } = await supabaseClient
-            .from('prices')
-            .select('city_name') // Запрашиваем города
-            .range(page * pageSize, (page + 1) * pageSize - 1); // Пагинация
-
-        if (error) {
-            console.error("Ошибка при загрузке городов из Supabase:", error);
-            allCities = [];
-            break;
-        }
-
-        // Если данных на странице меньше, чем pageSize, значит, это последняя страница
-        if (data.length === 0) break;
-
-        // Добавляем города в общий массив
-        allCities = allCities.concat(data.map(item => item.city_name));
-        page++;
-        } catch (err) {
-            console.error("Критическая ошибка при загрузке городов:", err);
-            allCities = [];
-            break;
+            return;
         }
     }
 
-    if (allCities.length === 0) {
-        try {
-            allCities = await getEmergencyCities_();
-            console.warn('loadCities: используем emergency snapshot цен из GAS');
-        } catch (snapshotErr) {
-            try {
-                allCities = await getLocalCities_();
-                console.warn('loadCities: используем локальный snapshot цен');
-            } catch (fallbackErr) {
-                console.error('Ошибка fallback загрузки городов:', snapshotErr, fallbackErr);
-                const cityDropdown = document.getElementById('city');
-                if (cityDropdown) {
-                    cityDropdown.innerHTML = '<option value="" disabled selected>Ошибка загрузки данных</option>';
-                }
-                return;
-            }
-        }
-    }
-
-    // Убираем дубликаты городов
-    let uniqueCities = [...new Set(allCities)];
-
-    // Приоритетные города
-    const priorityCities = ["Москва", "Санкт-Петербург"];
-
-    // Удаляем приоритетные города из основного списка
-    uniqueCities = uniqueCities.filter(city => !priorityCities.includes(city));
-
-    // Сортируем оставшиеся города по алфавиту
-    uniqueCities.sort((a, b) => a.localeCompare(b, 'ru'));
-
-    // Объединяем приоритетные города и отсортированные города
-    const finalCities = [...priorityCities, ...uniqueCities];
-
-    // Обновляем выпадающий список
-    const cityDropdown = document.getElementById('city');
-    cityDropdown.innerHTML = '<option value="" disabled selected>Выберите город</option>';
-
-    finalCities.forEach(city => {
-        cityDropdown.innerHTML += `<option value="${city}">${city}</option>`;
-    });
-    
-    // Сохраняем в кеш
-    citiesCache = finalCities;
+    renderCityDropdown_(getFastPriceCityList_());
 }
 
 // Функция обработки изменения города
