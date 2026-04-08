@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v298"; // v298: load city list locally instead of scanning all prices on startup
+const APP_VERSION = "v299"; // v299: fast fallback when city prices are slow/unavailable
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1059,6 +1059,9 @@ const PRICE_CITY_LIST = [
     'Челябинск', 'Черкесск', 'Ярославль'
 ];
 const PRICES_CACHE_TTL_MS = 15 * 60 * 1000;
+const PRICE_CITY_SUPABASE_TIMEOUT_MS = 2000;
+const PRICE_CITY_EMERGENCY_TIMEOUT_MS = 3000;
+const PRICE_CITY_LOCAL_TIMEOUT_MS = 7000;
 const PRICES_CACHE_DAY_STORAGE_KEY = 'pricesCacheDay';
 const PRICES_CACHE_TS_STORAGE_KEY = 'pricesCacheTs';
 const PRICES_CACHE_VERSION_STORAGE_KEY = 'pricesCacheVersion';
@@ -1370,6 +1373,77 @@ async function getEmergencyPricesByCity_(cityName) {
     return rows.filter(function (item) {
         return (item.city_name || '').trim() === city;
     });
+}
+
+function withTimeout_(promise, timeoutMs, label) {
+    return new Promise(function (resolve, reject) {
+        var done = false;
+        var timer = setTimeout(function () {
+            if (done) return;
+            done = true;
+            reject(new Error((label || 'operation') + ' timeout after ' + timeoutMs + 'ms'));
+        }, timeoutMs);
+
+        Promise.resolve(promise).then(function (value) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve(value);
+        }).catch(function (err) {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            reject(err);
+        });
+    });
+}
+
+async function loadCityPricesFromSupabase_(city) {
+    let response = await supabaseClient
+        .from('prices')
+        .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment')
+        .eq('city_name', city)
+        .limit(30000);
+    if (response.error) throw response.error;
+    return response.data || [];
+}
+
+async function loadCityPricesWithFastFallback_(city) {
+    var data = [];
+    try {
+        data = await withTimeout_(
+            loadCityPricesFromSupabase_(city),
+            PRICE_CITY_SUPABASE_TIMEOUT_MS,
+            'Supabase city prices'
+        );
+        if (data && data.length > 0) return { data: data, source: 'supabase' };
+    } catch (supabaseErr) {
+        console.warn('onCityChange: Supabase prices unavailable/slow, fallback for city', city, supabaseErr);
+    }
+
+    try {
+        data = await withTimeout_(
+            getEmergencyPricesByCity_(city),
+            PRICE_CITY_EMERGENCY_TIMEOUT_MS,
+            'Emergency prices snapshot'
+        );
+        if (data && data.length > 0) return { data: data, source: 'gas_snapshot' };
+    } catch (snapshotErr) {
+        console.warn('onCityChange: emergency snapshot unavailable/slow, fallback for city', city, snapshotErr);
+    }
+
+    try {
+        data = await withTimeout_(
+            getLocalPricesByCity_(city),
+            PRICE_CITY_LOCAL_TIMEOUT_MS,
+            'Local prices snapshot'
+        );
+        if (data && data.length > 0) return { data: data, source: 'local_csv' };
+    } catch (fallbackErr) {
+        console.error('onCityChange: local prices snapshot unavailable for city', city, fallbackErr);
+    }
+
+    return { data: [], source: 'none' };
 }
 
 async function getEmergencyCities_() {
@@ -2461,48 +2535,23 @@ async function onCityChange() {
     if (cityDataCache[city]) {
         currentCityData = cityDataCache[city];
     } else {
-    let data = null;
-    let error = null;
-    try {
-        let response = await supabaseClient
-            .from('prices')
-            .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment')
-            .eq('city_name', city)
-            .limit(30000);
-        data = response.data;
-        error = response.error;
-    } catch (supabaseErr) {
-        error = supabaseErr;
-    }
-
-    if (error || !data || data.length === 0) {
-        if (error) console.error('Ошибка при получении данных по городу:', error);
-        try {
-            data = await getEmergencyPricesByCity_(city);
-            if (data && data.length > 0) {
-                console.warn('onCityChange: используем emergency snapshot цен для города', city);
-            }
-        } catch (snapshotErr) {
-            try {
-                data = await getLocalPricesByCity_(city);
-                if (data && data.length > 0) {
-                    console.warn('onCityChange: используем локальный snapshot цен для города', city);
-                }
-            } catch (fallbackErr) {
-                console.error('Ошибка fallback загрузки данных по городу:', snapshotErr, fallbackErr);
-            }
+        var priceLoad = await loadCityPricesWithFastFallback_(city);
+        var data = priceLoad.data || [];
+        if (priceLoad.source && priceLoad.source !== 'supabase') {
+            console.warn('onCityChange: источник цен для города ' + city + ': ' + priceLoad.source);
+        } else {
+            console.info('onCityChange: источник цен для города ' + city + ': supabase');
         }
-    }
 
-    if (!data || data.length === 0) {
-        showError("Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
-        return;
-    }
+        if (!data || data.length === 0) {
+            showError("Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
+            return;
+        }
 
         // Сохраняем в кеш
         cityDataCache[city] = data;
-    persistPricesCacheMeta_(Date.now());
-    currentCityData = data;
+        persistPricesCacheMeta_(Date.now());
+        currentCityData = data;
     }
     refreshAssemblySpecialPriceUi_();
 
