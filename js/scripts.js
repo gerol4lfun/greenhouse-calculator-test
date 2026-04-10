@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v302"; // v302: refresh bundled local prices snapshot
+const APP_VERSION = "v303"; // v303: prefer canonical delivery_calendar city groups
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1992,16 +1992,55 @@ function normalizeDeliveryCalendarRawStatus_(rawStatus) {
     return '';
 }
 
+function normalizeDeliveryCalendarGroupKey_(value) {
+    var s = cleanDeliveryCityName(value || '').toString().trim().toLowerCase().replace(/ё/g, 'е');
+    s = s.replace(/^(г\.\s*|город\s+)/, '').trim();
+    if (!s) return '';
+    if (/^москва\s+и\s+м\.?о\.?$/.test(s) || s.indexOf('московская область') !== -1) return 'москва и мо';
+    if (s === 'москва' || s === 'мск' || s === 'msk') return 'москва';
+    if (/^санкт-петербург\s+и\s+(обл\.?|ло)$/.test(s) || s === 'спб и ло' || s.indexOf('ленинградская область') !== -1) return 'санкт-петербург';
+    return normalizeCityName(s);
+}
+
+function getPreferredDeliveryCalendarGroupKey_(cityRaw, fullAddr, groupedRows) {
+    var rawKey = normalizeDeliveryCalendarGroupKey_(cityRaw);
+    var addrKey = normalizeDeliveryCalendarGroupKey_(fullAddr);
+    if ((rawKey === 'москва и мо' || rawKey === 'москва' || addrKey === 'москва и мо') && groupedRows && groupedRows['москва и мо']) return 'москва и мо';
+    if (rawKey && groupedRows && groupedRows[rawKey]) return rawKey;
+    if (addrKey && groupedRows && groupedRows[addrKey]) return addrKey;
+    return rawKey || addrKey || '';
+}
+
+function dedupeDeliveryCalendarRowsByLatest_(rows) {
+    var byDate = Object.create(null);
+    for (var i = 0; i < (rows || []).length; i++) {
+        var r = rows[i] || {};
+        var iso = normalizeDeliveryCalendarISO(r.delivery_date);
+        if (!iso) continue;
+        var prev = byDate[iso];
+        if (!prev) {
+            byDate[iso] = r;
+            continue;
+        }
+        var prevTs = Date.parse(prev.updated_at || '') || 0;
+        var nextTs = Date.parse(r.updated_at || '') || 0;
+        if (nextTs >= prevTs) byDate[iso] = r;
+    }
+    return Object.keys(byDate).sort().map(function (iso) { return byDate[iso]; });
+}
+
 function buildDeliveryCalendarStateMap_(rows) {
     var stateMap = Object.create(null);
-    for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
+    var safeRows = dedupeDeliveryCalendarRowsByLatest_(rows || []);
+    for (var i = 0; i < safeRows.length; i++) {
+        var r = safeRows[i];
         var iso = normalizeDeliveryCalendarISO(r && r.delivery_date);
         if (!iso) continue;
         stateMap[iso] = {
             withoutAssembly: !!(r && r.available_without_assembly),
             withAssembly: !!(r && r.available_with_assembly),
-            rawStatus: normalizeDeliveryCalendarRawStatus_(r && r.raw_status)
+            rawStatus: normalizeDeliveryCalendarRawStatus_(r && r.raw_status),
+            updatedAt: r && r.updated_at
         };
     }
     return stateMap;
@@ -2018,7 +2057,7 @@ function getDeliveryCalendarStateByMode_(meta, withAssembly) {
     var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return withAssembly ? 'blocked' : 'only-delivery';
-    if (rs === 'С') return withAssembly ? 'only-assembly' : 'blocked';
+    if (rs === 'С') return withAssembly ? 'blocked' : 'only-delivery';
     if (rs === 'X' || rs === 'Х') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return withAssembly ? 'blocked' : 'only-delivery';
@@ -2036,7 +2075,7 @@ function getDeliveryCalendarLegendState_(meta) {
     var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return 'only-delivery';
-    if (rs === 'С') return 'only-assembly';
+    if (rs === 'С') return 'only-delivery';
     if (rs === 'X' || rs === 'Х') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
@@ -2261,7 +2300,7 @@ async function loadDeliveryDate(cityName) {
 
     var calendarQueryResolved = false;
     try {
-        var calSelect = 'city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status';
+        var calSelect = 'city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status, updated_at';
         var calResExact = await supabaseClient
             .from('delivery_calendar')
             .select(calSelect)
@@ -2291,21 +2330,21 @@ async function loadDeliveryDate(cityName) {
             dedupRows.push(row);
         }
 
-        var keyList = getDeliveryCalendarLookupKeys_(cityName, cityName);
-        var keySet = Object.create(null);
-        for (var keyIdx = 0; keyIdx < keyList.length; keyIdx++) keySet[keyList[keyIdx]] = true;
+        var groupedRows = Object.create(null);
+        for (var gr = 0; gr < dedupRows.length; gr++) {
+            var grKey = normalizeDeliveryCalendarGroupKey_(dedupRows[gr] && dedupRows[gr].city_name);
+            if (!grKey) continue;
+            if (!groupedRows[grKey]) groupedRows[grKey] = [];
+            groupedRows[grKey].push(dedupRows[gr]);
+        }
 
-        var matchedRows = dedupRows.filter(function(item) {
-            var itemKey = typeof getModalCityGroupKey === 'function'
-                ? getModalCityGroupKey(cleanDeliveryCityName(item.city_name))
-                : normalizeCityName(cleanDeliveryCityName(item.city_name));
-            return !!keySet[itemKey];
-        });
+        var preferredGroupKey = getPreferredDeliveryCalendarGroupKey_(cityName, cityName, groupedRows);
+        var matchedRows = preferredGroupKey && groupedRows[preferredGroupKey] ? groupedRows[preferredGroupKey] : [];
 
         if (matchedRows.length === 0 && exactRows.length > 0) matchedRows = exactRows;
         if (matchedRows.length > 0) {
             calendarQueryResolved = true;
-            applyDeliveryCalendarRows(matchedRows, todayMoscow);
+            applyDeliveryCalendarRows(dedupeDeliveryCalendarRowsByLatest_(matchedRows), todayMoscow);
             return currentDeliveryDate;
         }
 
@@ -6252,7 +6291,7 @@ async function loadDeliveryDatesModalData(initialCity) {
     var calPage = 0;
     var calPageSize = 1000;
     while (true) {
-        var calRes = await supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(calPage * calPageSize, (calPage + 1) * calPageSize - 1);
+        var calRes = await supabaseClient.from('delivery_calendar').select('city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status, updated_at').gte('delivery_date', todayISO).lte('delivery_date', endStr).order('delivery_date').range(calPage * calPageSize, (calPage + 1) * calPageSize - 1);
         if (calRes.error) throw calRes.error;
         if (!calRes.data || calRes.data.length === 0) break;
         calData = calData.concat(calRes.data);
