@@ -45,15 +45,16 @@
   .edit-order-legacy-date-only-notice{margin:0 0 12px;padding:10px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;font-size:.9rem;color:#78350f;line-height:1.35}
   .edit-order-legacy-date-only-notice.hidden{display:none!important}
   </style>
-  <link rel="preload" href="css/styles.css?v=273" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link rel="stylesheet" href="css/styles.css?v=273"></noscript>
+  <link rel="preload" href="css/styles.css?v=274" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="css/styles.css?v=274"></noscript>
   <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
   <script src="js/products-data.js?v=231" defer></script>
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
   <script src="js/instructions-data.js?v=231" defer></script>
-  <script src="js/scripts.js?v=304" defer></script>
+  <script src="js/supplierCatalogResolver.js?v=1" defer></script>
+  <script src="js/scripts.js?v=305" defer></script>
 </head>
   <body>
     <!-- Контейнер для уведомлений -->
@@ -748,6 +749,12 @@
             <option value="" disabled selected>Выберите город</option>
           </select>
         </div>
+        <div class="parameters hidden" id="ug-test-mode-indicator-wrap">
+          <label>Тестовый режим:</label>
+          <div class="parameters__field-group">
+            <span id="ug-test-mode-indicator" class="ug-test-mode-indicator">UG supplier test mode</span>
+          </div>
+        </div>
         <div class="parameters">
           <label for="form">Форма теплицы:</label>
           <select id="form" onchange="onFormChange()">
@@ -806,7 +813,7 @@
         <div class="additional-services">
           <div class="checkbox-group-small">
             <label>
-              <input type="checkbox" id="bracing" onchange="calculateGreenhouseCost()">
+              <input type="checkbox" id="bracing" onchange="handleBracingChange()">
               <span>Брус</span>
             </label>
             <label onclick="handleAssemblyLabelClick(event)">
@@ -818,6 +825,13 @@
               <span>Штыри</span>
             </label>
           </div>
+          <div class="parameters supplier-bracing-type-row hidden" id="supplier-bracing-type-wrap">
+            <label for="supplier-bracing-type">Тип бруса:</label>
+            <select id="supplier-bracing-type" onchange="calculateGreenhouseCost()">
+              <option value="100x100">100×100 мм</option>
+              <option value="100x50" selected>100×50 мм</option>
+            </select>
+          </div>
         </div>
         <!-- Здесь перемещаем кнопки для расчёта и сброса стоимости теплицы -->
         <div class="btn-group">
@@ -826,21 +840,22 @@
           <button class="reset-button" onclick="resetAllFilters()">Сбросить все фильтры</button>
         </div>
         
-        <!-- Блок "Монтаж на фундамент клиента" -->
-<p class="centered-heading"><strong>Монтаж на фундамент клиента</strong></p>
-<!-- Вертикальная группа для чекбоксов монтажа -->
-<div class="checkbox-group-large">
-  <label>
-    <input type="checkbox" id="on-wood" data-price="1500" onchange="calculateGreenhouseCost()">
-    <span>На брус 1.500&nbsp;рублей</span>
-  </label>
-  <label>
-    <input type="checkbox" id="on-concrete" data-price="2000" onchange="calculateGreenhouseCost()">
-    <span>На бетон 2.000&nbsp;рублей</span>
-  </label>
-</div>
+        <div id="legacy-extras-block">
+          <!-- Блок "Монтаж на фундамент клиента" -->
+          <p class="centered-heading"><strong>Монтаж на фундамент клиента</strong></p>
+          <!-- Вертикальная группа для чекбоксов монтажа -->
+          <div class="checkbox-group-large">
+            <label>
+              <input type="checkbox" id="on-wood" data-price="1500" onchange="calculateGreenhouseCost()">
+              <span>На брус 1.500&nbsp;рублей</span>
+            </label>
+            <label>
+              <input type="checkbox" id="on-concrete" data-price="2000" onchange="calculateGreenhouseCost()">
+              <span>На бетон 2.000&nbsp;рублей</span>
+            </label>
+          </div>
         
-<div class="additional-products">
+          <div class="additional-products">
   <h3>Дополнительные товары:</h3>
 
   <!-- 1) Капельный полив механический -->
@@ -1025,14 +1040,15 @@
     </div>
   </div>
   
-  <!-- Кнопка для выбора грядок -->
-  <div class="beds-button-container">
-    <button class="beds-button" onclick="showBedsModal()">
-      <span class="beds-icon"><img src="icons/plant.png" alt="" class="icon-img-btn"></span>
-      <span class="beds-button-text">Добавить грядки</span>
-      <span class="beds-count" id="beds-count-badge" style="display: none;">0</span>
-    </button>
-  </div>
+          <!-- Кнопка для выбора грядок -->
+          <div class="beds-button-container">
+            <button class="beds-button" onclick="showBedsModal()">
+              <span class="beds-icon"><img src="icons/plant.png" alt="" class="icon-img-btn"></span>
+              <span class="beds-button-text">Добавить грядки</span>
+              <span class="beds-count" id="beds-count-badge" style="display: none;">0</span>
+            </button>
+          </div>
+        </div>
   </div>
 
       <!-- Блок1 коммерческого предложения -->

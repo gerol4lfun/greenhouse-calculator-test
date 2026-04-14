@@ -399,6 +399,19 @@ label {
   flex-shrink: 0;
 }
 
+.ug-test-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff4db;
+  border: 1px solid #f3c97a;
+  color: #8a5a00;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 /* Label с иконкой внутри */
 .label-with-icon {
   display: flex;
@@ -463,6 +476,20 @@ select option {
   padding: 20px;
   border-radius: 8px;
   margin-top: 15px;
+}
+
+.supplier-bracing-type-row {
+  margin-top: 10px;
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.supplier-bracing-type-row label {
+  margin-bottom: 0;
+}
+
+.supplier-bracing-type-row select {
+  min-height: 48px;
 }
 
 .additional-services p,

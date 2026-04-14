@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v304"; // v304: canonicalize delivery calendar region aliases
+const APP_VERSION = "v305"; // v305: UG supplier test mode loader for Moscow/MO under admin flag
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -350,6 +350,59 @@ const ADMIN_KEY = 'admin_access_granted';
 
 // Временно отключено: админка требует policy на users. После безопасных admin RPC — поставить false.
 const ADMIN_PANEL_DISABLED = true;
+const UG_SUPPLIER_TEST_URL_PARAM = 'ugSupplier';
+const UG_SUPPLIER_TEST_MODE_STORAGE_KEY = 'ugSupplierTestMode';
+
+function isUgSupplierTestModeRequested_() {
+    try {
+        var search = new URLSearchParams(window.location.search || '');
+        var value = (search.get(UG_SUPPLIER_TEST_URL_PARAM) || '').trim().toLowerCase();
+        return value === '1' || value === 'true' || value === 'on';
+    } catch (e) {
+        return false;
+    }
+}
+
+function persistUgSupplierTestModeFlag_(enabled) {
+    try {
+        if (enabled) {
+            localStorage.setItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY, 'true');
+        } else {
+            localStorage.removeItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY);
+        }
+    } catch (e) {}
+}
+
+function isUgSupplierTestModeActive_(isAdmin) {
+    if (!isAdmin) return false;
+    if (isUgSupplierTestModeRequested_()) return true;
+    try {
+        return localStorage.getItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY) === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function updateUgSupplierTestModeUi_(isAdmin) {
+    var active = isUgSupplierTestModeActive_(isAdmin);
+    persistUgSupplierTestModeFlag_(active);
+
+    var wrap = document.getElementById('ug-test-mode-indicator-wrap');
+    var badge = document.getElementById('ug-test-mode-indicator');
+    if (wrap) {
+        wrap.classList.toggle('hidden', !active);
+    }
+    if (badge) {
+        badge.textContent = active
+            ? 'UG supplier test mode: armed'
+            : 'UG supplier test mode: off';
+    }
+    try {
+        document.body.setAttribute('data-ug-supplier-test-mode', active ? 'on' : 'off');
+    } catch (e) {}
+    window.__UG_SUPPLIER_TEST_MODE__ = active;
+    return active;
+}
 
 // Приоритеты форм (чем меньше число, тем выше в списке)
 const formPriority = {
@@ -923,6 +976,218 @@ function getFormCategory(formName) {
     }
 }
 
+function isAdminSession_() {
+    try {
+        var savedLogin = localStorage.getItem('savedLogin');
+        return !!(savedLogin && savedLogin.trim().toLowerCase() === 'admin');
+    } catch (e) {
+        return false;
+    }
+}
+
+function isSupplierCatalogItem_(item) {
+    return !!(item && (item._source === 'supplier_catalog' || (item.supplier_key && item.catalog_key)));
+}
+
+function getCatalogItemFormCategory_(item) {
+    if (typeof window !== 'undefined' && window.SupplierCatalogResolver && typeof window.SupplierCatalogResolver.resolveCatalogFormCategory === 'function') {
+        return window.SupplierCatalogResolver.resolveCatalogFormCategory(item, getFormCategory);
+    }
+    if (item && isFormCategoryValid(item.form_category)) return item.form_category;
+    return getFormCategory(item && item.form_name ? item.form_name : '');
+}
+
+function parseCatalogItemArcStep_(item) {
+    if (!item) return NaN;
+    var numericArcStep = parseFloat(item.arc_step_m);
+    if (Number.isFinite(numericArcStep)) return numericArcStep;
+    var text = String(item.arc_step_text || '').trim().toLowerCase();
+    if (text === '1 м' || text === '1м') return 1;
+    if (text === '65 см' || text === '65см') return 0.65;
+    return NaN;
+}
+
+function matchesCatalogItemArcStep_(item, arcStep) {
+    if (!isSupplierCatalogItem_(item)) return true;
+    var itemArcStep = parseCatalogItemArcStep_(item);
+    if (!Number.isFinite(itemArcStep) || !Number.isFinite(arcStep)) return true;
+    return Math.abs(itemArcStep - arcStep) < 0.001;
+}
+
+function normalizeFrameDisplay_(desc) {
+    if (!desc) return '';
+    var clean = String(desc)
+        .replace(/двойная\s*/gi, '')
+        .replace(/оцинкованная труба/gi, '')
+        .replace(/мм/gi, '')
+        .trim()
+        .replace(/\s*\+\s*/g, '+');
+    if (clean.indexOf('+') !== -1) return clean;
+    var m = clean.match(/(20х20|25х25|40х20|40х40)/gi);
+    return m ? m.join(',') : clean;
+}
+
+function matchesFrameDisplayForSelection_(item, selectedFrame) {
+    var itemFrame = normalizeString(normalizeFrameDisplay_(item && item.frame_description));
+    var selected = normalizeString(selectedFrame || '');
+    if (!itemFrame || !selected) return false;
+    return itemFrame === selected || itemFrame.includes(selected) || selected.includes(itemFrame);
+}
+
+function shouldUseSupplierArcStepUiMode_() {
+    try {
+        var cityEl = document.getElementById('city');
+        var city = cityEl ? (cityEl.value || '').trim() : '';
+        if (!shouldUseUgSupplierCatalogForCity_(city)) return false;
+        return Array.isArray(currentCityData) && currentCityData.some(function (item) { return isSupplierCatalogItem_(item); });
+    } catch (e) {
+        return false;
+    }
+}
+
+const UG_SUPPLIER_BRACING_PRICES_BY_TYPE = {
+    '100x100': { 4: 5320, 6: 6840, 8: 8360, 10: 9880 },
+    '100x50': { 4: 3500, 6: 4500, 8: 5500, 10: 6500 }
+};
+
+const UG_SUPPLIER_DELIVERY_MOSCOW_CENTER = [55.751244, 37.618423];
+const UG_SUPPLIER_DELIVERY_MKAD_RADIUS_KM = 17.35;
+const UG_SUPPLIER_DELIVERY_INCLUDED_KM = 40;
+const UG_SUPPLIER_DELIVERY_MAX_KM = 250;
+const UG_SUPPLIER_DELIVERY_BASE_PRICE = 2000;
+const UG_SUPPLIER_DELIVERY_EXTRA_PRICE_PER_KM = 50;
+
+const UG_SUPPLIER_STAKES_BY_LENGTH = {
+    quantity_by_length: { 4: 10, 6: 12, 8: 16, 10: 20 },
+    price_by_length: { 4: 1800, 6: 2160, 8: 2880, 10: 3600 },
+    price_per_unit: 180
+};
+
+function shouldUseSupplierBracingTypeUi_() {
+    return shouldUseSupplierArcStepUiMode_();
+}
+
+function getSelectedSupplierBracingType_() {
+    var select = document.getElementById('supplier-bracing-type');
+    return select ? String(select.value || '100x50').trim() : '100x50';
+}
+
+function getSupplierBracingLabel_(type) {
+    if (String(type || '').trim() === '100x50') return '100×50 мм';
+    return '100×100 мм';
+}
+
+function getSupplierBracingCost_(length, type) {
+    var normalizedType = String(type || '').trim();
+    var prices = UG_SUPPLIER_BRACING_PRICES_BY_TYPE[normalizedType];
+    if (!prices) return null;
+    var normalizedLength = parseFloat(length);
+    if (!Number.isFinite(normalizedLength)) return null;
+    return prices[normalizedLength] != null ? prices[normalizedLength] : null;
+}
+
+function getSupplierStakesData_(length) {
+    var normalizedLength = parseFloat(length);
+    if (!Number.isFinite(normalizedLength)) return null;
+    var qty = UG_SUPPLIER_STAKES_BY_LENGTH.quantity_by_length[normalizedLength];
+    var price = UG_SUPPLIER_STAKES_BY_LENGTH.price_by_length[normalizedLength];
+    if (qty == null || price == null) return null;
+    return { quantity: qty, totalPrice: price, pricePerUnit: UG_SUPPLIER_STAKES_BY_LENGTH.price_per_unit };
+}
+
+function refreshSupplierBracingTypeUi_() {
+    var wrap = document.getElementById('supplier-bracing-type-wrap');
+    var select = document.getElementById('supplier-bracing-type');
+    var bracingCheckbox = document.getElementById('bracing');
+    if (!wrap || !select || !bracingCheckbox) return;
+
+    if (shouldUseSupplierBracingTypeUi_() && bracingCheckbox.checked) {
+        wrap.classList.remove('hidden');
+        wrap.style.display = '';
+    } else {
+        wrap.classList.add('hidden');
+        wrap.style.display = 'none';
+        select.value = '100x50';
+    }
+}
+
+function resetLegacyExtrasForSupplier_() {
+    var onWood = document.getElementById('on-wood');
+    if (onWood) onWood.checked = false;
+    var onConcrete = document.getElementById('on-concrete');
+    if (onConcrete) onConcrete.checked = false;
+
+    var additionalProductsWrap = document.querySelector('.additional-products');
+    if (additionalProductsWrap) {
+        var selects = additionalProductsWrap.querySelectorAll('select');
+        for (var i = 0; i < selects.length; i++) {
+            selects[i].value = '0';
+        }
+    }
+
+    localStorage.removeItem('selectedGifts');
+    var giftSelects = document.querySelectorAll('.gift-select');
+    for (var j = 0; j < giftSelects.length; j++) {
+        giftSelects[j].value = '';
+    }
+    var giftsBlock = document.getElementById('gifts-block');
+    if (giftsBlock) giftsBlock.style.display = 'none';
+    var giftsInfo = document.getElementById('gifts-info');
+    if (giftsInfo) giftsInfo.innerHTML = '';
+    var giftsSelection = document.getElementById('gifts-selection');
+    if (giftsSelection) giftsSelection.innerHTML = '';
+
+    selectedBeds = {};
+    bedsAssemblyEnabled = false;
+    localStorage.setItem('selectedBeds', JSON.stringify({}));
+    localStorage.setItem('bedsAssemblyEnabled', 'false');
+    if (typeof updateBedsCounter === 'function') updateBedsCounter();
+    if (typeof updateBedsClearButton === 'function') updateBedsClearButton();
+    var bedsAssemblyCheckbox = document.getElementById('beds-assembly-checkbox');
+    if (bedsAssemblyCheckbox) bedsAssemblyCheckbox.checked = false;
+    var bedsCountBadge = document.getElementById('beds-count-badge');
+    if (bedsCountBadge) bedsCountBadge.style.display = 'none';
+}
+
+function refreshSupplierLegacyExtrasVisibility_() {
+    var block = document.getElementById('legacy-extras-block');
+    if (!block) return;
+    var cityEl = document.getElementById('city');
+    var city = cityEl ? (cityEl.value || '').trim() : '';
+    var shouldHide = shouldUseUgSupplierCatalogForCity_(city);
+    if (shouldHide) {
+        resetLegacyExtrasForSupplier_();
+        block.style.display = 'none';
+    } else {
+        block.style.display = '';
+    }
+}
+
+function shouldUseUgSupplierCatalogForCity_(cityName) {
+    if (!window.__UG_SUPPLIER_TEST_MODE__ || !isAdminSession_()) return false;
+    if (typeof window !== 'undefined' && window.SupplierCatalogResolver && typeof window.SupplierCatalogResolver.isMoscowSupplierCatalogCity === 'function') {
+        return window.SupplierCatalogResolver.isMoscowSupplierCatalogCity(cityName || '');
+    }
+    var normalizedCity = normalizeCityName(cityName || '');
+    return normalizedCity === 'москва' || normalizedCity === 'московская область';
+}
+
+function shouldUseUgSupplierDeliveryMode_() {
+    try {
+        var cityEl = document.getElementById('city');
+        var city = cityEl ? (cityEl.value || '').trim() : '';
+        if (shouldUseUgSupplierCatalogForCity_(city)) return true;
+        return Array.isArray(currentCityData) && currentCityData.some(function (item) { return isSupplierCatalogItem_(item); });
+    } catch (e) {
+        return false;
+    }
+}
+
+function getCityDataCacheKey_(cityName) {
+    var city = (cityName || '').trim();
+    return city + '::' + (shouldUseUgSupplierCatalogForCity_(city) ? 'ug_supplier' : 'default');
+}
+
 /** Является ли строка валидной категорией каталога (для prefill existing order). */
 function isFormCategoryValid(form) {
     if (!form || typeof form !== "string") return false;
@@ -1490,6 +1755,35 @@ async function loadCityPricesFromSupabase_(city) {
     return response.data || [];
 }
 
+async function loadUgSupplierCatalogFromSupabase_() {
+    if (typeof window === 'undefined' || !window.SupplierCatalogResolver || typeof window.SupplierCatalogResolver.adaptSupplierCatalogRows !== 'function') {
+        throw new Error('SupplierCatalogResolver is unavailable');
+    }
+
+    let compatResponse = await supabaseClient
+        .from('supplier_greenhouse_prices_compat')
+        .select('compat_key, supplier_key, catalog_key, city_name, form_name, frame_description, polycarbonate_type, width, length, price, snow_load, height, horizontal_ties, equipment, assembly_price, fastening_display, source_block_row, source_price_row, source_polycarbonate_text')
+        .eq('supplier_key', 'ug')
+        .eq('catalog_key', 'ug_moscow_preview')
+        .eq('city_name', 'Москва и МО')
+        .limit(5000);
+    if (compatResponse.error) throw compatResponse.error;
+
+    let metaResponse = await supabaseClient
+        .from('supplier_greenhouse_prices_meta')
+        .select('meta_key, compat_key, supplier_key, catalog_key, city_scope, source_sheet, source_block_row, source_price_row, source_model_name, model_title, form_text, form_category, width_text, width_m, width_variants_json, length_m, height_text, height_m, frame_text, frame_profiles_json, frame_normalized_key, frame_is_double, arc_step_text, arc_step_m, fastening_text, ground_hooks_text, horizontal_ties_text, equipment_text, polycarbonate_text, greenhouse_price_rub, assembly_price_rub, price_components_json, source_file_name, import_batch_key')
+        .eq('supplier_key', 'ug')
+        .eq('catalog_key', 'ug_moscow_preview')
+        .eq('city_scope', 'Москва и МО')
+        .limit(5000);
+    if (metaResponse.error) throw metaResponse.error;
+
+    return window.SupplierCatalogResolver.adaptSupplierCatalogRows(
+        compatResponse.data || [],
+        metaResponse.data || []
+    );
+}
+
 async function loadCityPricesWithFastFallback_(city) {
     var data = [];
     try {
@@ -1526,6 +1820,25 @@ async function loadCityPricesWithFastFallback_(city) {
     }
 
     return { data: [], source: 'none' };
+}
+
+async function loadCityCatalogWithSafeTestMode_(city) {
+    if (shouldUseUgSupplierCatalogForCity_(city)) {
+        try {
+            var supplierData = await withTimeout_(
+                loadUgSupplierCatalogFromSupabase_(),
+                PRICE_CITY_SUPABASE_TIMEOUT_MS,
+                'UG supplier catalog'
+            );
+            if (supplierData && supplierData.length > 0) {
+                return { data: supplierData, source: 'ug_supplier' };
+            }
+            console.warn('UG supplier catalog is empty, fallback to default prices for city', city);
+        } catch (ugErr) {
+            console.warn('UG supplier catalog unavailable, fallback to default prices for city', city, ugErr);
+        }
+    }
+    return loadCityPricesWithFastFallback_(city);
 }
 
 async function getEmergencyCities_() {
@@ -2648,16 +2961,19 @@ async function onCityChange() {
         currentDeliveryRestrictions = null;
         updateDeliveryDateDisplay();
         refreshAssemblySpecialPriceUi_();
+        refreshSupplierBracingTypeUi_();
+        refreshSupplierLegacyExtrasVisibility_();
         return;
     }
 
     ensureFreshPricesCaches_('city_change');
+    var cityCacheKey = getCityDataCacheKey_(city);
 
     // Проверяем кеш
-    if (cityDataCache[city]) {
-        currentCityData = cityDataCache[city];
+    if (cityDataCache[cityCacheKey]) {
+        currentCityData = cityDataCache[cityCacheKey];
     } else {
-        var priceLoad = await loadCityPricesWithFastFallback_(city);
+        var priceLoad = await loadCityCatalogWithSafeTestMode_(city);
         var data = priceLoad.data || [];
         if (priceLoad.source && priceLoad.source !== 'supabase') {
             console.warn('onCityChange: источник цен для города ' + city + ': ' + priceLoad.source);
@@ -2671,11 +2987,13 @@ async function onCityChange() {
         }
 
         // Сохраняем в кеш
-        cityDataCache[city] = data;
+        cityDataCache[cityCacheKey] = data;
         persistPricesCacheMeta_(Date.now());
         currentCityData = data;
     }
     refreshAssemblySpecialPriceUi_();
+    refreshSupplierBracingTypeUi_();
+    refreshSupplierLegacyExtrasVisibility_();
 
     // 1. Обновляем выпадающий список поликарбоната
     const polycarbonateDropdown = document.getElementById('polycarbonate');
@@ -2711,7 +3029,7 @@ async function onCityChange() {
     // 2. Фильтруем формы на основе availableForms
     const formCategories = Object.keys(availableForms);
     const formsAvailable = formCategories.filter(formType =>
-        currentCityData.some(item => availableForms[formType].some(form => normalizeString(item.form_name) === normalizeString(form.name)))
+        currentCityData.some(item => getCatalogItemFormCategory_(item) === formType)
     );
 
     // Сортируем формы по приоритету
@@ -2885,60 +3203,35 @@ async function getCityDataForModal(cityName) {
         ensureFreshPricesCaches_('modal_city_data');
         var city = (cityName || '').trim();
         if (city) {
-            if (cityDataCache[city]) return { data: cityDataCache[city], usedFallback: false };
-            var res = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', city).limit(30000);
-            if (!res.error && res.data && res.data.length > 0) {
-                cityDataCache[city] = res.data;
+            var cityCacheKey = getCityDataCacheKey_(city);
+            if (cityDataCache[cityCacheKey]) return { data: cityDataCache[cityCacheKey], usedFallback: false };
+            var runtimeLoad = await loadCityCatalogWithSafeTestMode_(city);
+            if (runtimeLoad.data && runtimeLoad.data.length > 0) {
+                cityDataCache[cityCacheKey] = runtimeLoad.data;
                 persistPricesCacheMeta_(Date.now());
-                return { data: res.data, usedFallback: false };
-            }
-            try {
-                var emergencyRows = await getEmergencyPricesByCity_(city);
-                if (emergencyRows && emergencyRows.length > 0) {
-                    cityDataCache[city] = emergencyRows;
-                    persistPricesCacheMeta_(Date.now());
-                    return { data: emergencyRows, usedFallback: false };
-                }
-            } catch (eEmergencyCity) {}
-            var localRows = await getLocalPricesByCity_(city);
-            if (localRows && localRows.length > 0) {
-                cityDataCache[city] = localRows;
-                persistPricesCacheMeta_(Date.now());
-                return { data: localRows, usedFallback: false };
+                return { data: runtimeLoad.data, usedFallback: false };
             }
         }
         var toTry = EDIT_ORDER_FALLBACK_CITIES.filter(function (c) { return c && c !== city; });
         for (var j = 0; j < toTry.length; j++) {
             var fallbackCity = toTry[j];
-            if (cityDataCache[fallbackCity]) return { data: cityDataCache[fallbackCity], usedFallback: true };
-            var resF = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', fallbackCity).limit(30000);
-            if (!resF.error && resF.data && resF.data.length > 0) {
-                cityDataCache[fallbackCity] = resF.data;
+            var fallbackCacheKey = getCityDataCacheKey_(fallbackCity);
+            if (cityDataCache[fallbackCacheKey]) return { data: cityDataCache[fallbackCacheKey], usedFallback: true };
+            var fallbackLoad = await loadCityCatalogWithSafeTestMode_(fallbackCity);
+            if (fallbackLoad.data && fallbackLoad.data.length > 0) {
+                cityDataCache[fallbackCacheKey] = fallbackLoad.data;
                 persistPricesCacheMeta_(Date.now());
-                return { data: resF.data, usedFallback: true };
-            }
-            try {
-                var emergencyFallbackRows = await getEmergencyPricesByCity_(fallbackCity);
-                if (emergencyFallbackRows && emergencyFallbackRows.length > 0) {
-                    cityDataCache[fallbackCity] = emergencyFallbackRows;
-                    persistPricesCacheMeta_(Date.now());
-                    return { data: emergencyFallbackRows, usedFallback: true };
-                }
-            } catch (eEmergencyFallback) {}
-            var localFallbackRows = await getLocalPricesByCity_(fallbackCity);
-            if (localFallbackRows && localFallbackRows.length > 0) {
-                cityDataCache[fallbackCity] = localFallbackRows;
-                persistPricesCacheMeta_(Date.now());
-                return { data: localFallbackRows, usedFallback: true };
+                return { data: fallbackLoad.data, usedFallback: true };
             }
         }
         var anyRes = await supabaseClient.from('prices').select('city_name').limit(1);
         if (anyRes.data && anyRes.data[0] && anyRes.data[0].city_name) {
             var firstCity = anyRes.data[0].city_name;
-            if (cityDataCache[firstCity]) return { data: cityDataCache[firstCity], usedFallback: true };
+            var firstCityCacheKey = getCityDataCacheKey_(firstCity);
+            if (cityDataCache[firstCityCacheKey]) return { data: cityDataCache[firstCityCacheKey], usedFallback: true };
             var resAny = await supabaseClient.from('prices').select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment').eq('city_name', firstCity).limit(30000);
             if (!resAny.error && resAny.data && resAny.data.length > 0) {
-                cityDataCache[firstCity] = resAny.data;
+                cityDataCache[firstCityCacheKey] = resAny.data;
                 persistPricesCacheMeta_(Date.now());
                 return { data: resAny.data, usedFallback: true };
             }
@@ -2947,10 +3240,11 @@ async function getCityDataForModal(cityName) {
             var emergencyCities = await getEmergencyCities_();
             if (emergencyCities && emergencyCities[0]) {
                 var firstEmergencyCity = emergencyCities[0];
-                if (cityDataCache[firstEmergencyCity]) return { data: cityDataCache[firstEmergencyCity], usedFallback: true };
+                var firstEmergencyCacheKey = getCityDataCacheKey_(firstEmergencyCity);
+                if (cityDataCache[firstEmergencyCacheKey]) return { data: cityDataCache[firstEmergencyCacheKey], usedFallback: true };
                 var emergencyAnyRows = await getEmergencyPricesByCity_(firstEmergencyCity);
                 if (emergencyAnyRows && emergencyAnyRows.length > 0) {
-                    cityDataCache[firstEmergencyCity] = emergencyAnyRows;
+                    cityDataCache[firstEmergencyCacheKey] = emergencyAnyRows;
                     persistPricesCacheMeta_(Date.now());
                     return { data: emergencyAnyRows, usedFallback: true };
                 }
@@ -2959,10 +3253,11 @@ async function getCityDataForModal(cityName) {
         var localCities = await getLocalCities_();
         if (localCities && localCities[0]) {
             var firstLocalCity = localCities[0];
-            if (cityDataCache[firstLocalCity]) return { data: cityDataCache[firstLocalCity], usedFallback: true };
+            var firstLocalCacheKey = getCityDataCacheKey_(firstLocalCity);
+            if (cityDataCache[firstLocalCacheKey]) return { data: cityDataCache[firstLocalCacheKey], usedFallback: true };
             var localAnyRows = await getLocalPricesByCity_(firstLocalCity);
             if (localAnyRows && localAnyRows.length > 0) {
-                cityDataCache[firstLocalCity] = localAnyRows;
+                cityDataCache[firstLocalCacheKey] = localAnyRows;
                 persistPricesCacheMeta_(Date.now());
                 return { data: localAnyRows, usedFallback: true };
             }
@@ -3023,7 +3318,7 @@ function onFormChange() {
 
     // Фильтруем данные по выбранной форме на основе availableForms
     const filteredData = currentCityData.filter(item => {
-        const category = getFormCategory(item.form_name);
+        const category = getCatalogItemFormCategory_(item);
         return category === form;
     });
 
@@ -3064,7 +3359,7 @@ function onWidthChange() {
 
     // Фильтруем данные по форме и ширине
     const filteredData = currentCityData.filter(item => {
-        const category = getFormCategory(item.form_name);
+        const category = getCatalogItemFormCategory_(item);
         return category === form && parseFloat(item.width) === width;
     });
 
@@ -3132,7 +3427,7 @@ function onLengthChange() {
 
     // Фильтруем данные по форме, ширине и длине
     const filteredData = currentCityData.filter(item => {
-        const category = getFormCategory(item.form_name);
+        const category = getCatalogItemFormCategory_(item);
         return category === form && parseFloat(item.width) === width && parseFloat(item.length) === length;
     });
 
@@ -3143,37 +3438,10 @@ function onLengthChange() {
     }
 
     // Задаём порядок сортировки каркасов
-    const frameOrder = ["20х20", "40х20", "20х20+20х20", "40х20+20х20", "40х20+40х20"];
+    const frameOrder = ["20х20", "25х25", "40х20", "20х20+20х20", "40х20+20х20", "40х20+40х20"];
 
     // Получаем уникальные значения каркаса
-    let uniqueFrames = [...new Set(filteredData.map(item => {
-        // Отладочное логирование: вывод названия и исходного описания
-
-        // Нормализуем описание:
-        // 1. Удаляем слово "двойная" (с любыми пробелами после него)
-        // 2. Удаляем "оцинкованная труба" (без учета регистра)
-        // 3. Удаляем символы "мм"
-        let cleanDescription = item.frame_description
-            .replace(/двойная\s*/gi, "")  // добавлено удаление слова "двойная"
-            .replace(/оцинкованная труба/gi, "")
-            .replace(/мм/gi, "")
-            .trim();
-
-        // Убираем лишние пробелы вокруг знака "+"
-        cleanDescription = cleanDescription.replace(/\s*\+\s*/g, "+");
-
-        // Если строка содержит "+", значит, это составной каркас – возвращаем её целиком
-        if (cleanDescription.includes('+')) {
-            return cleanDescription;
-        }
-
-        // Если нет знака "+", ищем простое совпадение для "20х20" или "40х20"
-        const matches = cleanDescription.match(/(20х20|40х20)/gi);
-        if (matches) {
-        }
-
-        return matches ? matches.join(",") : cleanDescription;
-    }))];
+    let uniqueFrames = [...new Set(filteredData.map(item => normalizeFrameDisplay_(item.frame_description)))];
 
     uniqueFrames = [...new Set(uniqueFrames.flatMap(f => f.split(",")))];
 
@@ -3194,8 +3462,17 @@ function onLengthChange() {
         frameSelect.innerHTML += `<option value="${frame.trim()}">${frame.trim()}</option>`;
     });
 
-    // Сброс шага дуг
-    resetDropdown('arcStep', 'Выберите шаг');
+    if (uniqueFrames.length === 1) {
+        frameSelect.value = uniqueFrames[0].trim();
+        if (shouldUseSupplierArcStepUiMode_()) {
+            populateArcStepDropdownForCurrentSelection_();
+        } else {
+            resetDropdown('arcStep', 'Выберите шаг');
+        }
+    } else {
+        // Сброс шага дуг
+        resetDropdown('arcStep', 'Выберите шаг');
+    }
 
     // Сброс дополнительных опций
     resetAdditionalOptions();
@@ -3204,11 +3481,63 @@ function onLengthChange() {
     updateGiftsBlockPreview();
 }
 
+function populateArcStepDropdownForCurrentSelection_() {
+    if (!shouldUseSupplierArcStepUiMode_()) {
+        resetDropdown('arcStep', 'Выберите шаг');
+        return;
+    }
+
+    const form = document.getElementById("form") ? document.getElementById("form").value : '';
+    const width = parseFloat(document.getElementById("width") ? document.getElementById("width").value : NaN);
+    const length = parseFloat(document.getElementById("length") ? document.getElementById("length").value : NaN);
+    const frame = document.getElementById("frame") ? document.getElementById("frame").value.trim() : '';
+    const arcStepSelect = document.getElementById("arcStep");
+    if (!arcStepSelect) return;
+
+    arcStepSelect.innerHTML = '<option value="" disabled selected>Выберите шаг</option>';
+
+    if (!form || isNaN(width) || isNaN(length) || !frame) {
+        return;
+    }
+
+    const filteredData = currentCityData.filter(item => {
+        return (
+            getCatalogItemFormCategory_(item) === form &&
+            parseFloat(item.width) === width &&
+            parseFloat(item.length) === length &&
+            matchesFrameDisplayForSelection_(item, frame)
+        );
+    });
+
+    const uniqueArcSteps = [...new Set(
+        filteredData
+            .map(item => parseCatalogItemArcStep_(item))
+            .filter(step => Number.isFinite(step))
+    )].sort((a, b) => a - b);
+
+    uniqueArcSteps.forEach(step => {
+        const option = document.createElement('option');
+        option.value = String(step);
+        option.textContent = `${formatPrice(step)} м`;
+        arcStepSelect.appendChild(option);
+    });
+
+    if (uniqueArcSteps.length === 1) {
+        arcStepSelect.value = String(uniqueArcSteps[0]);
+    } else if (uniqueArcSteps.includes(1)) {
+        arcStepSelect.value = '1';
+    } else if (uniqueArcSteps.length > 0) {
+        arcStepSelect.value = String(uniqueArcSteps[0]);
+    }
+}
+
 // Функция обработки изменения каркаса
 function onFrameChange() {
-    // Здесь вы можете добавить дополнительную логику, если требуется
-    // Например, обновление шага дуг на основе выбранного каркаса
-    resetDropdown('arcStep', 'Выберите шаг');
+    if (shouldUseSupplierArcStepUiMode_()) {
+        populateArcStepDropdownForCurrentSelection_();
+    } else {
+        resetDropdown('arcStep', 'Выберите шаг');
+    }
     resetAdditionalOptions();
     
     // Предварительное обновление блока подарков (если все параметры выбраны)
@@ -3220,7 +3549,12 @@ function resetDropdown(elementId, placeholderText) {
     const dropdown = document.getElementById(elementId);
     if (dropdown) {
         if (elementId === 'arcStep') {
-            dropdown.value = "1"; // Устанавливаем значение по умолчанию
+            if (shouldUseSupplierArcStepUiMode_()) {
+                dropdown.innerHTML = '<option value="" disabled selected>Выберите шаг</option>';
+            } else {
+                dropdown.innerHTML = '<option value="1" selected>1 м</option><option value="0.65">0.65 м</option>';
+                dropdown.value = '1';
+            }
         } else if (elementId === 'polycarbonate') {
             // Для поликарбоната устанавливаем "Стандарт 4 мм", если доступно
             const options = dropdown.options;
@@ -3283,7 +3617,12 @@ function resetAdditionalOptions() {
     if (assemblyCheckbox) {
         assemblyCheckbox.checked = false;
     }
+    const supplierBracingSelect = document.getElementById('supplier-bracing-type');
+    if (supplierBracingSelect) {
+        supplierBracingSelect.value = '100x50';
+    }
     refreshAssemblySpecialPriceUi_();
+    refreshSupplierBracingTypeUi_();
 }
 
 // Функция получения категории сборки на основе формы и ширины
@@ -3330,13 +3669,15 @@ function calculateGreenhousePriceCore(cityData, params) {
     var isWithoutPolycarbonate = !!opts.isWithoutPolycarbonate;
     var address = opts.address || '';
     var useAssemblySpecialPrice = !!opts.assemblySpecialPrice;
+    var supplierBracingType = opts.supplierBracingType || '100x100';
 
     var selectedEntry = cityData.find(function (item) {
         return (
-            getFormCategory(item.form_name) === form &&
+            getCatalogItemFormCategory_(item) === form &&
             parseFloat(item.width) === width &&
             parseFloat(item.length) === length &&
-            normalizeString((item.frame_description || '').replace(/двойная\s*/gi, '')).includes(normalizeString(frame)) &&
+            matchesCatalogItemArcStep_(item, arcStep) &&
+            matchesFrameDisplayForSelection_(item, frame) &&
             normalizeString(item.polycarbonate_type) === normalizeString(polycarbonate)
         );
     });
@@ -3347,18 +3688,18 @@ function calculateGreenhousePriceCore(cityData, params) {
 
     var basePrice = selectedEntry.price;
     var basePriceText = 'Стоимость с учетом скидки - ' + formatPrice(basePrice) + ' рублей';
-    var originalSnowLoadText = selectedEntry.snow_load || '0 кг/м2';
+    var originalSnowLoadText = selectedEntry.snow_load || '';
     var rawSnowLoad = originalSnowLoadText.match(/\d+(\.\d+)?/);
-    var snowLoadNum = rawSnowLoad ? parseFloat(rawSnowLoad[0]) : 0;
-    if (isNaN(snowLoadNum)) snowLoadNum = 0;
+    var snowLoadNum = rawSnowLoad ? parseFloat(rawSnowLoad[0]) : NaN;
+    if (isNaN(snowLoadNum)) snowLoadNum = isSupplierCatalogItem_(selectedEntry) ? NaN : 0;
 
-    if (arcStep === 0.65) {
+    if (!isSupplierCatalogItem_(selectedEntry) && arcStep === 0.65) {
         var baseEntry = cityData.find(function (item) {
             return (
-                getFormCategory(item.form_name) === form &&
+                getCatalogItemFormCategory_(item) === form &&
                 parseFloat(item.width) === width &&
                 parseFloat(item.length) === length &&
-                normalizeString(item.frame_description || '').includes(normalizeString(frame)) &&
+                matchesFrameDisplayForSelection_(item, frame) &&
                 (normalizeString(item.polycarbonate_type) === normalizeString('стандарт4мм') ||
                     normalizeString(item.polycarbonate_type) === normalizeString('стандарт 4мм'))
             );
@@ -3370,13 +3711,15 @@ function calculateGreenhousePriceCore(cityData, params) {
         basePrice += 0.25 * basePriceStandard;
         basePrice = Math.ceil(basePrice / 10) * 10;
         basePriceText = 'Стоимость с учетом скидки - ' + formatPrice(basePrice) + ' рублей';
-        snowLoadNum = Math.round(snowLoadNum * 1.25);
+        if (Number.isFinite(snowLoadNum)) {
+            snowLoadNum = Math.round(snowLoadNum * 1.25);
+        }
     }
 
     var polyStr = normalizeString(polycarbonate);
-    if (polyStr === 'люкс4мм' || polyStr === 'люкс4 мм') snowLoadNum = Math.round(snowLoadNum * 1.1);
-    if (polyStr === 'премиум6мм' || polyStr === 'премиум6 мм') snowLoadNum = Math.round(snowLoadNum * 1.2);
-    var snowLoadFinalText = snowLoadNum + ' кг/м2';
+    if (Number.isFinite(snowLoadNum) && (polyStr === 'люкс4мм' || polyStr === 'люкс4 мм')) snowLoadNum = Math.round(snowLoadNum * 1.1);
+    if (Number.isFinite(snowLoadNum) && (polyStr === 'премиум6мм' || polyStr === 'премиум6 мм')) snowLoadNum = Math.round(snowLoadNum * 1.2);
+    var snowLoadFinalText = Number.isFinite(snowLoadNum) ? (snowLoadNum + ' кг/м2') : '';
 
     var assemblyCost = 0;
     var foundationCost = 0;
@@ -3387,41 +3730,68 @@ function calculateGreenhousePriceCore(cityData, params) {
     var additionalProductsText = '';
 
     if (bracingChecked) {
-        var bracingPrice = additionalServicesData['Брус'] && additionalServicesData['Брус'].price_by_length && additionalServicesData['Брус'].price_by_length[length];
+        var bracingPrice = null;
+        var bracingLabel = 'Основание из бруса';
+        if (isSupplierCatalogItem_(selectedEntry)) {
+            bracingPrice = getSupplierBracingCost_(length, supplierBracingType);
+            bracingLabel += ' ' + getSupplierBracingLabel_(supplierBracingType);
+        } else {
+            bracingPrice = additionalServicesData['Брус'] && additionalServicesData['Брус'].price_by_length && additionalServicesData['Брус'].price_by_length[length];
+        }
         if (bracingPrice != null) {
             foundationCost += bracingPrice;
-            foundationText += '\nОснование из бруса - ' + formatPrice(bracingPrice) + ' рублей';
+            foundationText += '\n' + bracingLabel + ' - ' + formatPrice(bracingPrice) + ' рублей';
         } else {
             return { ok: false, error: 'Не найдена стоимость бруса для длины ' + length + ' м.' };
         }
     }
 
     if (groundHooksChecked) {
-        var quantityData = bracingChecked
-            ? (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['with_bracing'])
-            : (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['without_bracing']);
-        var stakesQuantity = quantityData && quantityData[length];
-        if (stakesQuantity != null) {
-            var stakesCost = stakesQuantity * (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].price_per_unit || 0);
-            foundationCost += stakesCost;
-            foundationText += '\nГрунтозацепы ' + stakesQuantity + ' шт - ' + formatPrice(stakesCost) + ' рублей';
+        if (isSupplierCatalogItem_(selectedEntry)) {
+            var supplierStakes = getSupplierStakesData_(length);
+            if (supplierStakes) {
+                foundationCost += supplierStakes.totalPrice;
+                foundationText += '\nГрунтозацепы ' + supplierStakes.quantity + ' шт - ' + formatPrice(supplierStakes.totalPrice) + ' рублей';
+            } else {
+                return { ok: false, error: 'Не найдена стоимость грунтозацепов поставщика для длины ' + length + ' м.' };
+            }
         } else {
-            return { ok: false, error: 'Не найдена информация о количестве штырей для длины ' + length + ' м.' };
+            var quantityData = bracingChecked
+                ? (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['with_bracing'])
+                : (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].quantity_by_length && additionalServicesData['Штыри'].quantity_by_length['without_bracing']);
+            var stakesQuantity = quantityData && quantityData[length];
+            if (stakesQuantity != null) {
+                var stakesCost = stakesQuantity * (additionalServicesData['Штыри'] && additionalServicesData['Штыри'].price_per_unit || 0);
+                foundationCost += stakesCost;
+                foundationText += '\nГрунтозацепы ' + stakesQuantity + ' шт - ' + formatPrice(stakesCost) + ' рублей';
+            } else {
+                return { ok: false, error: 'Не найдена информация о количестве штырей для длины ' + length + ' м.' };
+            }
         }
     }
 
     if (assemblyChecked && !isWithoutPolycarbonate) {
-        var assemblyCategory = getAssemblyCategory(form, width);
-        if (assemblyCategory) {
-            var assemblyCostCalculated = calculateEffectiveAssemblyCost_(form, assemblyCategory, length, city, useAssemblySpecialPrice);
-            if (assemblyCostCalculated > 0) {
-                assemblyCost += assemblyCostCalculated;
-                assemblyText += '\nСборка и установка - ' + formatPrice(assemblyCostCalculated) + ' рублей';
+        if (isSupplierCatalogItem_(selectedEntry)) {
+            var supplierAssemblyCost = parseFloat(selectedEntry.assembly_price);
+            if (Number.isFinite(supplierAssemblyCost) && supplierAssemblyCost > 0) {
+                assemblyCost += supplierAssemblyCost;
+                assemblyText += '\nСборка и установка - ' + formatPrice(supplierAssemblyCost) + ' рублей';
             } else {
-                return { ok: false, error: 'Не найдена стоимость сборки для выбранной комбинации.' };
+                return { ok: false, error: 'Не найдена стоимость сборки поставщика для выбранной комбинации.' };
             }
         } else {
-            return { ok: false, error: 'Категория сборки не определена.' };
+            var assemblyCategory = getAssemblyCategory(form, width);
+            if (assemblyCategory) {
+                var assemblyCostCalculated = calculateEffectiveAssemblyCost_(form, assemblyCategory, length, city, useAssemblySpecialPrice);
+                if (assemblyCostCalculated > 0) {
+                    assemblyCost += assemblyCostCalculated;
+                    assemblyText += '\nСборка и установка - ' + formatPrice(assemblyCostCalculated) + ' рублей';
+                } else {
+                    return { ok: false, error: 'Не найдена стоимость сборки для выбранной комбинации.' };
+                }
+            } else {
+                return { ok: false, error: 'Категория сборки не определена.' };
+            }
         }
     }
 
@@ -3474,6 +3844,7 @@ function calculateGreenhousePriceCore(cityData, params) {
         city: city,
         form: form,
         model: selectedEntry.form_name,
+        formCategory: getCatalogItemFormCategory_(selectedEntry),
         width: width,
         length: length,
         height: selectedEntry.height || '',
@@ -3494,7 +3865,16 @@ function calculateGreenhousePriceCore(cityData, params) {
         bedsAssemblyText: bedsAssemblyText,
         additionalProductsText: additionalProductsText,
         address: address,
-        assemblySpecialPrice: false
+        assemblySpecialPrice: false,
+        supplierKey: selectedEntry.supplier_key || '',
+        catalogKey: selectedEntry.catalog_key || '',
+        compatKey: selectedEntry.compat_key || '',
+        sourceModelName: selectedEntry.source_model_name || selectedEntry.form_name || '',
+        fasteningDisplay: selectedEntry.fastening_display || '',
+        fasteningText: selectedEntry.fastening_text || '',
+        sourcePolycarbonate: selectedEntry.polycarbonate_text || '',
+        sourceFrame: selectedEntry.frame_text || '',
+        assemblyPriceSource: isSupplierCatalogItem_(selectedEntry) ? 'supplier_catalog' : 'legacy_assembly_table'
     };
     return { ok: true, data: result };
 }
@@ -3600,7 +3980,8 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
         bedsAssemblyEnabled: bedsAssemblyEnabled,
         isWithoutPolycarbonate: isWithoutPolycarbonate,
         address: addressEl ? (addressEl.value || '').trim() : '',
-        assemblySpecialPrice: false
+        assemblySpecialPrice: false,
+        supplierBracingType: getSelectedSupplierBracingType_()
     };
 
     var out = await calculateGreenhousePrice(city, form, width, length, frame, polycarbonate, arcStep, options);
@@ -3615,8 +3996,9 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
         data.length = effectiveLength;
     }
     var selectedEntry = currentCityData.find(function (item) {
-        return getFormCategory(item.form_name) === form && parseFloat(item.width) === width &&
-            parseFloat(item.length) === length && normalizeString((item.frame_description || '').replace(/двойная\s*/gi, '')).includes(normalizeString(frame)) &&
+        return getCatalogItemFormCategory_(item) === form && parseFloat(item.width) === width &&
+            parseFloat(item.length) === length && matchesCatalogItemArcStep_(item, arcStep) &&
+            matchesFrameDisplayForSelection_(item, frame) &&
             normalizeString(item.polycarbonate_type) === normalizeString(polycarbonate);
     });
 
@@ -3635,7 +4017,7 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
     if (Object.keys(savedGifts).length > 0) {
         updateCommercialOffersWithGifts(savedGifts);
     }
-    setOfferTab('short');
+    setOfferTab(isSupplierCatalogItem_(selectedEntry) ? 'long' : 'short');
     updateOrderCartUI();
 }
 
@@ -3706,6 +4088,46 @@ async function calculateDeliveryCostFromAddress(address) {
     }
 }
 
+async function calculateUgSupplierDeliveryCostFromAddress(address) {
+    var addr = (address || '').trim();
+    if (!addr) return { ok: false, error: 'Адрес не указан' };
+    if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
+
+    try {
+        var res = await ymaps.geocode(addr, { results: 1 });
+        var geoObject = res.geoObjects.get(0);
+        if (!geoObject) return { ok: false, error: 'Адрес не найден' };
+
+        var coords = geoObject.geometry.getCoordinates();
+        var route = await ymaps.route([UG_SUPPLIER_DELIVERY_MOSCOW_CENTER, coords]);
+        var routeDistanceKm = route.getLength() / 1000;
+        var distanceFromMkadKm = Math.max(routeDistanceKm - UG_SUPPLIER_DELIVERY_MKAD_RADIUS_KM, 0);
+
+        if (distanceFromMkadKm > UG_SUPPLIER_DELIVERY_MAX_KM) {
+            return {
+                ok: false,
+                error: 'Адрес вне зоны доставки поставщика: дальше 250 км от МКАД.'
+            };
+        }
+
+        var cost = UG_SUPPLIER_DELIVERY_BASE_PRICE;
+        if (distanceFromMkadKm > UG_SUPPLIER_DELIVERY_INCLUDED_KM) {
+            cost += (distanceFromMkadKm - UG_SUPPLIER_DELIVERY_INCLUDED_KM) * UG_SUPPLIER_DELIVERY_EXTRA_PRICE_PER_KM;
+        }
+
+        return {
+            ok: true,
+            cost: Math.ceil(cost / 50) * 50,
+            route: route,
+            approxDistanceFromMkadKm: distanceFromMkadKm,
+            routeDistanceFromCenterKm: routeDistanceKm,
+            cityName: 'Москва'
+        };
+    } catch (e) {
+        return { ok: false, error: (e && e.message) ? e.message : 'Ошибка при расчёте' };
+    }
+}
+
 async function calculateDelivery() {
     if (isCalculatingDelivery) return;
     var addressInput = document.getElementById('address');
@@ -3716,40 +4138,68 @@ async function calculateDelivery() {
     }
     isCalculatingDelivery = true;
     try {
-        var result = await calculateDeliveryCostFromAddress(address);
+        var useUgSupplierDelivery = shouldUseUgSupplierDeliveryMode_();
+        var result = useUgSupplierDelivery
+            ? await calculateUgSupplierDeliveryCostFromAddress(address)
+            : await calculateDeliveryCostFromAddress(address);
         if (!result.ok) {
             document.getElementById('result').innerText = result.error || 'Ошибка при расчёте';
             return;
         }
-        var nearestCity = result.nearestCity;
         var route = result.route;
         deliveryCost = result.cost;
 
-        if (mapInstance) mapInstance.setCenter(nearestCity.coords, 7);
-        var cityDropdown = document.getElementById('city');
-        var foundCityName = findCityInDropdown(nearestCity.name);
-        if (foundCityName) {
-            cityDropdown.value = foundCityName;
-            await onCityChange();
+        if (useUgSupplierDelivery) {
+            if (mapInstance) mapInstance.setCenter(UG_SUPPLIER_DELIVERY_MOSCOW_CENTER, 7);
+            var ugCityDropdown = document.getElementById('city');
+            if (ugCityDropdown) {
+                var moscowCityName = findCityInDropdown('Москва') || 'Москва';
+                ugCityDropdown.value = moscowCityName;
+                await onCityChange();
+            }
         } else {
-            cityDropdown.value = nearestCity.name;
-            await loadDeliveryDate(nearestCity.name);
-            setTimeout(async function () {
-                var foundAfterDelay = findCityInDropdown(nearestCity.name);
-                if (foundAfterDelay) {
-                    cityDropdown.value = foundAfterDelay;
-                    await onCityChange();
-                }
-            }, 300);
+            var nearestCity = result.nearestCity;
+            if (mapInstance) mapInstance.setCenter(nearestCity.coords, 7);
+            var cityDropdown = document.getElementById('city');
+            var foundCityName = findCityInDropdown(nearestCity.name);
+            if (foundCityName) {
+                cityDropdown.value = foundCityName;
+                await onCityChange();
+            } else {
+                cityDropdown.value = nearestCity.name;
+                await loadDeliveryDate(nearestCity.name);
+                setTimeout(async function () {
+                    var foundAfterDelay = findCityInDropdown(nearestCity.name);
+                    if (foundAfterDelay) {
+                        cityDropdown.value = foundAfterDelay;
+                        await onCityChange();
+                    }
+                }, 300);
+            }
         }
 
         if (mapInstance && currentRoute) mapInstance.geoObjects.remove(currentRoute);
         currentRoute = route;
         if (mapInstance) mapInstance.geoObjects.add(route);
 
-        await loadDeliveryDate(nearestCity.name);
-        var costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + nearestCity.name + ')</div>';
-        var dateData = getDeliveryDateBlockForUI();
+        var costText = '';
+        var dateData = null;
+        if (useUgSupplierDelivery) {
+            currentDeliveryDate = null;
+            currentDeliveryAssemblyDate = null;
+            currentDeliveryRestrictions = null;
+            deliveryDatesFromCalendar = false;
+            currentAvailableDatesWithoutAssembly = [];
+            currentAvailableDatesWithAssembly = [];
+            currentDeliveryDateStateMap = Object.create(null);
+            var approxDistanceText = String(result.approxDistanceFromMkadKm.toFixed(1)).replace('.', ',');
+            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>' +
+                '<div class="delivery-result-note">Расчет тестовый: примерно ' + approxDistanceText + ' км от МКАД</div>';
+        } else {
+            await loadDeliveryDate(result.nearestCity.name);
+            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
+            dateData = getDeliveryDateBlockForUI();
+        }
         document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
     } catch (e) {
         document.getElementById('result').innerText = 'Ошибка при расчёте. Попробуйте снова.';
@@ -3777,9 +4227,10 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
     const height = selectedEntry.height ? selectedEntry.height : "Не указано";
     const horizontalTies = selectedEntry.horizontal_ties ? selectedEntry.horizontal_ties : "Не указано";
     const equipment = selectedEntry.equipment || "Не указано";
-
-    // Получаем название теплицы из базы данных и приводим к верхнему регистру
-    const baseName = selectedEntry.form_name.toUpperCase(); // например, "ДОМИК ЛЮКС 3М"
+    const supplierSafeOffer = shouldUseSupplierSafeOfferMode_(selectedEntry);
+    const normalizedSupplierModel = normalizeOfferModelTitle_(selectedEntry.form_name || selectedEntry.source_model_name || '');
+    const hasMeaningfulSnowLoad = hasMeaningfulSnowLoadText_(snowLoadFinalText);
+    const supplierFormLabel = getSupplierFormLabel_(selectedEntry);
 
     // Выбранная форма (например, "ДОМИКОМ" или "АРОЧНАЯ")
     const selectedForm = document.getElementById("form").value.toUpperCase();
@@ -3809,17 +4260,22 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
         return true;
     }
 
-    // Формируем итоговое название теплицы
-    let cleanName = baseName;
-    if (shouldAppendForm(baseName, selectedForm)) {
-        cleanName += ` ${selectedForm}`;
-    }
-
     const frameValue = document.getElementById("frame").value.trim();
     const widthValue = document.getElementById("width").value.trim();
     const lengthValue = (displayLength != null && displayLength !== '') ? String(displayLength) : (document.getElementById("length") ? document.getElementById("length").value.trim() : '');
     const arcStepValue = document.getElementById("arcStep").value.trim();
     const polycarbonateValue = document.getElementById("polycarbonate").value.trim();
+
+    // Получаем название теплицы из базы данных и приводим к верхнему регистру
+    const baseName = (supplierSafeOffer
+        ? buildSupplierOfferTitle_(selectedEntry, widthValue, lengthValue)
+        : (normalizedSupplierModel || selectedEntry.form_name || '').toUpperCase());
+
+    // Формируем итоговое название теплицы
+    let cleanName = baseName;
+    if (!supplierSafeOffer && shouldAppendForm(baseName, selectedForm)) {
+        cleanName += ` ${selectedForm}`;
+    }
     
     // Нормализуем значение поликарбоната для проверок
     const polyNormalized = polycarbonateValue.replace(/\s+/g, "").toLowerCase();
@@ -3830,8 +4286,10 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
     }
 
     // Формирование строки для каркаса с добавлением суффикса ", краб система"
-    let frameLine = `Каркас: ${frameValue}`;
-    if (frameValue) {
+    let frameLine = `Каркас: ${supplierSafeOffer ? formatSupplierFrameDisplay_(frameValue) : frameValue}`;
+    if (frameValue && selectedEntry.fastening_display) {
+        frameLine += `, ${selectedEntry.fastening_display}`;
+    } else if (frameValue) {
         frameLine += `, краб система`;
     }
 
@@ -3845,6 +4303,65 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
         } else if (polyNormalized === "премиум6мм" || polyNormalized === "премиум6 мм") {
             polycarbonateLine += `, 0.8 кг/м2`;
         }
+    }
+
+    if (supplierSafeOffer) {
+        function normalizeSupplierBlock_(value) {
+            return String(value || '').replace(/^\n+/, '').replace(/\n+$/, '').trim();
+        }
+
+        let supplierOffer = `${cleanName}\n\n` +
+            `${frameLine}\n` +
+            `Высота: ${formatSupplierHeightDisplay_(height) || height}\n` +
+            `Шаг дуги: ${formatSupplierStepDisplay_(selectedEntry, arcStepValue)}\n` +
+            `${polycarbonateLine}\n`;
+
+        if (hasMeaningfulSnowLoad) {
+            supplierOffer += `Снеговая нагрузка: ${snowLoadFinalText}\n`;
+        }
+
+        if (horizontalTies && horizontalTies !== 'Не указано') {
+            var tiesText = String(horizontalTies).trim();
+            tiesText = tiesText.replace(/основаниея/gi, 'основания');
+            var tiesNormalized = tiesText.toLowerCase();
+            if (tiesText && tiesNormalized.indexOf('осн') === -1) {
+                tiesText += ' с уч. основания';
+            }
+            supplierOffer += `Горизонтальные стяжки: ${tiesText}\n`;
+        }
+        if (equipment && equipment !== 'Не указано') {
+            supplierOffer += `Комплектация: ${equipment}\n`;
+        }
+
+        supplierOffer += `\n${basePriceText}\n\n`;
+
+        var assemblyBlock = normalizeSupplierBlock_(assemblyText);
+        if (assemblyBlock) {
+            supplierOffer += `${assemblyBlock}\n`;
+        }
+        var foundationBlock = normalizeSupplierBlock_(foundationText);
+        if (foundationBlock) {
+            supplierOffer += `${foundationBlock}\n`;
+        }
+        var bedsAssemblyBlock = normalizeSupplierBlock_(bedsAssemblyText);
+        if (bedsAssemblyBlock) {
+            supplierOffer += `${bedsAssemblyBlock}\n`;
+        }
+        var additionalProductsBlock = normalizeSupplierBlock_(additionalProductsText);
+        if (additionalProductsBlock) {
+            supplierOffer += `${additionalProductsBlock}\n`;
+        }
+        if (deliveryPrice > 0) {
+            supplierOffer += `\nДоставка - ${formatPrice(deliveryPrice)} рублей\n`;
+        }
+
+        supplierOffer += `\nИтоговая стоимость - ${formatPrice(finalTotalPrice)} рублей\n\n`;
+        supplierOffer += `💳 Без предоплаты — оплата по факту\n`;
+        supplierOffer += `🌱 Бесплатное хранение до весны с сохранением цены.\n`;
+
+        document.getElementById("commercial-offer").value = supplierOffer;
+        updateCharCounter('commercial-offer');
+        return;
     }
 
     // Формирование итогового коммерческого предложения
@@ -3915,7 +4432,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
     }
 
     // ========== ВАРИАНТ 2: С запасом по нагрузке ==========
-    const reserveVariant = pickReserveVariant();
+    const reserveVariant = supplierSafeOffer ? null : pickReserveVariant();
     if (reserveVariant) {
         const finalTotalPrice2 = computeFinalTotalPriceForVariant({
             frame: reserveVariant.altFrame,
@@ -3962,10 +4479,11 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         // Находим entry для альтернативного варианта
         const altEntry = currentCityData.find(item => {
             return (
-                getFormCategory(item.form_name) === form &&
+                getCatalogItemFormCategory_(item) === form &&
+                matchesCatalogItemArcStep_(item, altArcStep) &&
                 parseFloat(item.width) === width &&
                 parseFloat(item.length) === length &&
-                normalizeString(item.frame_description.replace(/двойная\s*/gi, "")).includes(normalizeString(altFrame)) &&
+                matchesFrameDisplayForSelection_(item, altFrame) &&
                 normalizeString(item.polycarbonate_type) === normalizeString(altPolycarbonate)
             );
         });
@@ -4005,7 +4523,9 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         
         // Формирование строки для каркаса
         let frameLine = `Каркас: ${altFrame}`;
-        if (altFrame) {
+        if (altFrame && altEntry.fastening_display) {
+            frameLine += `, ${altEntry.fastening_display}`;
+        } else if (altFrame) {
             frameLine += `, краб система`;
         }
         
@@ -4060,13 +4580,13 @@ async function generateVariant2Description(altFrame, altArcStep, altPolycarbonat
         
         // Расчёт basePrice для альтернативного варианта
         let basePrice = altEntry.price;
-        if (altArcStep === 0.65) {
+        if (!isSupplierCatalogItem_(altEntry) && altArcStep === 0.65) {
             const baseEntry = currentCityData.find(item => {
                 return (
-                    getFormCategory(item.form_name) === form &&
+                    getCatalogItemFormCategory_(item) === form &&
                     parseFloat(item.width) === width &&
                     parseFloat(item.length) === length &&
-                    normalizeString(item.frame_description).includes(normalizeString(altFrame)) &&
+                    matchesFrameDisplayForSelection_(item, altFrame) &&
                     (normalizeString(item.polycarbonate_type) === normalizeString("стандарт4мм") ||
                         normalizeString(item.polycarbonate_type) === normalizeString("стандарт 4мм"))
                 );
@@ -4437,10 +4957,11 @@ function computeFinalTotalPriceForVariant(overrideParams) {
         // Находим selectedEntry в currentCityData
         const selectedEntry = currentCityData.find(item => {
             return (
-                getFormCategory(item.form_name) === form &&
+                getCatalogItemFormCategory_(item) === form &&
                 parseFloat(item.width) === width &&
                 parseFloat(item.length) === length &&
-                normalizeString(item.frame_description.replace(/двойная\s*/gi, "")).includes(normalizeString(frame)) &&
+                matchesCatalogItemArcStep_(item, arcStep) &&
+                matchesFrameDisplayForSelection_(item, frame) &&
                 normalizeString(item.polycarbonate_type) === normalizeString(polycarbonate)
             );
         });
@@ -4453,13 +4974,13 @@ function computeFinalTotalPriceForVariant(overrideParams) {
         let basePrice = selectedEntry.price;
         
         // Надбавка за arcStep 0.65
-        if (arcStep === 0.65) {
+        if (!isSupplierCatalogItem_(selectedEntry) && arcStep === 0.65) {
             const baseEntry = currentCityData.find(item => {
                 return (
-                    getFormCategory(item.form_name) === form &&
+                    getCatalogItemFormCategory_(item) === form &&
                     parseFloat(item.width) === width &&
                     parseFloat(item.length) === length &&
-                    normalizeString(item.frame_description).includes(normalizeString(frame)) &&
+                    matchesFrameDisplayForSelection_(item, frame) &&
                     (normalizeString(item.polycarbonate_type) === normalizeString("стандарт4мм") ||
                         normalizeString(item.polycarbonate_type) === normalizeString("стандарт 4мм"))
                 );
@@ -4557,11 +5078,115 @@ function computeFinalTotalPriceForVariant(overrideParams) {
     }
 }
 
+function shouldUseSupplierSafeOfferMode_(selectedEntry) {
+    return isSupplierCatalogItem_(selectedEntry);
+}
+
+function normalizeOfferModelTitle_(value) {
+    return String(value || '')
+        .replace(/\r?\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function hasMeaningfulSnowLoadText_(value) {
+    if (value == null) return false;
+    const text = String(value).trim();
+    if (!text) return false;
+    if (/^0(?:[.,]0+)?\s*кг/i.test(text)) return false;
+    if (/^не\s*указ/i.test(text)) return false;
+    return true;
+}
+
+function getCleanSupplierModelName_(selectedEntry) {
+    var raw = normalizeOfferModelTitle_(
+        selectedEntry && (selectedEntry.form_name || selectedEntry.source_model_name || '')
+    );
+    if (!raw) return '';
+    raw = raw
+        .replace(/[\s\u00A0]+/g, ' ')
+        // JS \b не работает с кириллицей, поэтому чистим через границы по пробелам/началу/концу
+        .replace(/(?:^|\s)ТЕПЛИЦА(?=\s|$)/gi, ' ')
+        .replace(/\s*\(или[^)]*\)/gi, '')
+        .replace(/\s+ширина\s+\d+(?:[.,]\d+)?\s*м/gi, '')
+        .replace(/\s+шаг\s+\d+(?:[.,]\d+)?\s*(?:м|см)/gi, '')
+        .replace(/\s+на\s+крабах\b/gi, '')
+        .replace(/\s+болтов(?:ое|ых)?(?:\s+соединение)?\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    raw = raw.replace(/(?:^|\s)ТЕПЛИЦА(?=\s|$)/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+    return raw;
+}
+
+function getSupplierFormLabel_(selectedEntry) {
+    var formLabel = '';
+    if (selectedEntry && selectedEntry.form_category) {
+        formLabel = String(selectedEntry.form_category).trim();
+    }
+    if (!formLabel && selectedEntry) {
+        formLabel = String(getCatalogItemFormCategory_(selectedEntry) || '').trim();
+    }
+    return formLabel;
+}
+
+function buildSupplierOfferTitle_(selectedEntry, width, length) {
+    var model = getCleanSupplierModelName_(selectedEntry);
+    var widthText = String(width || '').trim();
+    var lengthText = String(length || '').trim();
+    var formLabel = getSupplierFormLabel_(selectedEntry);
+    var prefix = formLabel ? `${formLabel} теплица` : 'Теплица';
+    if (model && widthText && lengthText) {
+        return `${prefix} ${model} ${widthText}×${lengthText} м`.replace(/\s{2,}/g, ' ').trim().toUpperCase();
+    }
+    if (model) {
+        return `${prefix} ${model}`.replace(/\s{2,}/g, ' ').trim().toUpperCase();
+    }
+    return normalizeOfferModelTitle_(selectedEntry && (selectedEntry.form_name || selectedEntry.source_model_name || '')).toUpperCase();
+}
+
+function formatSupplierFrameDisplay_(value) {
+    return String(value || '')
+        .replace(/(?<=\d)x(?=\d)/gi, 'х')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function formatSupplierStepDisplay_(selectedEntry, fallbackValue) {
+    var text = normalizeOfferModelTitle_(selectedEntry && selectedEntry.arc_step_text);
+    if (text) {
+        if (/^65\s*см$/i.test(text)) return '0.65 м';
+        if (/^1\s*м$/i.test(text)) return '1 м';
+        return text;
+    }
+    var value = String(fallbackValue || '').trim();
+    if (!value) return '';
+    if (value === '0.65') return '0.65 м';
+    if (value === '1') return '1 м';
+    return `${value} м`;
+}
+
+function formatSupplierHeightDisplay_(value) {
+    var text = String(value || '').trim();
+    if (!text || /^не\s*указ/i.test(text)) return '';
+    if (/[а-яa-z]/i.test(text)) return text;
+    return `${text} м`;
+}
+
 // Функция генерации короткого КП
 async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength) {
     const form = document.getElementById("form").value.trim();
     const width = document.getElementById("width").value.trim();
     const length = (displayLength != null && displayLength !== '') ? String(displayLength) : (document.getElementById("length") ? document.getElementById("length").value.trim() : '');
+    const supplierSafeOffer = shouldUseSupplierSafeOfferMode_(selectedEntry);
+    const normalizedSupplierModel = normalizeOfferModelTitle_(selectedEntry && (selectedEntry.form_name || selectedEntry.source_model_name || ''));
+    if (supplierSafeOffer) {
+        const shortOfferTextarea = document.getElementById("commercial-offer-short");
+        if (shortOfferTextarea) {
+            shortOfferTextarea.value = 'См. длинное КП.';
+            updateCharCounter('commercial-offer-short');
+        }
+        return;
+    }
     
     // Получаем адрес доставки и формируем заголовок
     const addressInput = document.getElementById("address");
@@ -4869,9 +5494,17 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     const polycarbonateValue = document.getElementById("polycarbonate").value.trim();
     const polyNormalized = polycarbonateValue.replace(/\s+/g, "").toLowerCase();
     const isWithoutPolycarbonate = polyNormalized === "безполикарбоната";
+    const frameValue = document.getElementById("frame").value.trim();
+    const arcStepValue = document.getElementById("arcStep").value.trim();
+    const fasteningDisplay = selectedEntry && selectedEntry.fastening_display ? selectedEntry.fastening_display : '';
+    const supplierEquipment = selectedEntry && selectedEntry.equipment ? String(selectedEntry.equipment).trim() : '';
+    const supplierHeight = selectedEntry && selectedEntry.height ? String(selectedEntry.height).trim() : '';
+    const supplierSnowLoad = selectedEntry && selectedEntry.snow_load ? String(selectedEntry.snow_load).trim() : '';
     
     // Формируем заголовок
-    let title = `${form} теплица ${width}×${length}`;
+    let title = supplierSafeOffer
+        ? buildSupplierOfferTitle_(selectedEntry, width, length)
+        : `${form} теплица ${width}×${length}`;
     
     // Добавляем "без поликарбоната" если выбран вариант без поликарбоната
     if (isWithoutPolycarbonate) {
@@ -4879,7 +5512,7 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     }
     
     // Добавляем информацию о доставке, если адрес указан
-    if (deliveryAddress) {
+    if (!supplierSafeOffer && deliveryAddress) {
         // Извлекаем последнюю часть адреса (последний элемент после запятой)
         // Например: "Республика Татарстан (Татарстан), Пестречинский район, Шигалеевское сельское поселение, СНТ Городок" -> "СНТ Городок"
         const addressParts = deliveryAddress.split(',').map(part => part.trim());
@@ -4896,7 +5529,7 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     // Логика: если сборка выбрана - пишем "со сборкой на...", если нет - "с ... в комплекте"
     // Сборка недоступна для теплиц без поликарбоната
     
-    if (assemblyChecked && !isWithoutPolycarbonate) {
+    if (!supplierSafeOffer && assemblyChecked && !isWithoutPolycarbonate) {
         // Со сборкой - можно писать "на брусе", так как сборка подразумевает установку
         if (bracingChecked && groundHooksChecked) {
             title += " со сборкой на брус с грунтозацепами";
@@ -4907,7 +5540,7 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
         } else {
             title += " со сборкой";
         }
-    } else {
+    } else if (!supplierSafeOffer) {
         // Без сборки - пишем "в комплекте", чтобы не вводить в заблуждение
         if (bracingChecked && groundHooksChecked) {
             title += " с брусом и грунтозацепами в комплекте";
@@ -4921,11 +5554,13 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     // СТРОКА 1: Заголовок с полной информацией
     let shortOffer = `${title}\n\n`;
     
-    // ИТОГО_1 (стандарт)
-    shortOffer += `1) Стандарт: ${formatPrice(finalTotalPrice1)} рублей\n`;
+    if (!supplierSafeOffer) {
+        // ИТОГО_1 (стандарт)
+        shortOffer += `1) Стандарт: ${formatPrice(finalTotalPrice1)} рублей\n`;
+    }
     
     // ИТОГО_2 (с запасом по нагрузке)
-    const reserveVariant = pickReserveVariant();
+    const reserveVariant = supplierSafeOffer ? null : pickReserveVariant();
     let finalTotalPrice2 = null;
     let reasonText = null;
     
@@ -4960,7 +5595,7 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     }
     
     // Добавляем строку 2, если альтернатива посчиталась
-    if (finalTotalPrice2 !== null && reasonText) {
+    if (!supplierSafeOffer && finalTotalPrice2 !== null && reasonText) {
         shortOffer += `2) С запасом по нагрузке: ${formatPrice(finalTotalPrice2)} рублей (${reasonText})\n`;
     }
     
@@ -4972,13 +5607,15 @@ async function generateShortOffer(finalTotalPrice1, selectedEntry, displayLength
     }
     
     // Условия оплаты - лаконично, без лишних эмодзи
-    shortOffer += `\nБез предоплаты. Гарантия 15 лет. Бесплатная заморозка стоимости.\n`;
+    shortOffer += supplierSafeOffer
+        ? `\nБез предоплаты. Заморозка цены.\n`
+        : `\nБез предоплаты. Гарантия 15 лет. Бесплатная заморозка стоимости.\n`;
     
     // Подарки НЕ добавляются здесь - они добавляются через updateCommercialOffersWithGifts()
     // Это предотвращает дублирование подарков в КП
     
     const withAssemblyShort = !!document.getElementById('assembly')?.checked;
-    const dateText = getDeliveryDateTextForKP(withAssemblyShort);
+    const dateText = supplierSafeOffer ? '' : getDeliveryDateTextForKP(withAssemblyShort);
     if (dateText) shortOffer += `\nБлижайшая дата доставки — ${dateText}.`;
     
     const shortOfferTextarea = document.getElementById("commercial-offer-short");
@@ -5711,6 +6348,8 @@ async function initializeCalculator() {
     if (!isAdmin) {
         localStorage.removeItem(ADMIN_KEY);
     }
+    updateUgSupplierTestModeUi_(isAdmin);
+    refreshSupplierLegacyExtrasVisibility_();
     
     // Даём немного времени на рендеринг DOM
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -8728,9 +9367,7 @@ function populateModalAddDropdowns() {
     if (!modalCityData || modalCityData.length === 0) return;
     var formCategories = Object.keys(availableForms);
     var formsAvailable = formCategories.filter(function (formType) {
-        return modalCityData.some(function (item) {
-            return availableForms[formType].some(function (form) { return normalizeString(item.form_name) === normalizeString(form.name); });
-        });
+        return modalCityData.some(function (item) { return getCatalogItemFormCategory_(item) === formType; });
     });
     formsAvailable.sort(function (a, b) { return (formPriority[a] || 100) - (formPriority[b] || 100); });
     var formSel = document.getElementById('edit-order-add-form');
@@ -8771,7 +9408,7 @@ function onModalAddFormChange() {
     if (!widthSel || !modalCityData.length) return;
     widthSel.innerHTML = '<option value="">— Ширина —</option>';
     if (!form) return;
-    var filtered = modalCityData.filter(function (item) { return getFormCategory(item.form_name) === form; });
+    var filtered = modalCityData.filter(function (item) { return getCatalogItemFormCategory_(item) === form; });
     var widths = [];
     for (var i = 0; i < filtered.length; i++) {
         var w = filtered[i].width;
@@ -8794,7 +9431,7 @@ function onModalAddWidthChange() {
     var lengthSel = document.getElementById('edit-order-add-length');
     if (!lengthSel || !modalCityData.length || isNaN(width)) return;
     lengthSel.innerHTML = '<option value="">— Длина —</option>';
-    var filtered = modalCityData.filter(function (item) { return getFormCategory(item.form_name) === form && parseFloat(item.width) === width; });
+    var filtered = modalCityData.filter(function (item) { return getCatalogItemFormCategory_(item) === form && parseFloat(item.width) === width; });
     var lengths = [];
     for (var i = 0; i < filtered.length; i++) {
         var len = filtered[i].length;
@@ -8865,19 +9502,12 @@ function onModalAddLengthChange() {
     if (!frameSel || !modalCityData.length || isNaN(length)) return;
     frameSel.innerHTML = '<option value="">— Каркас —</option>';
     var filtered = modalCityData.filter(function (item) {
-        return getFormCategory(item.form_name) === form && parseFloat(item.width) === width && parseFloat(item.length) === length;
+        return getCatalogItemFormCategory_(item) === form && parseFloat(item.width) === width && parseFloat(item.length) === length;
     });
-    var frameOrder = ['20х20', '40х20', '20х20+20х20', '40х20+20х20', '40х20+40х20'];
-    var descToShort = function (desc) {
-        if (!desc) return '';
-        var clean = desc.replace(/двойная\s*/gi, '').replace(/оцинкованная труба/gi, '').replace(/мм/gi, '').trim().replace(/\s*\+\s*/g, '+');
-        if (clean.indexOf('+') !== -1) return clean;
-        var m = clean.match(/(20х20|40х20)/gi);
-        return m ? m.join(',') : clean;
-    };
+    var frameOrder = ['20х20', '25х25', '40х20', '20х20+20х20', '40х20+20х20', '40х20+40х20'];
     var frames = [];
     for (var i = 0; i < filtered.length; i++) {
-        var short = descToShort(filtered[i].frame_description);
+        var short = normalizeFrameDisplay_(filtered[i].frame_description);
         if (short && frames.indexOf(short) === -1) frames.push(short);
     }
     frames.sort(function (a, b) {
@@ -14223,10 +14853,11 @@ function updateGiftsBlockPreview() {
     // Пытаемся найти базовую цену в текущих данных
     const selectedEntry = currentCityData.find(item => {
         return (
-            getFormCategory(item.form_name) === form &&
+            getCatalogItemFormCategory_(item) === form &&
             parseFloat(item.width) === width &&
             parseFloat(item.length) === length &&
-            normalizeString(item.frame_description.replace(/двойная\s*/gi, "")).includes(normalizeString(frame)) &&
+            matchesCatalogItemArcStep_(item, arcStep) &&
+            matchesFrameDisplayForSelection_(item, frame) &&
             normalizeString(item.polycarbonate_type) === normalizeString(polycarbonate)
         );
     });
@@ -14239,13 +14870,13 @@ function updateGiftsBlockPreview() {
     let estimatedPrice = selectedEntry.price;
     
     // Надбавка за arcStep 0.65
-    if (arcStep === 0.65) {
+    if (!isSupplierCatalogItem_(selectedEntry) && arcStep === 0.65) {
         const baseEntry = currentCityData.find(item => {
             return (
-                getFormCategory(item.form_name) === form &&
+                getCatalogItemFormCategory_(item) === form &&
                 parseFloat(item.width) === width &&
                 parseFloat(item.length) === length &&
-                normalizeString(item.frame_description).includes(normalizeString(frame)) &&
+                matchesFrameDisplayForSelection_(item, frame) &&
                 (normalizeString(item.polycarbonate_type) === normalizeString("стандарт4мм") ||
                     normalizeString(item.polycarbonate_type) === normalizeString("стандарт 4мм"))
             );
@@ -14523,6 +15154,11 @@ function handleAssemblyChange() {
     }
 }
 
+function handleBracingChange() {
+    refreshSupplierBracingTypeUi_();
+    calculateGreenhouseCost();
+}
+
 // Функция показа информации о поликарбонате
 function showPolycarbonateInfo() {
     const polycarbonateSelect = document.getElementById("polycarbonate");
@@ -14731,6 +15367,7 @@ function showPolycarbonateInfo() {
 window.handlePolycarbonateChange = handlePolycarbonateChange;
 window.handleAssemblyChange = handleAssemblyChange;
 window.handleAssemblyLabelClick = handleAssemblyLabelClick;
+window.handleBracingChange = handleBracingChange;
 window.showPolycarbonateInfo = showPolycarbonateInfo;
 
 // Вызываем проверку при загрузке страницы, если поликарбонат уже выбран
