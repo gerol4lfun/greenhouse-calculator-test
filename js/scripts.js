@@ -4192,9 +4192,7 @@ async function calculateDelivery() {
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
             currentDeliveryDateStateMap = Object.create(null);
-            var approxDistanceText = String(result.approxDistanceFromMkadKm.toFixed(1)).replace('.', ',');
-            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>' +
-                '<div class="delivery-result-note">Расчет тестовый: примерно ' + approxDistanceText + ' км от МКАД</div>';
+            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
         } else {
             await loadDeliveryDate(result.nearestCity.name);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
@@ -4333,7 +4331,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
             supplierOffer += `Комплектация: ${equipment}\n`;
         }
 
-        supplierOffer += `\n${basePriceText}\n\n`;
+        supplierOffer += `\n${basePriceText}\n`;
 
         var assemblyBlock = normalizeSupplierBlock_(assemblyText);
         if (assemblyBlock) {
@@ -4352,7 +4350,7 @@ async function generateCommercialOffer(basePrice, assemblyCost, foundationCost, 
             supplierOffer += `${additionalProductsBlock}\n`;
         }
         if (deliveryPrice > 0) {
-            supplierOffer += `\nДоставка - ${formatPrice(deliveryPrice)} рублей\n`;
+            supplierOffer += `Доставка - ${formatPrice(deliveryPrice)} рублей\n`;
         }
 
         supplierOffer += `\nИтоговая стоимость - ${formatPrice(finalTotalPrice)} рублей\n\n`;
