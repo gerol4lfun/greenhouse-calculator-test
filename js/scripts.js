@@ -1209,6 +1209,7 @@ let currentDeliveryDateStateMap = Object.create(null); // { iso: { withoutAssemb
 let activeOfferTab = 'short'; // Активная вкладка КП: 'short' или 'long'
 let orderTextFilledBySubmit = false; // true = в «Текст заказа» только что подставили полный шаблон, не перезаписывать превью
 let clearingFormAfterSubmit = false; // true = очищаем форму после отправки, не перезаписывать поле «Текст заказа»
+let clientOrderTextTouchedByUser = false; // true = менеджер вручную правит «Текст заказа», не перетирать автогенерацией
 let lastCalculation = null; // Данные последнего расчёта для формы заказа
 /** Корзина заказа: массив позиций (разные теплицы). Каждая — копия lastCalculation + itemTotal без доставки + снимок опций для «Изменить». */
 let orderCart = [];
@@ -5755,22 +5756,105 @@ function buildOrderPreview(calc, client) {
     return out;
 }
 
+function buildSupplierOrderGreenhouseBlock(calc) {
+    if (!calc) return '';
+    var title = buildSupplierOfferTitle_({
+        form_name: calc.model || '',
+        source_model_name: calc.sourceModelName || calc.model || '',
+        form_category: calc.formCategory || ''
+    }, calc.width, calc.length);
+    var frameLine = `Каркас: ${formatSupplierFrameDisplay_(calc.frame || '') || (calc.frame || 'Не указано')}`;
+    if (calc.fasteningDisplay) {
+        frameLine += `, ${calc.fasteningDisplay}`;
+    }
+
+    var out = `${title}\n\n`;
+    out += `${frameLine}\n`;
+    out += `Ширина: ${calc.width} м\n`;
+    out += `Длина: ${calc.length} м\n`;
+    out += `Высота: ${formatSupplierHeightDisplay_(calc.height) || calc.height || 'Не указано'}\n`;
+    out += `Шаг дуги: ${formatSupplierStepDisplay_({ arc_step_text: calc.arcStep + ' м' }, calc.arcStep)}\n`;
+    out += `Поликарбонат: ${calc.polycarbonate || 'Не указано'}\n`;
+    if (calc.horizontalTies) {
+        var tiesText = String(calc.horizontalTies).trim().replace(/основаниея/gi, 'основания');
+        if (tiesText && tiesText.toLowerCase().indexOf('осн') === -1) tiesText += ' с уч. основания';
+        out += `Горизонтальные стяжки: ${tiesText}\n`;
+    }
+    if (calc.equipment) out += `Комплектация: ${calc.equipment}\n`;
+    out += `Стоимость теплицы - ${formatPrice(calc.basePrice)} рублей\n`;
+
+    if (calc.assemblyText) out += `${String(calc.assemblyText).replace(/^\n/, '')}\n`;
+    if (calc.foundationText) out += `${String(calc.foundationText).replace(/^\n/, '')}\n`;
+    if (calc.bedsAssemblyText) out += `${String(calc.bedsAssemblyText).replace(/^\n/, '')}\n`;
+    if (calc.additionalProductsText) out += `${String(calc.additionalProductsText).trim()}\n`;
+    if (calc.deliveryPrice > 0) out += `Доставка - ${formatPrice(calc.deliveryPrice)} рублей\n`;
+
+    out += `\nИтоговая стоимость - ${formatPrice(calc.finalTotalPrice)} рублей\n`;
+    return out;
+}
+
+function buildSupplierOrderPreview(calc, client) {
+    const hasData = (client.name !== 'Клиент') || (client.manager !== 'Менеджер') || client.phone || client.deliveryDate || client.address;
+    let out = '';
+    if (hasData) {
+        out += 'Данные заказа:\n';
+        out += `Имя: ${client.name}\n`;
+        out += `Дата доставки: ${formatDateRu(client.deliveryDate)}\n`;
+        out += `Адрес: ${client.address || '—'}\n`;
+        out += `Телефон: ${formatPhoneDisplay(client.phone)}\n`;
+        out += `Менеджер: ${client.manager}\n\n`;
+    }
+    out += buildSupplierOrderGreenhouseBlock(calc);
+    return out;
+}
+
+function generateSupplierOrderTemplateDraft(calc, client) {
+    const manager = client.manager;
+    var displayName = (client.name && String(client.name).trim()) || '';
+
+    let header = `Здравствуйте, ${displayName}!\n\n`;
+    header += `Меня зовут ${manager}, мы с вами общались и оформили заказ теплицы. `;
+    header += `Ниже — все детали, проверьте, пожалуйста все ли указано верно? `;
+    header += `Если что-то нужно изменить — сразу напишите.\n\n`;
+
+    let clientBlock = `ВАШ ЗАКАЗ:\n\n`;
+    clientBlock += `Имя: ${displayName}\n`;
+    clientBlock += `Дата доставки: ${formatDateRu(client.deliveryDate)}\n`;
+    clientBlock += `Адрес: ${client.address || (calc && calc.address) || ''}\n`;
+    clientBlock += `Телефон: ${formatPhoneDisplay(client.phone)}\n\n`;
+
+    var greenhouse = buildSupplierOrderGreenhouseBlock(calc);
+    var hasAssembly = calc && (!!(calc.assemblyText && String(calc.assemblyText).trim()) || !!(calc.bedsAssemblyText && String(calc.bedsAssemblyText).trim()));
+    var footer = ORDER_FOOTER_BASE + (hasAssembly ? '\n\n' + ORDER_FOOTER_ASSEMBLY : '');
+
+    return header + clientBlock + greenhouse + '\n' + footer;
+}
+
 /**
  * Обновляет поле «Текст заказа»: до отправки — превью с актуальным составом (1 теплица, 2+ одинаковых с х2/итогом, 2+ разных); после «Оформить заказ» не трогаем.
  */
-function updateClientOfferFromShort() {
+function updateClientOfferFromShort(forceRebuild) {
     if (clearingFormAfterSubmit) return;
     const clientOfferTextarea = document.getElementById("commercial-offer-client");
     if (!clientOfferTextarea) return;
+    if (clientOrderTextTouchedByUser && !forceRebuild) {
+        updateCharCounter('commercial-offer-client');
+        return;
+    }
     const client = getClientFromOrderForm();
     if (typeof orderCart !== 'undefined' && orderCart && orderCart.length > 0) {
         var effectiveCalc = orderCart[0];
-        clientOfferTextarea.value = generateFullOrderTemplate(effectiveCalc, client, orderCart);
+        clientOfferTextarea.value = shouldUseSupplierSafeOfferMode_(effectiveCalc)
+            ? generateSupplierOrderTemplateDraft(effectiveCalc, client)
+            : generateFullOrderTemplate(effectiveCalc, client, orderCart);
     } else if (lastCalculation) {
-        clientOfferTextarea.value = buildOrderPreview(lastCalculation, client);
+        clientOfferTextarea.value = shouldUseSupplierSafeOfferMode_(lastCalculation)
+            ? generateSupplierOrderTemplateDraft(lastCalculation, client)
+            : buildOrderPreview(lastCalculation, client);
     } else {
         clientOfferTextarea.value = 'Сначала выполните расчёт теплицы — здесь будет видно, что добавляем в заказ. После нажатия «Оформить заказ» появится полный текст для отправки клиенту.';
     }
+    clientOrderTextTouchedByUser = false;
     updateCharCounter('commercial-offer-client');
 }
 
@@ -6294,7 +6378,8 @@ async function resetAllFilters() {
     const longOfferTextarea = document.getElementById("commercial-offer");
     if (shortOfferTextarea) shortOfferTextarea.value = "Здесь будет ваше короткое КП.";
     if (longOfferTextarea) longOfferTextarea.value = "Здесь будет ваше коммерческое предложение.";
-    updateClientOfferFromShort();
+    clientOrderTextTouchedByUser = false;
+    updateClientOfferFromShort(true);
     setOfferTab('short');
     
     // Очищаем подсказки адреса
@@ -6553,7 +6638,10 @@ function initCharCounters() {
     }
     if (clientTextarea) {
         updateCharCounter('commercial-offer-client');
-        clientTextarea.addEventListener('input', () => { updateCharCounter('commercial-offer-client'); });
+        clientTextarea.addEventListener('input', () => {
+            clientOrderTextTouchedByUser = true;
+            updateCharCounter('commercial-offer-client');
+        });
     }
     // Обновление «Текст заказа» при изменении полей формы заказа
     const refreshClientOffer = () => updateClientOfferFromShort();
