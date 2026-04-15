@@ -1174,6 +1174,7 @@ function shouldUseUgSupplierCatalogForCity_(cityName) {
 
 function shouldUseUgSupplierDeliveryMode_() {
     try {
+        if (window.__UG_SUPPLIER_TEST_MODE__ && isAdminSession_()) return true;
         var cityEl = document.getElementById('city');
         var city = cityEl ? (cityEl.value || '').trim() : '';
         if (shouldUseUgSupplierCatalogForCity_(city)) return true;
@@ -2895,16 +2896,36 @@ function renderDeliveryResultBlock(costText, dateData) {
         '<div class="delivery-date-row' + activeWith + '">Со сборкой — ' + withStr + '</div></div>';
 }
 
+function renderUgSupplierDeliveryPolicyBlock_() {
+    var hasAssembly = !!document.getElementById('assembly')?.checked;
+    if (hasAssembly) {
+        return '<div class="delivery-result-dates">' +
+            '<div class="delivery-result-dates-title">Правила доставки</div>' +
+            '<div class="delivery-date-row delivery-date-row--active">Со сборкой — дата по согласованию со свободным графиком монтажников</div>' +
+            '</div>';
+    }
+    return '<div class="delivery-result-dates">' +
+        '<div class="delivery-result-dates-title">Правила доставки</div>' +
+        '<div class="delivery-date-row delivery-date-row--active">Без сборки — суббота по любому адресу в зоне доставки</div>' +
+        '<div class="delivery-date-row">Четверг — только в пределах ЦКАД</div>' +
+        '</div>';
+}
+
 /**
  * Обновляет дату в блоке результата доставки (дата доставки и сборки).
  * Перерисовывает блок с учётом активного режима сборки.
  */
 function updateDeliveryResultDate() {
     const resultDiv = document.getElementById('result');
-    if (!resultDiv || !currentDeliveryDate) return;
+    if (!resultDiv) return;
     var costEl = resultDiv.querySelector('.delivery-result-cost');
     if (!costEl) return;
     var costText = '<div class="delivery-result-cost">' + costEl.textContent.trim() + '</div>';
+    if (shouldUseUgSupplierDeliveryMode_()) {
+        resultDiv.innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
+        return;
+    }
+    if (!currentDeliveryDate) return;
     var dateData = getDeliveryDateBlockForUI();
     if (!dateData) return;
     resultDiv.innerHTML = renderDeliveryResultBlock(costText, dateData);
@@ -4193,12 +4214,13 @@ async function calculateDelivery() {
             currentAvailableDatesWithAssembly = [];
             currentDeliveryDateStateMap = Object.create(null);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
+            document.getElementById('result').innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
         } else {
             await loadDeliveryDate(result.nearestCity.name);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
             dateData = getDeliveryDateBlockForUI();
+            document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
         }
-        document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
     } catch (e) {
         document.getElementById('result').innerText = 'Ошибка при расчёте. Попробуйте снова.';
     } finally {
