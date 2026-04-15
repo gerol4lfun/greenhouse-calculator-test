@@ -3957,6 +3957,58 @@ async function calculateGreenhouseCost(event = null) {
     }, delay);
 }
 
+function getCurrentMainPanelCalculationArgs_() {
+    const city = document.getElementById("city").value.trim();
+    const form = document.getElementById("form").value.trim();
+    const width = parseFloat(document.getElementById("width").value);
+    const lengthFromSelect = parseFloat(document.getElementById("length").value);
+    const frame = document.getElementById("frame").value.trim();
+    const polycarbonate = document.getElementById("polycarbonate").value.trim();
+    const arcStep = parseFloat(document.getElementById("arcStep").value);
+    var lenPair = getEffectiveLengthFromMainPanel();
+    var billingLength = isNaN(lengthFromSelect) ? lengthFromSelect : lenPair.billing;
+    var effectiveLength = isNaN(lenPair.effective) ? lengthFromSelect : lenPair.effective;
+    return {
+        city: city,
+        form: form,
+        width: width,
+        billingLength: billingLength,
+        frame: frame,
+        polycarbonate: polycarbonate,
+        arcStep: arcStep,
+        effectiveLength: effectiveLength
+    };
+}
+
+function isMainPanelCalculationReady_() {
+    var args = getCurrentMainPanelCalculationArgs_();
+    return !!(
+        args.city &&
+        args.form &&
+        !isNaN(args.width) &&
+        !isNaN(args.billingLength) &&
+        args.frame &&
+        args.polycarbonate &&
+        !isNaN(args.arcStep)
+    );
+}
+
+async function refreshCurrentUgOfferWithDelivery_() {
+    if (!shouldUseUgSupplierDeliveryMode_()) return;
+    if (!isMainPanelCalculationReady_()) return;
+    var args = getCurrentMainPanelCalculationArgs_();
+    await performCalculation(
+        args.city,
+        args.form,
+        args.width,
+        args.billingLength,
+        args.frame,
+        args.polycarbonate,
+        args.arcStep,
+        args.effectiveLength
+    );
+}
+
 // Вынесена логика расчета в отдельную функцию для переиспользования. Единая точка входа — calculateGreenhousePrice (без привязки к DOM главной).
 // length — для расчёта цены (чётная); effectiveLength — для КП и заказа (может быть 3,5,7,9).
 async function performCalculation(city, form, width, length, frame, polycarbonate, arcStep, effectiveLength) {
@@ -4183,8 +4235,14 @@ async function calculateDelivery() {
             var ugCityDropdown = document.getElementById('city');
             if (ugCityDropdown) {
                 var moscowCityName = findCityInDropdown('Москва') || 'Москва';
-                ugCityDropdown.value = moscowCityName;
-                await onCityChange();
+                var ugCityAlreadyReady =
+                    (ugCityDropdown.value || '').trim() === moscowCityName &&
+                    Array.isArray(currentCityData) &&
+                    currentCityData.some(function (item) { return isSupplierCatalogItem_(item); });
+                if (!ugCityAlreadyReady) {
+                    ugCityDropdown.value = moscowCityName;
+                    await onCityChange();
+                }
             }
         } else {
             var nearestCity = result.nearestCity;
@@ -4227,6 +4285,7 @@ async function calculateDelivery() {
             currentDeliveryDateStateMap = Object.create(null);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
             document.getElementById('result').innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
+            await refreshCurrentUgOfferWithDelivery_();
         } else {
             currentUgDeliveryContext = null;
             await loadDeliveryDate(result.nearestCity.name);
@@ -6259,6 +6318,7 @@ function resetDelivery() {
     deliveryCost = 0;
     currentUgDeliveryContext = null;
     // Не сбрасываем currentDeliveryDate, т.к. она привязана к выбранному городу
+    refreshCurrentUgOfferWithDelivery_().catch(function () {});
 }
 
 // Инициализация при загрузке страницы
