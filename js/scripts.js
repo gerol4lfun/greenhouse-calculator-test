@@ -1200,6 +1200,7 @@ let deliveryCost = 0; // Стоимость доставки
 let currentDeliveryDate = null; // Текущая дата доставки для выбранного города
 let currentDeliveryAssemblyDate = null; // Дата сборки (null = совпадает с доставкой)
 let currentDeliveryRestrictions = null; // Общие ограничения по датам (доставка и сборка)
+let currentUgDeliveryContext = null; // Контекст тестовой доставки UG: расстояние от МКАД, доступность четверга и т.д.
 /** Новый слой дат: true = данные из delivery_calendar, иначе fallback на delivery_dates */
 let deliveryDatesFromCalendar = false;
 let currentAvailableDatesWithoutAssembly = []; // ISO даты (ДС+Д), только даты > сегодня Москва
@@ -2904,10 +2905,15 @@ function renderUgSupplierDeliveryPolicyBlock_() {
             '<div class="delivery-date-row delivery-date-row--active">Со сборкой — дата по согласованию со свободным графиком монтажников</div>' +
             '</div>';
     }
+    var insideCkad = !!(currentUgDeliveryContext && currentUgDeliveryContext.insideCkad);
+    var thursdayRowClass = insideCkad ? ' delivery-date-row--active' : '';
+    var thursdayText = insideCkad
+        ? 'Четверг — адрес в пределах ЦКАД, доставка возможна'
+        : 'Четверг — только в пределах ЦКАД';
     return '<div class="delivery-result-dates">' +
         '<div class="delivery-result-dates-title">Правила доставки</div>' +
         '<div class="delivery-date-row delivery-date-row--active">Без сборки — суббота по любому адресу в зоне доставки</div>' +
-        '<div class="delivery-date-row">Четверг — только в пределах ЦКАД</div>' +
+        '<div class="delivery-date-row' + thursdayRowClass + '">' + thursdayText + '</div>' +
         '</div>';
 }
 
@@ -4123,6 +4129,7 @@ async function calculateUgSupplierDeliveryCostFromAddress(address) {
         var route = await ymaps.route([UG_SUPPLIER_DELIVERY_MOSCOW_CENTER, coords]);
         var routeDistanceKm = route.getLength() / 1000;
         var distanceFromMkadKm = Math.max(routeDistanceKm - UG_SUPPLIER_DELIVERY_MKAD_RADIUS_KM, 0);
+        var insideCkad = distanceFromMkadKm <= UG_SUPPLIER_DELIVERY_INCLUDED_KM;
 
         if (distanceFromMkadKm > UG_SUPPLIER_DELIVERY_MAX_KM) {
             return {
@@ -4142,6 +4149,7 @@ async function calculateUgSupplierDeliveryCostFromAddress(address) {
             route: route,
             approxDistanceFromMkadKm: distanceFromMkadKm,
             routeDistanceFromCenterKm: routeDistanceKm,
+            insideCkad: insideCkad,
             cityName: 'Москва'
         };
     } catch (e) {
@@ -4206,6 +4214,10 @@ async function calculateDelivery() {
         var costText = '';
         var dateData = null;
         if (useUgSupplierDelivery) {
+            currentUgDeliveryContext = {
+                distanceFromMkadKm: Number(result.approxDistanceFromMkadKm || 0),
+                insideCkad: !!result.insideCkad
+            };
             currentDeliveryDate = null;
             currentDeliveryAssemblyDate = null;
             currentDeliveryRestrictions = null;
@@ -4216,6 +4228,7 @@ async function calculateDelivery() {
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
             document.getElementById('result').innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
         } else {
+            currentUgDeliveryContext = null;
             await loadDeliveryDate(result.nearestCity.name);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
             dateData = getDeliveryDateBlockForUI();
@@ -6211,6 +6224,7 @@ async function resetAllFilters() {
 
     // Сброс глобальной переменной стоимости доставки
     deliveryCost = 0;
+    currentUgDeliveryContext = null;
     currentDeliveryDate = null;
     currentDeliveryAssemblyDate = null;
     currentDeliveryRestrictions = null;
@@ -6243,6 +6257,7 @@ function resetDelivery() {
 
     // Сброс глобальной переменной стоимости доставки
     deliveryCost = 0;
+    currentUgDeliveryContext = null;
     // Не сбрасываем currentDeliveryDate, т.к. она привязана к выбранному городу
 }
 
