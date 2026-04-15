@@ -986,7 +986,13 @@ function isAdminSession_() {
 }
 
 function isSupplierCatalogItem_(item) {
-    return !!(item && (item._source === 'supplier_catalog' || (item.supplier_key && item.catalog_key)));
+    return !!(
+        item && (
+            item._source === 'supplier_catalog' ||
+            (item.supplier_key && item.catalog_key) ||
+            (item.supplierKey && item.catalogKey)
+        )
+    );
 }
 
 function getCatalogItemFormCategory_(item) {
