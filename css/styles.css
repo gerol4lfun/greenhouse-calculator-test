@@ -316,6 +316,44 @@ label {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.ug-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 14px;
+  min-width: auto;
+  width: auto;
+  background: #fff4da;
+  color: #9a6500;
+  border: 2px solid #f3c15b;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  visibility: visible;
+  opacity: 1;
+  margin: 0;
+}
+
+.ug-toggle-button:hover {
+  background: #ffe9b4;
+  border-color: #e8b03e;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.ug-toggle-button--active {
+  background: #ffe0a1;
+  color: #7a4d00;
+  border-color: #d99b20;
+}
+
 /* Параметры */
 .parameters {
   display: flex;

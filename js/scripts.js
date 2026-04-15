@@ -373,8 +373,21 @@ function persistUgSupplierTestModeFlag_(enabled) {
     } catch (e) {}
 }
 
-function isUgSupplierTestModeActive_(isAdmin) {
-    if (!isAdmin) return false;
+function getSavedLoginLower_() {
+    try {
+        var savedLogin = localStorage.getItem('savedLogin');
+        return savedLogin ? String(savedLogin).trim().toLowerCase() : '';
+    } catch (e) {
+        return '';
+    }
+}
+
+function canUseUgSupplierTestMode_() {
+    return !!getSavedLoginLower_();
+}
+
+function isUgSupplierTestModeActive_(canUseUgMode) {
+    if (!canUseUgMode) return false;
     if (isUgSupplierTestModeRequested_()) return true;
     try {
         return localStorage.getItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY) === 'true';
@@ -383,8 +396,23 @@ function isUgSupplierTestModeActive_(isAdmin) {
     }
 }
 
-function updateUgSupplierTestModeUi_(isAdmin) {
-    var active = isUgSupplierTestModeActive_(isAdmin);
+function refreshUgSupplierToggleButtonUi_(canUseUgMode) {
+    var button = document.getElementById('ug-toggle-button');
+    if (!button) return;
+    if (!canUseUgMode) {
+        button.classList.add('hidden');
+        button.style.display = 'none';
+        return;
+    }
+    var active = isUgSupplierTestModeActive_(canUseUgMode);
+    button.classList.remove('hidden');
+    button.style.display = 'inline-flex';
+    button.textContent = active ? 'UG тест: вкл' : 'UG тест: выкл';
+    button.classList.toggle('ug-toggle-button--active', active);
+}
+
+function updateUgSupplierTestModeUi_(canUseUgMode) {
+    var active = isUgSupplierTestModeActive_(canUseUgMode);
     persistUgSupplierTestModeFlag_(active);
 
     var wrap = document.getElementById('ug-test-mode-indicator-wrap');
@@ -401,7 +429,25 @@ function updateUgSupplierTestModeUi_(isAdmin) {
         document.body.setAttribute('data-ug-supplier-test-mode', active ? 'on' : 'off');
     } catch (e) {}
     window.__UG_SUPPLIER_TEST_MODE__ = active;
+    refreshUgSupplierToggleButtonUi_(canUseUgMode);
     return active;
+}
+
+function toggleUgSupplierModeForUser() {
+    if (!canUseUgSupplierTestMode_()) return;
+    var nextState = !isUgSupplierTestModeActive_(true);
+    persistUgSupplierTestModeFlag_(nextState);
+    try {
+        var url = new URL(window.location.href);
+        if (nextState) {
+            url.searchParams.set(UG_SUPPLIER_TEST_URL_PARAM, '1');
+        } else {
+            url.searchParams.delete(UG_SUPPLIER_TEST_URL_PARAM);
+        }
+        window.location.href = url.toString();
+    } catch (e) {
+        window.location.reload();
+    }
 }
 
 // Приоритеты форм (чем меньше число, тем выше в списке)
@@ -1170,7 +1216,7 @@ function refreshSupplierLegacyExtrasVisibility_() {
 }
 
 function shouldUseUgSupplierCatalogForCity_(cityName) {
-    if (!window.__UG_SUPPLIER_TEST_MODE__ || !isAdminSession_()) return false;
+    if (!window.__UG_SUPPLIER_TEST_MODE__ || !canUseUgSupplierTestMode_()) return false;
     if (typeof window !== 'undefined' && window.SupplierCatalogResolver && typeof window.SupplierCatalogResolver.isMoscowSupplierCatalogCity === 'function') {
         return window.SupplierCatalogResolver.isMoscowSupplierCatalogCity(cityName || '');
     }
@@ -1180,7 +1226,7 @@ function shouldUseUgSupplierCatalogForCity_(cityName) {
 
 function shouldUseUgSupplierDeliveryMode_() {
     try {
-        if (window.__UG_SUPPLIER_TEST_MODE__ && isAdminSession_()) return true;
+        if (window.__UG_SUPPLIER_TEST_MODE__ && canUseUgSupplierTestMode_()) return true;
         var cityEl = document.getElementById('city');
         var city = cityEl ? (cityEl.value || '').trim() : '';
         if (shouldUseUgSupplierCatalogForCity_(city)) return true;
@@ -2053,6 +2099,7 @@ function logout() {
         const savedLogin = localStorage.getItem('savedLogin');
         
         localStorage.removeItem('savedLogin');
+        localStorage.removeItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY);
         localStorage.removeItem('passwordVersion');
         localStorage.removeItem('userId');
         localStorage.removeItem(ADMIN_KEY);
@@ -2061,6 +2108,11 @@ function logout() {
         
         const authContainer = document.getElementById("auth-container");
         const calcContainer = document.getElementById("calculator-container");
+        try {
+            var url = new URL(window.location.href);
+            url.searchParams.delete(UG_SUPPLIER_TEST_URL_PARAM);
+            window.history.replaceState({}, '', url.toString());
+        } catch (e) {}
         
         if (authContainer) {
             authContainer.classList.remove("hidden");
@@ -6524,6 +6576,7 @@ async function initializeCalculator() {
     
     // СТРОГАЯ проверка: только пользователь с логином точно "admin" (без пробелов, без регистра)
     const isAdmin = savedLogin && savedLogin.trim().toLowerCase() === 'admin';
+    const canUseUgMode = canUseUgSupplierTestMode_();
     
     // Если это админ, но флаг не установлен - устанавливаем
     if (isAdmin && localStorage.getItem(ADMIN_KEY) !== 'true') {
@@ -6534,7 +6587,7 @@ async function initializeCalculator() {
     if (!isAdmin) {
         localStorage.removeItem(ADMIN_KEY);
     }
-    updateUgSupplierTestModeUi_(isAdmin);
+    updateUgSupplierTestModeUi_(canUseUgMode);
     refreshSupplierLegacyExtrasVisibility_();
     
     // Даём немного времени на рендеринг DOM
