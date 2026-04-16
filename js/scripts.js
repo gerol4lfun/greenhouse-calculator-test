@@ -1226,7 +1226,6 @@ function shouldUseUgSupplierCatalogForCity_(cityName) {
 
 function shouldUseUgSupplierDeliveryMode_() {
     try {
-        if (window.__UG_SUPPLIER_TEST_MODE__ && canUseUgSupplierTestMode_()) return true;
         var cityEl = document.getElementById('city');
         var city = cityEl ? (cityEl.value || '').trim() : '';
         if (shouldUseUgSupplierCatalogForCity_(city)) return true;
@@ -4278,6 +4277,18 @@ async function calculateDelivery() {
     }
     isCalculatingDelivery = true;
     try {
+        if (window.__UG_SUPPLIER_TEST_MODE__ && canUseUgSupplierTestMode_()) {
+            var cityDropdownForUg = document.getElementById('city');
+            var currentCityValue = cityDropdownForUg ? (cityDropdownForUg.value || '').trim() : '';
+            if (!shouldUseUgSupplierCatalogForCity_(currentCityValue) && !(Array.isArray(currentCityData) && currentCityData.some(function (item) { return isSupplierCatalogItem_(item); }))) {
+                var moscowForUg = findCityInDropdown('Москва') || 'Москва';
+                if (cityDropdownForUg) {
+                    cityDropdownForUg.value = moscowForUg;
+                    await onCityChange();
+                }
+            }
+        }
+
         var useUgSupplierDelivery = shouldUseUgSupplierDeliveryMode_();
         var result = useUgSupplierDelivery
             ? await calculateUgSupplierDeliveryCostFromAddress(address)
