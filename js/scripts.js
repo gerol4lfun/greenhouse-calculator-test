@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v306"; // v306: UG supplier test mode for Moscow/MO — isolated catalog, delivery, KP and order-text draft; legacy flow unchanged
+const APP_VERSION = "v307"; // v307: cache-bust for UG manager toggle visibility; legacy flow unchanged
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
