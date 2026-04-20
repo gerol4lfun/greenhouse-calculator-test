@@ -1274,6 +1274,8 @@ let orderCartEditingIndex = null;
 let currentOrderIdForEdit = null;
 /** Дата создания редактируемого заказа (ISO); для заказов до 2026-03-09 проверку региона не показываем. */
 let currentOrderCreatedAtForEdit = null;
+/** Техническая дата для отменённых заказов: освобождает unique(phone + delivery_date), но сохраняет запись в истории. */
+const CANCELLED_ORDER_TECHNICAL_DELIVERY_DATE = '01.01.2099';
 
 /** Состав заказа в модалке редактирования: массив { model, width, length, frame, arc_step, polycarbonate, item_total, form, city }. */
 let editOrderComposition = [];
@@ -10593,7 +10595,12 @@ function initEditOrderModal() {
             var existingComment = (commentEl && commentEl.value) ? commentEl.value.trim() : '';
             var newComment = existingComment + (existingComment ? '\n' : '') + 'Причина отмены: ' + reason;
             cancelOrderBtn.disabled = true;
-            supabaseClient.from('orders').update({ status: 'cancelled', comment: newComment }).eq('id', currentOrderIdForEdit).then(function (res) {
+            supabaseClient.from('orders').update({
+                status: 'cancelled',
+                deleted_at: new Date().toISOString(),
+                delivery_date: CANCELLED_ORDER_TECHNICAL_DELIVERY_DATE,
+                comment: newComment
+            }).eq('id', currentOrderIdForEdit).then(function (res) {
                 if (res.error) throw res.error;
                 if (typeof showToast === 'function') showToast('Заказ отменён. Уведомления отправятся поставщику и ответственному менеджеру.', 'success');
                 var phoneToRefresh = lastEditOrderSearchedPhone || '';
