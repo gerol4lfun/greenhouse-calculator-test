@@ -3973,6 +3973,45 @@ let calculateDebounceTimer = null;
 let calculateDeliveryDebounceTimer = null;
 let isCalculatingDelivery = false; // Флаг для предотвращения параллельных запросов
 
+function getCalculateDeliveryButton_() {
+    return document.getElementById('calculate-delivery-btn');
+}
+
+function getResetDeliveryButton_() {
+    return document.getElementById('reset-delivery-btn');
+}
+
+function setDeliveryCalculationUiState_(active, message, title) {
+    var resultDiv = document.getElementById('result');
+    var calcBtn = getCalculateDeliveryButton_();
+    var resetBtn = getResetDeliveryButton_();
+    if (calcBtn) {
+        calcBtn.disabled = !!active;
+        calcBtn.setAttribute('aria-busy', active ? 'true' : 'false');
+        calcBtn.textContent = active ? 'Считаем доставку...' : 'Рассчитать доставку';
+    }
+    if (resetBtn) {
+        resetBtn.disabled = !!active;
+        resetBtn.setAttribute('aria-busy', active ? 'true' : 'false');
+    }
+    if (!resultDiv) return;
+    if (!active) {
+        resultDiv.classList.remove('loading');
+        return;
+    }
+    var safeTitle = title || 'Расчёт доставки';
+    var safeMessage = message || 'Подождите немного, считаем маршрут и стоимость.';
+    resultDiv.className = 'loading';
+    resultDiv.innerHTML =
+        '<div class="delivery-result-status" role="status" aria-live="polite">' +
+            '<div class="delivery-result-status__spinner" aria-hidden="true"></div>' +
+            '<div class="delivery-result-status__content">' +
+                '<div class="delivery-result-status__title">' + safeTitle + '</div>' +
+                '<div class="delivery-result-status__text">' + safeMessage + '</div>' +
+            '</div>' +
+        '</div>';
+}
+
 async function calculateGreenhouseCost(event = null) {
     const city = document.getElementById("city").value.trim();
     const form = document.getElementById("form").value.trim();
@@ -4172,6 +4211,7 @@ async function calculateDeliveryCostFromAddress(address) {
     if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
 
     try {
+        setDeliveryCalculationUiState_(true, 'Проверяем адрес и определяем точку доставки.');
         var res = await ymaps.geocode(addr, { results: 1 });
         var geoObject = res.geoObjects.get(0);
         if (!geoObject) return { ok: false, error: 'Адрес не найден' };
@@ -4194,6 +4234,7 @@ async function calculateDeliveryCostFromAddress(address) {
         cityDistances.sort(function (a, b) { return a.geoDistance - b.geoDistance; });
         var topCities = cityDistances.slice(0, 5);
 
+        setDeliveryCalculationUiState_(true, 'Строим маршрут до ближайших складов.');
         var routePromises = topCities.map(function (entry) {
             return ymaps.route([entry.city.coords, [destinationLat, destinationLon]]).then(function (route) {
                 var routeDistance = route.getLength() / 1000;
@@ -4233,6 +4274,7 @@ async function calculateUgSupplierDeliveryCostFromAddress(address) {
     if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
 
     try {
+        setDeliveryCalculationUiState_(true, 'Проверяем адрес и строим маршрут от МКАД.');
         var res = await ymaps.geocode(addr, { results: 1 });
         var geoObject = res.geoObjects.get(0);
         if (!geoObject) return { ok: false, error: 'Адрес не найден' };
@@ -4278,6 +4320,7 @@ async function calculateDelivery() {
         return;
     }
     isCalculatingDelivery = true;
+    setDeliveryCalculationUiState_(true, 'Подготавливаем расчёт и проверяем режим доставки.');
     try {
         if (window.__UG_SUPPLIER_TEST_MODE__ && canUseUgSupplierTestMode_()) {
             var cityDropdownForUg = document.getElementById('city');
@@ -4286,6 +4329,7 @@ async function calculateDelivery() {
                 var moscowForUg = findCityInDropdown('Москва') || 'Москва';
                 if (cityDropdownForUg) {
                     cityDropdownForUg.value = moscowForUg;
+                    setDeliveryCalculationUiState_(true, 'Подгружаем данные поставщика UG для Москвы.');
                     await onCityChange();
                 }
             }
@@ -4313,6 +4357,7 @@ async function calculateDelivery() {
                     currentCityData.some(function (item) { return isSupplierCatalogItem_(item); });
                 if (!ugCityAlreadyReady) {
                     ugCityDropdown.value = moscowCityName;
+                    setDeliveryCalculationUiState_(true, 'Загружаем каталог и параметры доставки UG.');
                     await onCityChange();
                 }
             }
@@ -4323,9 +4368,11 @@ async function calculateDelivery() {
             var foundCityName = findCityInDropdown(nearestCity.name);
             if (foundCityName) {
                 cityDropdown.value = foundCityName;
+                setDeliveryCalculationUiState_(true, 'Загружаем цены и даты доставки для города.');
                 await onCityChange();
             } else {
                 cityDropdown.value = nearestCity.name;
+                setDeliveryCalculationUiState_(true, 'Загружаем даты доставки для найденного города.');
                 await loadDeliveryDate(nearestCity.name);
                 setTimeout(async function () {
                     var foundAfterDelay = findCityInDropdown(nearestCity.name);
@@ -4360,7 +4407,6 @@ async function calculateDelivery() {
             await refreshCurrentUgOfferWithDelivery_();
         } else {
             currentUgDeliveryContext = null;
-            await loadDeliveryDate(result.nearestCity.name);
             costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
             dateData = getDeliveryDateBlockForUI();
             document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
@@ -4369,6 +4415,7 @@ async function calculateDelivery() {
         document.getElementById('result').innerText = 'Ошибка при расчёте. Попробуйте снова.';
     } finally {
         isCalculatingDelivery = false;
+        setDeliveryCalculationUiState_(false);
     }
 }
 
@@ -6462,12 +6509,18 @@ async function resetAllFilters() {
 
 // Функция сброса доставки
 function resetDelivery() {
+    if (calculateDeliveryDebounceTimer) {
+        clearTimeout(calculateDeliveryDebounceTimer);
+        calculateDeliveryDebounceTimer = null;
+    }
+    setDeliveryCalculationUiState_(false);
     document.getElementById("address").value = "";
     document.getElementById("result").innerText = "";
 
     // Удаляем маршрут с карты, если есть
     if (mapInstance && currentRoute) {
         mapInstance.geoObjects.remove(currentRoute);
+        currentRoute = null;
     }
 
     // Сброс глобальной переменной стоимости доставки
