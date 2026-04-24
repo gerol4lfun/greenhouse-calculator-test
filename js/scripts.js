@@ -1031,6 +1031,22 @@ function isAdminSession_() {
     }
 }
 
+const ASSEMBLY_SPECIAL_PRICE_FACTOR = 0.7;
+const ASSEMBLY_SPECIAL_COMMENT = 'скидка на сборку 30%';
+const ASSEMBLY_SPECIAL_PRICE_CITIES = [
+    'Екатеринбург',
+    'Ярославль',
+    'Санкт-Петербург',
+    'Краснодар',
+    'Великий Новгород',
+    'Вологда',
+    'Иваново',
+    'Кострома',
+    'Ставрополь',
+    'Майкоп',
+    'Черкесск'
+];
+
 function isSupplierCatalogItem_(item) {
     return !!(
         item && (
@@ -1672,11 +1688,17 @@ function clearEmergencyCalcSession_() {
 }
 
 function isAssemblySpecialPriceCity_(cityRaw) {
-    return false;
+    var city = (typeof normalizeCityAlias_ === 'function') ? (normalizeCityAlias_(cityRaw || '') || '') : String(cityRaw || '');
+    var normalized = (typeof normalizeCityName === 'function') ? normalizeCityName(city) : String(city || '').trim().toLowerCase();
+    return ASSEMBLY_SPECIAL_PRICE_CITIES.some(function (item) {
+        var current = (typeof normalizeCityName === 'function') ? normalizeCityName(item) : String(item).trim().toLowerCase();
+        return current === normalized;
+    });
 }
 
 function shouldUseAssemblySpecialPrice_(cityRaw) {
-    return false;
+    var assemblyCheckbox = document.getElementById('assembly');
+    return !!(assemblyCheckbox && assemblyCheckbox.checked && isAssemblySpecialPriceCity_(cityRaw));
 }
 
 function refreshAssemblySpecialPriceUi_() {
@@ -1685,16 +1707,24 @@ function refreshAssemblySpecialPriceUi_() {
 }
 
 function getAssemblySpecialPriceAdjusted_(price) {
-    return Number(price || 0);
+    var raw = Number(price || 0) * ASSEMBLY_SPECIAL_PRICE_FACTOR;
+    return Math.ceil(raw / 10) * 10;
 }
 
 function calculateEffectiveAssemblyCost_(form, assemblyCategory, length, cityRaw, useSpecialPrice) {
     var basePrice = calculateAssemblyCost(form, assemblyCategory, length);
-    return basePrice || 0;
+    if (!basePrice) return 0;
+    if (useSpecialPrice && isAssemblySpecialPriceCity_(cityRaw)) {
+        return getAssemblySpecialPriceAdjusted_(basePrice);
+    }
+    return basePrice;
 }
 
 function appendAssemblySpecialComment_(comment, shouldAppend) {
-    return String(comment || '').trim();
+    var base = String(comment || '').trim();
+    if (!shouldAppend) return base;
+    if (base.toLowerCase().indexOf(ASSEMBLY_SPECIAL_COMMENT) !== -1) return base;
+    return base ? (base + '\n' + ASSEMBLY_SPECIAL_COMMENT) : ASSEMBLY_SPECIAL_COMMENT;
 }
 
 function renderEmergencyCalcBanner_() {
@@ -3952,7 +3982,7 @@ function calculateGreenhousePriceCore(cityData, params) {
         bedsAssemblyText: bedsAssemblyText,
         additionalProductsText: additionalProductsText,
         address: address,
-        assemblySpecialPrice: false,
+        assemblySpecialPrice: useAssemblySpecialPrice && assemblyChecked,
         supplierKey: selectedEntry.supplier_key || '',
         catalogKey: selectedEntry.catalog_key || '',
         compatKey: selectedEntry.compat_key || '',
@@ -4158,7 +4188,7 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
         bedsAssemblyEnabled: bedsAssemblyEnabled,
         isWithoutPolycarbonate: isWithoutPolycarbonate,
         address: addressEl ? (addressEl.value || '').trim() : '',
-        assemblySpecialPrice: false,
+        assemblySpecialPrice: shouldUseAssemblySpecialPrice_(city),
         supplierBracingType: getSelectedSupplierBracingType_()
     };
 
@@ -17728,7 +17758,7 @@ function getOrderCartOptionsSnapshot() {
     bracing: bracingEl ? bracingEl.checked : false,
     groundHooks: groundHooksEl ? groundHooksEl.checked : false,
     assembly: assemblyEl ? assemblyEl.checked : false,
-    assemblySpecialPrice: false,
+    assemblySpecialPrice: shouldUseAssemblySpecialPrice_((typeof resolveCreateWarehouseCityKey_ === 'function') ? (resolveCreateWarehouseCityKey_() || '') : ''),
     onWood: onWoodEl ? onWoodEl.checked : false,
     onConcrete: onConcreteEl ? onConcreteEl.checked : false,
     selectedBeds: selectedBeds,
@@ -18066,8 +18096,8 @@ function buildLineItemsV2FromOrderCart(cart, deliveryAmount) {
         if (item.onConcrete) addLine('addon', 'Монтаж на бетон клиента', 1, 2000, 2000, 'fixed', 'on_concrete', null, null, ghLineId);
         if (item.assembly && item.form && item.width && item.length && typeof getAssemblyCategory === 'function' && typeof calculateAssemblyCost === 'function') {
             var iac = getAssemblyCategory(item.form, item.width);
-            var iaPrice = calculateEffectiveAssemblyCost_(item.form, iac, ilen, item.city || '', false);
-            if (iaPrice > 0) addLine('service', 'Сборка и установка', 1, iaPrice, iaPrice, 'fixed', null, null, null, ghLineId);
+            var iaPrice = calculateEffectiveAssemblyCost_(item.form, iac, ilen, item.city || '', !!item.assemblySpecialPrice);
+            if (iaPrice > 0) addLine('service', 'Сборка и установка', 1, iaPrice, iaPrice, 'fixed', null, null, item.assemblySpecialPrice ? { assembly_special_price: true, assembly_discount_percent: 30 } : null, ghLineId);
         }
         var iap = item.additionalProducts || [];
         for (var j = 0; j < iap.length; j++) {
@@ -18203,7 +18233,7 @@ function buildOrderPayloadFromFormAndCart() {
                     bracing: !!item.bracing,
                     groundHooks: !!item.groundHooks,
                     assembly: !!item.assembly,
-                    assemblySpecialPrice: false,
+                    assemblySpecialPrice: !!item.assemblySpecialPrice,
                     onWood: !!item.onWood,
                     onConcrete: !!item.onConcrete
                 };
