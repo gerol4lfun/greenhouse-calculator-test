@@ -831,7 +831,8 @@ function checkAddressInDeliveryRegion(addressString, warehouseCityKey) {
     });
 }
 
-// Города для карты. pricePerKm — тариф руб/км от склада (зависит от города).
+// Города для карты старого контура доставки.
+// Для старой логики используем только координаты центра выбранного менеджером города.
 const citiesForMap = [
     { name: "Москва", coords: [55.751244, 37.618423], boundaryDistance: 20, pricePerKm: 45 },
     { name: "Санкт-Петербург", coords: [59.934280, 30.335099], boundaryDistance: 20, pricePerKm: 45 },
@@ -4230,18 +4231,33 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
 }
 
 /**
- * Боевой расчёт стоимости доставки по адресу (Yandex geocode + route).
+ * Боевой расчёт стоимости доставки по адресу для старого контура.
+ * Точка A = центр города, который выбрал менеджер (или уже сохранён в заказе).
+ * Точка B = адрес клиента.
+ * Формула: маршрут * 50 руб/км, без вычета "до выезда из города".
  * Используется в create flow и edit flow.
  * @param {string} address - адрес для геокодирования
+ * @param {string=} selectedCityName - выбранный вручную город, если известен в точке вызова
  * @returns {Promise<{ ok: true, cost: number, nearestCity: Object, route: Object } | { ok: false, error: string }>}
  */
-async function calculateDeliveryCostFromAddress(address) {
+async function calculateDeliveryCostFromAddress(address, selectedCityName) {
     var addr = (address || '').trim();
     if (!addr) return { ok: false, error: 'Адрес не указан' };
     if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
 
     try {
-        setDeliveryCalculationUiState_(true, 'Проверяем адрес и определяем точку доставки.');
+        var selectedCityRaw = (selectedCityName && String(selectedCityName).trim())
+            || (document.getElementById('city') && document.getElementById('city').value ? String(document.getElementById('city').value).trim() : '')
+            || (typeof resolveEditOrderCalendarCity_ === 'function' ? (resolveEditOrderCalendarCity_() || '') : '');
+        var selectedCityCanonical = findCityInDropdown(selectedCityRaw) || selectedCityRaw;
+        var selectedCity = citiesForMap.find(function (city) {
+            return normalizeCityName(city.name) === normalizeCityName(selectedCityCanonical);
+        });
+        if (!selectedCity) {
+            return { ok: false, error: 'Сначала выберите город доставки.' };
+        }
+
+        setDeliveryCalculationUiState_(true, 'Проверяем адрес и строим маршрут от выбранного города.');
         var res = await ymaps.geocode(addr, { results: 1 });
         var geoObject = res.geoObjects.get(0);
         if (!geoObject) return { ok: false, error: 'Адрес не найден' };
@@ -4256,43 +4272,12 @@ async function calculateDeliveryCostFromAddress(address) {
         var destinationLat = coords[0];
         var destinationLon = coords[1];
 
-        var cityDistances = [];
-        citiesForMap.forEach(function (city) {
-            var geoDistance = ymaps.coordSystem.geo.getDistance(city.coords, [destinationLat, destinationLon]) / 1000;
-            cityDistances.push({ city: city, geoDistance: geoDistance });
-        });
-        cityDistances.sort(function (a, b) { return a.geoDistance - b.geoDistance; });
-        var topCities = cityDistances.slice(0, 5);
+        setDeliveryCalculationUiState_(true, 'Строим маршрут от центра выбранного города.');
+        var route = await ymaps.route([selectedCity.coords, [destinationLat, destinationLon]]);
+        var distanceInKm = route.getLength() / 1000;
+        var cost = Math.round(distanceInKm * 50);
 
-        setDeliveryCalculationUiState_(true, 'Строим маршрут до ближайших складов.');
-        var routePromises = topCities.map(function (entry) {
-            return ymaps.route([entry.city.coords, [destinationLat, destinationLon]]).then(function (route) {
-                var routeDistance = route.getLength() / 1000;
-                return { city: entry.city, distance: routeDistance, route: route };
-            }).catch(function () { return null; });
-        });
-        var routeResults = await Promise.all(routePromises);
-
-        var nearestCity = null;
-        var minRouteDistance = Infinity;
-        var winningRoute = null;
-        for (var i = 0; i < routeResults.length; i++) {
-            var r = routeResults[i];
-            if (r && r.distance < minRouteDistance) {
-                minRouteDistance = r.distance;
-                nearestCity = r.city;
-                winningRoute = r.route;
-            }
-        }
-        if (!nearestCity || !winningRoute) return { ok: false, error: 'Ближайший город не найден' };
-
-        var distanceInKm = winningRoute.getLength() / 1000;
-        var distanceFromBoundary = Math.max(distanceInKm - nearestCity.boundaryDistance, 0);
-        var rate = nearestCity.pricePerKm != null ? nearestCity.pricePerKm : 50;
-        var cost = Math.max(1000, rate * distanceFromBoundary);
-        var roundedCost = Math.ceil(cost / 50) * 50;
-
-        return { ok: true, cost: roundedCost, nearestCity: nearestCity, route: winningRoute };
+        return { ok: true, cost: cost, nearestCity: selectedCity, route: route };
     } catch (e) {
         return { ok: false, error: (e && e.message) ? e.message : 'Ошибка при расчёте' };
     }
@@ -4394,24 +4379,6 @@ async function calculateDelivery() {
         } else {
             var nearestCity = result.nearestCity;
             if (mapInstance) mapInstance.setCenter(nearestCity.coords, 7);
-            var cityDropdown = document.getElementById('city');
-            var foundCityName = findCityInDropdown(nearestCity.name);
-            if (foundCityName) {
-                cityDropdown.value = foundCityName;
-                setDeliveryCalculationUiState_(true, 'Загружаем цены и даты доставки для города.');
-                await onCityChange();
-            } else {
-                cityDropdown.value = nearestCity.name;
-                setDeliveryCalculationUiState_(true, 'Загружаем даты доставки для найденного города.');
-                await loadDeliveryDate(nearestCity.name);
-                setTimeout(async function () {
-                    var foundAfterDelay = findCityInDropdown(nearestCity.name);
-                    if (foundAfterDelay) {
-                        cityDropdown.value = foundAfterDelay;
-                        await onCityChange();
-                    }
-                }, 300);
-            }
         }
 
         if (mapInstance && currentRoute) mapInstance.geoObjects.remove(currentRoute);
@@ -11559,7 +11526,7 @@ const faqData = {
         {
             category: "delivery",
             question: "Как рассчитывается стоимость доставки?",
-            answer: "💰 Формула стоимости доставки:\n• Тариф зависит от склада: 45 руб/км (Москва, Питер, Тула, Калуга, Рязань, Тверь, Великий Новгород) или 50 руб/км (остальные города). Минимум 1000 руб.\n• Стоимость: тариф × км (расстояние от границы города)."
+            answer: "💰 Формула стоимости доставки:\n• Менеджер вручную выбирает город доставки.\n• Строим маршрут от центра выбранного города до адреса клиента.\n• Стоимость: весь километраж маршрута × 50 руб/км."
         },
         {
             category: "delivery",
