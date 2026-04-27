@@ -1310,8 +1310,8 @@ select option {
 }
 .delivery-result-dates {
   margin-top: 14px;
-  text-align: left;
-  max-width: 420px;
+  text-align: center;
+  max-width: 460px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -1325,42 +1325,49 @@ select option {
   text-align: center;
 }
 .delivery-date-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .delivery-date-card {
-  min-width: 0;
-  padding: 10px 12px 12px;
-  border-radius: 12px;
-  border: 1px solid #d8e5f5;
-  background: linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%);
-  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.08);
+  flex: 1 1 190px;
+  max-width: 220px;
+  min-width: 180px;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  border: 1px solid #dbe5f2;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  text-align: left;
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 .delivery-date-card__label {
   font-size: 12px;
   line-height: 1.2;
   font-weight: 700;
-  color: #5b6b83;
-  margin-bottom: 6px;
+  color: #64748b;
+  margin-bottom: 8px;
 }
 .delivery-date-card__value {
-  font-size: 26px;
+  font-size: 25px;
   line-height: 1.05;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: #1e3a8a;
 }
 .delivery-date-card--active {
-  border-color: #4a90e2;
-  background: linear-gradient(135deg, #5fa2ee 0%, #3f84d8 100%);
-  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.22);
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.14);
   transform: translateY(-1px);
 }
-.delivery-date-card--active .delivery-date-card__label,
+.delivery-date-card--active .delivery-date-card__label {
+  color: #315b9a;
+}
 .delivery-date-card--active .delivery-date-card__value {
-  color: #fff;
+  color: #1d4ed8;
 }
 .delivery-date-row {
   font-size: 15px;
@@ -1386,10 +1393,13 @@ select option {
   .delivery-result-status__text { font-size: 12px; }
   .delivery-result-dates { max-width: 100%; }
   .delivery-date-cards {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
     gap: 8px;
   }
   .delivery-date-card {
+    max-width: none;
+    min-width: 0;
     padding: 10px 12px;
   }
   .delivery-date-card__value {
