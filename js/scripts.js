@@ -1064,7 +1064,79 @@ function resolveLegacyDeliveryCityFromGeoObject_(address, geoObject) {
         canonicalCity: canonicalCity,
         dropdownCity: dropdownCity,
         cityMapEntry: cityMapEntry,
+        regionEntry: regionEntry,
         meta: meta
+    };
+}
+
+function isTatarstanDeliveryAddress_(address, localities, administrativeAreas) {
+    var lowerAddress = String(address || '').trim().toLowerCase().replace(/ё/g, 'е');
+    var localityList = Array.isArray(localities) ? localities : [];
+    var areaList = Array.isArray(administrativeAreas) ? administrativeAreas : [];
+    function containsKeyword(list, keyword) {
+        return list.some(function (value) {
+            return String(value || '').toLowerCase().replace(/ё/g, 'е').indexOf(keyword) !== -1;
+        });
+    }
+    return lowerAddress.indexOf('татарстан') !== -1 ||
+        lowerAddress.indexOf('республика татарстан') !== -1 ||
+        containsKeyword(localityList, 'татарстан') ||
+        containsKeyword(areaList, 'татарстан');
+}
+
+function getLegacyWarehouseCityCandidate_(cityName) {
+    var dropdownCity = findCityInDropdown(cityName) ||
+        findCityInDropdown(normalizeCityAlias_(cityName) || cityName);
+    if (!dropdownCity) return null;
+    var cityMapEntry = citiesForMap.find(function (city) {
+        return normalizeCityName(city.name) === normalizeCityName(dropdownCity);
+    });
+    if (!cityMapEntry) return null;
+    return {
+        canonicalCity: cityName,
+        dropdownCity: dropdownCity,
+        cityMapEntry: cityMapEntry
+    };
+}
+
+async function resolveTatarstanNearestWarehouseCity_(address, geoObject) {
+    if (!geoObject || typeof ymaps === 'undefined') {
+        return { ok: false, error: 'Не удалось определить ближайший склад Татарстана.' };
+    }
+    var coords = geoObject.geometry && geoObject.geometry.getCoordinates ? geoObject.geometry.getCoordinates() : null;
+    if (!Array.isArray(coords) || coords.length < 2) {
+        return { ok: false, error: 'Не удалось определить координаты адреса для Татарстана.' };
+    }
+
+    var candidateNames = ['Казань', 'Набережные Челны'];
+    var best = null;
+
+    for (var i = 0; i < candidateNames.length; i++) {
+        var candidate = getLegacyWarehouseCityCandidate_(candidateNames[i]);
+        if (!candidate || !candidate.cityMapEntry) continue;
+        try {
+            var route = await ymaps.route([candidate.cityMapEntry.coords, coords]);
+            var distanceKm = route.getLength() / 1000;
+            if (!best || distanceKm < best.distanceKm) {
+                best = {
+                    canonicalCity: candidate.canonicalCity,
+                    dropdownCity: candidate.dropdownCity,
+                    cityMapEntry: candidate.cityMapEntry,
+                    distanceKm: distanceKm
+                };
+            }
+        } catch (e) {}
+    }
+
+    if (!best) {
+        return { ok: false, error: 'Не удалось выбрать ближайший склад для Татарстана.' };
+    }
+
+    return {
+        ok: true,
+        canonicalCity: best.canonicalCity,
+        dropdownCity: best.dropdownCity,
+        cityMapEntry: best.cityMapEntry
     };
 }
 
@@ -1080,6 +1152,17 @@ async function resolveLegacyCreateDeliveryCityByAddress_(address) {
 
         var resolved = resolveLegacyDeliveryCityFromGeoObject_(addr, geoObject);
         if (!resolved.ok) return resolved;
+
+        if (isTatarstanDeliveryAddress_(addr, resolved.meta && resolved.meta.localities, resolved.meta && resolved.meta.administrativeAreas)) {
+            var tatarstanResolved = await resolveTatarstanNearestWarehouseCity_(addr, geoObject);
+            if (tatarstanResolved.ok) {
+                resolved.canonicalCity = tatarstanResolved.canonicalCity;
+                resolved.dropdownCity = tatarstanResolved.dropdownCity;
+                resolved.cityMapEntry = tatarstanResolved.cityMapEntry;
+            } else if (typeof console !== 'undefined' && console.warn) {
+                console.warn('resolveLegacyCreateDeliveryCityByAddress_: fallback to regional city for Tatarstan', tatarstanResolved.error);
+            }
+        }
 
         return Object.assign({ geoObject: geoObject }, resolved);
     } catch (e) {
