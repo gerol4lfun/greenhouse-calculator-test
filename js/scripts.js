@@ -732,6 +732,7 @@ const _regionCalendarMap_ = (function() {
     deliveryRegions.forEach(function(entry) {
         if (!entry.keywords || entry.keywords.length < 2) return;
         var city = entry.keywords[0]; // первый keyword = канонический город
+        map.push({ alias: city, city: city });
         entry.keywords.slice(1).forEach(function(alias) {
             map.push({ alias: alias, city: city });
         });
