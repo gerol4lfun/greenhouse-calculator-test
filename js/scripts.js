@@ -958,7 +958,7 @@ function checkAddressInDeliveryRegion(addressString, warehouseCityKey) {
 }
 
 // Города для карты старого контура доставки.
-// Для старой логики используем только координаты центра выбранного менеджером города.
+// Для старой логики используем координаты центра опорного города региона.
 const citiesForMap = [
     { name: "Москва", coords: [55.751244, 37.618423], boundaryDistance: 20, pricePerKm: 45 },
     { name: "Санкт-Петербург", coords: [59.934280, 30.335099], boundaryDistance: 20, pricePerKm: 45 },
@@ -993,6 +993,95 @@ const citiesForMap = [
     { name: "Черкесск", coords: [44.226863, 42.046782], boundaryDistance: 10, pricePerKm: 50 },
     { name: "Ярославль", coords: [57.626559, 39.893813], boundaryDistance: 10, pricePerKm: 50 }
 ];
+
+function getGeoObjectRegionMeta_(geoObject) {
+    if (!geoObject) return { localities: [], administrativeAreas: [] };
+    var localities = [];
+    var administrativeAreas = [];
+    try {
+        localities = (geoObject.getLocalities() || []).map(function (loc) {
+            return String(loc || '').toLowerCase();
+        });
+    } catch (e) {}
+    try {
+        administrativeAreas = (geoObject.getAdministrativeAreas() || []).map(function (area) {
+            return String(area || '').toLowerCase();
+        });
+    } catch (e) {}
+    return { localities: localities, administrativeAreas: administrativeAreas };
+}
+
+function resolveLegacyDeliveryCityFromGeoObject_(address, geoObject) {
+    var meta = getGeoObjectRegionMeta_(geoObject);
+    if (!isAddressInDeliveryRegionByLocality(meta.localities, meta.administrativeAreas)) {
+        return { ok: false, error: 'Доставка в этот регион не осуществляется' };
+    }
+
+    var canonicalCity = null;
+    if (typeof resolveRegionToCanonicalCity_ === 'function') {
+        canonicalCity = resolveRegionToCanonicalCity_(address || '');
+        if (!canonicalCity) {
+            canonicalCity = meta.administrativeAreas
+                .map(function (area) { return resolveRegionToCanonicalCity_(area); })
+                .find(Boolean) || null;
+        }
+        if (!canonicalCity) {
+            canonicalCity = meta.localities
+                .map(function (loc) { return resolveRegionToCanonicalCity_(loc); })
+                .find(Boolean) || null;
+        }
+    }
+
+    if (!canonicalCity) {
+        return { ok: false, error: 'Не удалось определить город расчёта по адресу.' };
+    }
+
+    var dropdownCity = findCityInDropdown(canonicalCity) ||
+        findCityInDropdown(normalizeCityAlias_(canonicalCity) || canonicalCity);
+    if (!dropdownCity) {
+        return { ok: false, error: 'Для этого региона не найден город расчёта.' };
+    }
+
+    var cityMapEntry = citiesForMap.find(function (city) {
+        return normalizeCityName(city.name) === normalizeCityName(dropdownCity);
+    });
+    if (!cityMapEntry) {
+        return { ok: false, error: 'Не удалось определить точку расчёта доставки.' };
+    }
+
+    return {
+        ok: true,
+        canonicalCity: canonicalCity,
+        dropdownCity: dropdownCity,
+        cityMapEntry: cityMapEntry,
+        meta: meta
+    };
+}
+
+async function resolveLegacyCreateDeliveryCityByAddress_(address) {
+    var addr = (address || '').trim();
+    if (!addr) return { ok: false, error: 'Адрес не указан' };
+    if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
+
+    try {
+        var res = await ymaps.geocode(addr, { results: 1 });
+        var geoObject = res.geoObjects.get(0);
+        if (!geoObject) return { ok: false, error: 'Адрес не найден' };
+
+        var resolved = resolveLegacyDeliveryCityFromGeoObject_(addr, geoObject);
+        if (!resolved.ok) return resolved;
+
+        return Object.assign({ geoObject: geoObject }, resolved);
+    } catch (e) {
+        return { ok: false, error: (e && e.message) ? e.message : 'Ошибка при определении города доставки' };
+    }
+}
+
+function calculateLegacyDeliveryCost_(distanceInKm) {
+    var distance = Number(distanceInKm);
+    if (!isFinite(distance) || distance < 0) distance = 0;
+    return Math.max(1000, Math.ceil(distance) * 50);
+}
 
 // Дополнительные услуги данные
 const additionalServicesData = {
@@ -4659,15 +4748,16 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
 
 /**
  * Боевой расчёт стоимости доставки по адресу для старого контура.
- * Точка A = центр города, который выбрал менеджер (или уже сохранён в заказе).
+ * Точка A = центр города, который передан в функцию или уже выбран/сохранён в текущем контуре.
  * Точка B = адрес клиента.
- * Формула: маршрут * 50 руб/км, без вычета "до выезда из города".
+ * Формула: 50 руб/км, но не менее 1000 руб.
  * Используется в create flow и edit flow.
  * @param {string} address - адрес для геокодирования
  * @param {string=} selectedCityName - выбранный вручную город, если известен в точке вызова
+ * @param {Object=} preGeocodedGeoObject - уже найденный geoObject, если адрес ранее геокодили в том же сценарии
  * @returns {Promise<{ ok: true, cost: number, nearestCity: Object, route: Object } | { ok: false, error: string }>}
  */
-async function calculateDeliveryCostFromAddress(address, selectedCityName) {
+async function calculateDeliveryCostFromAddress(address, selectedCityName, preGeocodedGeoObject) {
     var addr = (address || '').trim();
     if (!addr) return { ok: false, error: 'Адрес не указан' };
     if (typeof ymaps === 'undefined') return { ok: false, error: 'Яндекс.Карты недоступны' };
@@ -4685,15 +4775,15 @@ async function calculateDeliveryCostFromAddress(address, selectedCityName) {
         }
 
         setDeliveryCalculationUiState_(true, 'Проверяем адрес и строим маршрут от выбранного города.');
-        var res = await ymaps.geocode(addr, { results: 1 });
-        var geoObject = res.geoObjects.get(0);
+        var geoObject = preGeocodedGeoObject || null;
+        if (!geoObject) {
+            var res = await ymaps.geocode(addr, { results: 1 });
+            geoObject = res.geoObjects.get(0);
+        }
         if (!geoObject) return { ok: false, error: 'Адрес не найден' };
 
-        var localities = geoObject.getLocalities().map(function (loc) { return loc.toLowerCase(); });
-        var administrativeAreas = geoObject.getAdministrativeAreas().map(function (area) { return area.toLowerCase(); });
-        if (!isAddressInDeliveryRegionByLocality(localities, administrativeAreas)) {
-            return { ok: false, error: 'Доставка в этот регион не осуществляется' };
-        }
+        var resolvedMeta = resolveLegacyDeliveryCityFromGeoObject_(addr, geoObject);
+        if (!resolvedMeta.ok) return { ok: false, error: resolvedMeta.error };
 
         var coords = geoObject.geometry.getCoordinates();
         var destinationLat = coords[0];
@@ -4702,7 +4792,7 @@ async function calculateDeliveryCostFromAddress(address, selectedCityName) {
         setDeliveryCalculationUiState_(true, 'Строим маршрут от центра выбранного города.');
         var route = await ymaps.route([selectedCity.coords, [destinationLat, destinationLon]]);
         var distanceInKm = route.getLength() / 1000;
-        var cost = Math.round(distanceInKm * 50);
+        var cost = calculateLegacyDeliveryCost_(distanceInKm);
 
         return { ok: true, cost: cost, nearestCity: selectedCity, route: route };
     } catch (e) {
@@ -4782,9 +4872,38 @@ async function calculateDelivery() {
         }
 
         var useUgSupplierDelivery = shouldUseUgSupplierDeliveryMode_();
+        var legacyResolved = null;
+        if (!useUgSupplierDelivery) {
+            legacyResolved = await resolveLegacyCreateDeliveryCityByAddress_(address);
+            if (!legacyResolved.ok) {
+                document.getElementById('result').innerText = legacyResolved.error || 'Ошибка при определении города расчёта';
+                return;
+            }
+
+            var legacyCityDropdown = document.getElementById('city');
+            var legacyTargetCity = legacyResolved.dropdownCity;
+            var shouldReloadLegacyCityData = false;
+            if (legacyCityDropdown) {
+                var currentLegacyCity = (legacyCityDropdown.value || '').trim();
+                shouldReloadLegacyCityData =
+                    normalizeCityName(currentLegacyCity) !== normalizeCityName(legacyTargetCity) ||
+                    !Array.isArray(currentCityData) ||
+                    currentCityData.length === 0;
+                legacyCityDropdown.value = legacyTargetCity;
+            }
+
+            if (shouldReloadLegacyCityData) {
+                setDeliveryCalculationUiState_(true, 'Определили регион и подгружаем цены по городу доставки.');
+                var legacyCatalogReady = await onCityChange();
+                if (!legacyCatalogReady) {
+                    document.getElementById('result').innerText = 'Не удалось загрузить цены для города доставки. Проверьте подключение и попробуйте снова.';
+                    return;
+                }
+            }
+        }
         var result = useUgSupplierDelivery
             ? await calculateUgSupplierDeliveryCostFromAddress(address)
-            : await calculateDeliveryCostFromAddress(address);
+            : await calculateDeliveryCostFromAddress(address, legacyResolved.dropdownCity, legacyResolved.geoObject);
         if (!result.ok) {
             document.getElementById('result').innerText = result.error || 'Ошибка при расчёте';
             return;
@@ -11290,7 +11409,10 @@ function initEditOrderModal() {
             var fullAddr = [addr1, addr2, noPlot ? 'без номера участка' : addr3].filter(Boolean).join(', ');
             if (fullAddr && typeof calculateDeliveryCostFromAddress === 'function') {
                 try {
-                    var delResult = await calculateDeliveryCostFromAddress(fullAddr);
+                    var editDeliveryCity = (typeof resolveEditOrderCalendarCity_ === 'function')
+                        ? (resolveEditOrderCalendarCity_() || '')
+                        : '';
+                    var delResult = await calculateDeliveryCostFromAddress(fullAddr, editDeliveryCity);
                     if (delResult.ok) {
                         _editOrderDeliveryCostPreview = delResult.cost;
                         if (typeof renderEditOrderCompositionList === 'function') renderEditOrderCompositionList();
@@ -11458,7 +11580,10 @@ function initEditOrderModal() {
                 var fullAddrNow = [addr1d, addr2d, noPlotd ? 'без номера участка' : addr3d].filter(Boolean).join(', ');
                 if (_editOrderAddressTouchedByUser && _editOrderOriginalAddressRaw != null &&
                     fullAddrNow.trim() !== String(_editOrderOriginalAddressRaw).trim()) {
-                    var delRes = await calculateDeliveryCostFromAddress(fullAddrNow);
+                    var saveDeliveryCity = (typeof resolveEditOrderCalendarCity_ === 'function')
+                        ? (resolveEditOrderCalendarCity_() || '')
+                        : '';
+                    var delRes = await calculateDeliveryCostFromAddress(fullAddrNow, saveDeliveryCity);
                     if (delRes.ok) editOrderDeliveryCost = delRes.cost;
                 }
             }
