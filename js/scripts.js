@@ -3568,7 +3568,7 @@ function updateDeliveryResultDate() {
     if (!resultDiv) return;
     var costEl = resultDiv.querySelector('.delivery-result-cost');
     if (!costEl) return;
-    var costText = '<div class="delivery-result-cost">' + costEl.innerHTML.trim() + '</div>';
+    var costText = '<div class="delivery-result-cost">' + costEl.textContent.trim() + '</div>';
     if (shouldUseUgSupplierDeliveryMode_()) {
         resultDiv.innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
         return;
@@ -4995,18 +4995,12 @@ async function calculateDelivery() {
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
             currentDeliveryDateStateMap = Object.create(null);
-            costText = '<div class="delivery-result-cost">' +
-                '<div class="delivery-result-cost__value">' + formatPrice(result.cost) + ' ₽</div>' +
-                '<div class="delivery-result-cost__meta">Доставка UG, расчёт от МКАД</div>' +
-                '</div>';
+            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
             document.getElementById('result').innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
             await refreshCurrentUgOfferWithDelivery_();
         } else {
             currentUgDeliveryContext = null;
-            costText = '<div class="delivery-result-cost">' +
-                '<div class="delivery-result-cost__value">' + formatPrice(result.cost) + ' ₽</div>' +
-                '<div class="delivery-result-cost__meta">Доставка по складу: ' + result.nearestCity.name + '</div>' +
-                '</div>';
+            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
             dateData = getDeliveryDateBlockForUI();
             document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
         }
