@@ -3522,20 +3522,22 @@ function renderDeliveryResultBlock(costText, dateData) {
     var hasAssembly = !!document.getElementById('assembly')?.checked;
     var activeWithout = hasAssembly ? '' : ' delivery-date-card--active';
     var activeWith = hasAssembly ? ' delivery-date-card--active' : '';
-    return '<div class="delivery-result-dates">' +
-            '<div class="delivery-result-dates-title">Ближайшие даты</div>' +
-            '<div class="delivery-date-cards">' +
-                '<div class="delivery-date-card' + activeWithout + '">' +
-                    '<div class="delivery-date-card__label">Без сборки</div>' +
-                    '<div class="delivery-date-card__value">' + withoutStr + '</div>' +
-                '</div>' +
-                '<div class="delivery-date-card' + activeWith + '">' +
-                    '<div class="delivery-date-card__label">Со сборкой</div>' +
-                    '<div class="delivery-date-card__value">' + withStr + '</div>' +
+    return '<div class="delivery-result-summary">' +
+            '<div class="delivery-result-summary__cost">' + costText + '</div>' +
+            '<div class="delivery-result-dates">' +
+                '<div class="delivery-result-dates-title">Ближайшие даты</div>' +
+                '<div class="delivery-date-cards">' +
+                    '<div class="delivery-date-card' + activeWithout + '">' +
+                        '<div class="delivery-date-card__label">Без сборки</div>' +
+                        '<div class="delivery-date-card__value">' + withoutStr + '</div>' +
+                    '</div>' +
+                    '<div class="delivery-date-card' + activeWith + '">' +
+                        '<div class="delivery-date-card__label">Со сборкой</div>' +
+                        '<div class="delivery-date-card__value">' + withStr + '</div>' +
+                    '</div>' +
                 '</div>' +
             '</div>' +
-        '</div>' +
-        costText;
+        '</div>';
 }
 
 function renderUgSupplierDeliveryPolicyBlock_() {
