@@ -48,7 +48,7 @@
   <link rel="preload" href="css/styles.css?v=274" as="style" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="css/styles.css?v=274"></noscript>
   <script src="https://api-maps.yandex.ru/2.1/?apikey=a6150be2-d00e-4551-b9f9-2a4f8118d04d&lang=ru_RU" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.28.0/dist/umd/supabase.min.js" defer></script>
+  <script src="js/vendor/supabase.min.js?v=228" defer></script>
   <script src="js/products-data.js?v=231" defer></script>
   <script src="js/greenhouses-data.js?v=231" defer></script>
   <script src="js/greenhouses-photos-list.js?v=231" defer></script>
@@ -467,6 +467,7 @@
     <input type="password" id="password" placeholder="Введите пароль" required>
     <button onclick="authenticate()">Войти</button>
     <p id="auth-error">Неверный логин или пароль!</p>
+    <div class="app-status-panel app-status-panel--auth hidden" id="auth-status-panel"></div>
   </div>
 
   <!-- Калькулятор -->
@@ -477,6 +478,7 @@
       <button class="ug-toggle-button hidden" id="ug-toggle-button" onclick="toggleUgSupplierModeForUser()">UG тест: выкл</button>
       <button class="logout" onclick="logout()">Выйти</button>
     </div>
+    <div class="app-status-panel hidden" id="app-status-panel"></div>
     <div class="container">
       
       <!-- Админ-панель для управления паролями -->

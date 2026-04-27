@@ -352,6 +352,12 @@ const ADMIN_KEY = 'admin_access_granted';
 const ADMIN_PANEL_DISABLED = true;
 const UG_SUPPLIER_TEST_URL_PARAM = 'ugSupplier';
 const UG_SUPPLIER_TEST_MODE_STORAGE_KEY = 'ugSupplierTestMode';
+let appRuntimeStatus = {
+    mode: 'Обычный',
+    auth: 'Не входили',
+    prices: 'Не загружены',
+    maps: 'Проверяем'
+};
 
 function isUgSupplierTestModeRequested_() {
     try {
@@ -411,6 +417,119 @@ function refreshUgSupplierToggleButtonUi_(canUseUgMode) {
     button.classList.toggle('ug-toggle-button--active', active);
 }
 
+function getCurrentAppModeLabel_() {
+    if (isEmergencyCalcMode_()) return 'Аварийный';
+    if (window.__UG_SUPPLIER_TEST_MODE__) return 'UG тест';
+    return 'Обычный';
+}
+
+function getStatusTone_(type, value) {
+    if (type === 'mode') {
+        if (value === 'Обычный') return 'ok';
+        if (value === 'UG тест') return 'warn';
+        return 'info';
+    }
+    if (type === 'auth') {
+        if (value === 'Основной') return 'ok';
+        if (value === 'Аварийный') return 'info';
+        return 'warn';
+    }
+    if (type === 'prices') {
+        if (value === 'Supabase') return 'ok';
+        if (value === 'GAS snapshot' || value === 'Local CSV') return 'info';
+        return 'warn';
+    }
+    if (type === 'maps') {
+        if (value === 'Доступны') return 'ok';
+        if (value === 'Недоступны') return 'warn';
+    }
+    return 'info';
+}
+
+function getUserFacingStatusConfig_(panelId) {
+    var isAuthPanel = panelId === 'auth-status-panel';
+    var mode = getCurrentAppModeLabel_();
+    var isUgTest = mode === 'UG тест';
+    var isEmergency = mode === 'Аварийный' || appRuntimeStatus.auth === 'Аварийный';
+    var mapsUnavailable = appRuntimeStatus.maps === 'Недоступны';
+    var usingFallbackPrices = appRuntimeStatus.prices === 'GAS snapshot' || appRuntimeStatus.prices === 'Local CSV';
+
+    if (isAuthPanel) {
+        return { visible: false };
+    }
+
+    if (isEmergency) {
+        return {
+            visible: true,
+            tone: 'info',
+            message: 'Подключение нестабильно. Калькулятор работает через резервный режим.',
+            actionLabel: 'Обновить',
+            showAction: true
+        };
+    }
+
+    if (mapsUnavailable) {
+        return {
+            visible: true,
+            tone: 'warn',
+            message: 'Карта временно недоступна. Адрес можно ввести вручную.',
+            actionLabel: 'Обновить',
+            showAction: true
+        };
+    }
+
+    if (usingFallbackPrices) {
+        return {
+            visible: true,
+            tone: 'info',
+            message: 'Подключение нестабильно. Калькулятор использует резервные данные.',
+            actionLabel: 'Обновить',
+            showAction: true
+        };
+    }
+
+    if (isUgTest) {
+        return {
+            visible: true,
+            tone: 'warn',
+            message: 'Включен тестовый режим UG.',
+            actionLabel: '',
+            showAction: false
+        };
+    }
+
+    return { visible: false };
+}
+
+function renderAppStatusPanel_(panelId) {
+    var panel = document.getElementById(panelId);
+    if (!panel) return;
+    var config = getUserFacingStatusConfig_(panelId);
+    if (!config || !config.visible) {
+        panel.innerHTML = '';
+        panel.classList.add('hidden');
+        return;
+    }
+    panel.classList.remove('hidden');
+    panel.className = 'app-status-panel app-status-panel--' + escapeHtml(config.tone || 'info') + (panelId === 'auth-status-panel' ? ' app-status-panel--auth' : '');
+    panel.innerHTML =
+        '<div class="app-status-panel__message">' + escapeHtml(config.message || '') + '</div>' +
+        (config.showAction
+            ? '<div class="app-status-panel__actions"><button type="button" class="app-status-link" onclick="recoverApplicationState()">' + escapeHtml(config.actionLabel || 'Обновить') + '</button></div>'
+            : '');
+}
+
+function updateAppStatusUi_() {
+    appRuntimeStatus.mode = getCurrentAppModeLabel_();
+    renderAppStatusPanel_('auth-status-panel');
+    renderAppStatusPanel_('app-status-panel');
+}
+
+function setAppRuntimeStatus_(patch) {
+    appRuntimeStatus = Object.assign({}, appRuntimeStatus, patch || {});
+    updateAppStatusUi_();
+}
+
 function updateUgSupplierTestModeUi_(canUseUgMode) {
     var active = isUgSupplierTestModeActive_(canUseUgMode);
     persistUgSupplierTestModeFlag_(active);
@@ -430,13 +549,18 @@ function updateUgSupplierTestModeUi_(canUseUgMode) {
     } catch (e) {}
     window.__UG_SUPPLIER_TEST_MODE__ = active;
     refreshUgSupplierToggleButtonUi_(canUseUgMode);
+    updateAppStatusUi_();
     return active;
 }
 
 function toggleUgSupplierModeForUser() {
     if (!canUseUgSupplierTestMode_()) return;
     var nextState = !isUgSupplierTestModeActive_(true);
-    persistUgSupplierTestModeFlag_(nextState);
+    var proceed = typeof window.confirm === 'function'
+        ? window.confirm('Переключить поставщика? Текущий расчёт, доставка и локальные допы будут сброшены.')
+        : true;
+    if (!proceed) return;
+    prepareUgSupplierModeSwitch_(nextState);
     try {
         var url = new URL(window.location.href);
         if (nextState) {
@@ -444,8 +568,10 @@ function toggleUgSupplierModeForUser() {
         } else {
             url.searchParams.delete(UG_SUPPLIER_TEST_URL_PARAM);
         }
+        persistUgSupplierTestModeFlag_(nextState);
         window.location.href = url.toString();
     } catch (e) {
+        persistUgSupplierTestModeFlag_(nextState);
         window.location.reload();
     }
 }
@@ -1252,6 +1378,14 @@ function shouldUseUgSupplierDeliveryMode_() {
     }
 }
 
+function hasLoadedUgSupplierCatalog_() {
+    try {
+        return Array.isArray(currentCityData) && currentCityData.some(function (item) { return isSupplierCatalogItem_(item); });
+    } catch (e) {
+        return false;
+    }
+}
+
 function getCityDataCacheKey_(cityName) {
     var city = (cityName || '').trim();
     return city + '::' + (shouldUseUgSupplierCatalogForCity_(city) ? 'ug_supplier' : 'default');
@@ -1493,6 +1627,10 @@ const PRICES_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRICE_CITY_SUPABASE_TIMEOUT_MS = 4000;
 const PRICE_CITY_EMERGENCY_TIMEOUT_MS = 3000;
 const PRICE_CITY_LOCAL_TIMEOUT_MS = 12000;
+const AUTH_SUPABASE_TIMEOUT_MS = 5000;
+const AUTH_EMERGENCY_TIMEOUT_MS = 5000;
+const SESSION_VALIDATE_TIMEOUT_MS = 4000;
+const EMERGENCY_API_TIMEOUT_MS = 5000;
 const PRICES_CACHE_DAY_STORAGE_KEY = 'pricesCacheDay';
 const PRICES_CACHE_TS_STORAGE_KEY = 'pricesCacheTs';
 const PRICES_CACHE_VERSION_STORAGE_KEY = 'pricesCacheVersion';
@@ -1507,6 +1645,44 @@ const EMERGENCY_CALC_2026_03_31_WEBAPP_URL = 'https://script.google.com/macros/s
 const EMERGENCY_CALC_MODE_STORAGE_KEY = 'emergencyCalcMode';
 const EMERGENCY_CALC_LOGIN_STORAGE_KEY = 'emergencyCalcLogin';
 const EMERGENCY_CALC_PASSWORD_STORAGE_KEY = 'emergencyCalcPassword';
+const AUTO_RECOVERY_ATTEMPT_SESSION_KEY = 'appAutoRecoveryAttempted';
+const MODE_SWITCH_STORAGE_KEYS = [
+    PRICES_CACHE_DAY_STORAGE_KEY,
+    PRICES_CACHE_TS_STORAGE_KEY,
+    PRICES_CACHE_VERSION_STORAGE_KEY,
+    'selectedBeds',
+    'bedsAssemblyEnabled',
+    'selectedGifts'
+];
+const APP_STATE_STORAGE_KEYS = [
+    UG_SUPPLIER_TEST_MODE_STORAGE_KEY,
+    PRICES_CACHE_DAY_STORAGE_KEY,
+    PRICES_CACHE_TS_STORAGE_KEY,
+    PRICES_CACHE_VERSION_STORAGE_KEY,
+    EMERGENCY_CALC_MODE_STORAGE_KEY,
+    EMERGENCY_CALC_LOGIN_STORAGE_KEY,
+    EMERGENCY_CALC_PASSWORD_STORAGE_KEY,
+    'selectedBeds',
+    'bedsAssemblyEnabled',
+    'selectedGifts'
+];
+
+function clearModeSwitchStorage_() {
+    try {
+        MODE_SWITCH_STORAGE_KEYS.forEach(function (key) {
+            localStorage.removeItem(key);
+        });
+    } catch (e) {}
+}
+
+function prepareUgSupplierModeSwitch_(nextState) {
+    resetAppRuntimeState_(nextState ? 'switch_to_ug_supplier' : 'switch_to_legacy_supplier');
+    clearModeSwitchStorage_();
+    clearAutoRecoveryAttempted_();
+    try {
+        localStorage.setItem(PRICES_CACHE_VERSION_STORAGE_KEY, APP_VERSION);
+    } catch (e) {}
+}
 function getTodayStamp_() {
     var now = new Date();
     var yyyy = now.getFullYear();
@@ -1688,6 +1864,203 @@ function clearEmergencyCalcSession_() {
     } catch (e) {}
 }
 
+function getRecoverySessionSnapshot_() {
+    var emergencyMode = isEmergencyCalcMode_();
+    var snapshot = {
+        emergencyMode: emergencyMode,
+        savedLogin: localStorage.getItem('savedLogin') || '',
+        appVersion: APP_VERSION,
+        ugSupplierTestMode: false,
+        ugSupplierRequested: false
+    };
+    try {
+        snapshot.ugSupplierTestMode = localStorage.getItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY) === 'true';
+    } catch (e) {}
+    snapshot.ugSupplierRequested = isUgSupplierTestModeRequested_();
+    if (!emergencyMode) {
+        snapshot.currentUser = localStorage.getItem('currentUser') || '';
+        snapshot.passwordVersion = localStorage.getItem('passwordVersion') || '';
+        snapshot.userId = localStorage.getItem('userId') || '';
+        snapshot.adminAccess = localStorage.getItem(ADMIN_KEY) || '';
+    }
+    return snapshot;
+}
+
+function restoreRecoverySessionSnapshot_(snapshot) {
+    if (!snapshot) return;
+    try {
+        localStorage.setItem('appVersion', snapshot.appVersion || APP_VERSION);
+        if (snapshot.savedLogin) localStorage.setItem('savedLogin', snapshot.savedLogin);
+        if (snapshot.ugSupplierTestMode) {
+            localStorage.setItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY, 'true');
+        } else {
+            localStorage.removeItem(UG_SUPPLIER_TEST_MODE_STORAGE_KEY);
+        }
+        if (snapshot.emergencyMode) return;
+        if (snapshot.currentUser) localStorage.setItem('currentUser', snapshot.currentUser);
+        if (snapshot.passwordVersion) localStorage.setItem('passwordVersion', snapshot.passwordVersion);
+        if (snapshot.userId) localStorage.setItem('userId', snapshot.userId);
+        if (snapshot.adminAccess) localStorage.setItem(ADMIN_KEY, snapshot.adminAccess);
+    } catch (e) {}
+}
+
+function clearAppStateStorage_(options) {
+    options = options || {};
+    var preserveKeys = Object.create(null);
+    if (Array.isArray(options.preserveKeys)) {
+        options.preserveKeys.forEach(function (key) {
+            if (key) preserveKeys[key] = true;
+        });
+    }
+    try {
+        APP_STATE_STORAGE_KEYS.forEach(function (key) {
+            if (preserveKeys[key]) return;
+            localStorage.removeItem(key);
+        });
+    } catch (e) {}
+}
+
+function removeUgSupplierQueryParam_(options) {
+    options = options || {};
+    if (options.preserveUgSupplierParam) return;
+    try {
+        var url = new URL(window.location.href);
+        url.searchParams.delete(UG_SUPPLIER_TEST_URL_PARAM);
+        window.history.replaceState({}, '', url.toString());
+    } catch (e) {}
+}
+
+function resetAppRuntimeState_(reason) {
+    if (calculateDeliveryDebounceTimer) {
+        clearTimeout(calculateDeliveryDebounceTimer);
+        calculateDeliveryDebounceTimer = null;
+    }
+    resetRuntimePricesCaches_(reason || 'manual_recovery');
+    currentCityData = [];
+    currentUgDeliveryContext = null;
+    deliveryCost = 0;
+    currentDeliveryDate = null;
+    currentDeliveryAssemblyDate = null;
+    currentDeliveryRestrictions = null;
+    deliveryDatesFromCalendar = false;
+    currentAvailableDatesWithoutAssembly = [];
+    currentAvailableDatesWithAssembly = [];
+    currentDeliveryDateStateMap = Object.create(null);
+    selectedBeds = {};
+    bedsAssemblyEnabled = false;
+    orderCart = [];
+    orderCartEditingIndex = null;
+    lastCalculation = null;
+    appRuntimeStatus = {
+        mode: 'Обычный',
+        auth: 'Не входили',
+        prices: 'Не загружены',
+        maps: typeof ymaps === 'undefined' ? 'Недоступны' : 'Доступны'
+    };
+    if (mapInstance && currentRoute) {
+        mapInstance.geoObjects.remove(currentRoute);
+    }
+    currentRoute = null;
+    updateAppStatusUi_();
+}
+
+function wasAutoRecoveryAttempted_() {
+    try {
+        return window.sessionStorage && window.sessionStorage.getItem(AUTO_RECOVERY_ATTEMPT_SESSION_KEY) === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function markAutoRecoveryAttempted_() {
+    try {
+        if (window.sessionStorage) {
+            window.sessionStorage.setItem(AUTO_RECOVERY_ATTEMPT_SESSION_KEY, 'true');
+        }
+    } catch (e) {}
+}
+
+function clearAutoRecoveryAttempted_() {
+    try {
+        if (window.sessionStorage) {
+            window.sessionStorage.removeItem(AUTO_RECOVERY_ATTEMPT_SESSION_KEY);
+        }
+    } catch (e) {}
+}
+
+function getRecoverableStateIssue_() {
+    try {
+        var savedLogin = localStorage.getItem('savedLogin') || '';
+        var currentUser = localStorage.getItem('currentUser') || '';
+        var passwordVersion = localStorage.getItem('passwordVersion') || '';
+        var userId = localStorage.getItem('userId') || '';
+        var emergencyMode = isEmergencyCalcMode_();
+        var emergencyLogin = localStorage.getItem(EMERGENCY_CALC_LOGIN_STORAGE_KEY) || '';
+        var emergencyPassword = localStorage.getItem(EMERGENCY_CALC_PASSWORD_STORAGE_KEY) || '';
+        var savedVersion = localStorage.getItem(PRICES_CACHE_VERSION_STORAGE_KEY) || '';
+        var savedTsRaw = localStorage.getItem(PRICES_CACHE_TS_STORAGE_KEY) || '';
+
+        if (!savedLogin && (currentUser || passwordVersion || userId || emergencyMode || emergencyLogin || emergencyPassword)) {
+            return 'orphan_session_state';
+        }
+        if (savedLogin && !emergencyMode && (!currentUser || !passwordVersion || !userId)) {
+            return 'partial_main_session_state';
+        }
+        if (emergencyMode && (!savedLogin || !emergencyLogin || !emergencyPassword)) {
+            return 'partial_emergency_session_state';
+        }
+        if (!emergencyMode && passwordVersion === 'emergency') {
+            return 'stale_emergency_password_version';
+        }
+        if (savedVersion && savedVersion !== APP_VERSION) {
+            return 'stale_prices_cache_version';
+        }
+        if (savedTsRaw && !Number.isFinite(parseInt(savedTsRaw, 10))) {
+            return 'broken_prices_cache_meta';
+        }
+    } catch (e) {
+        return 'storage_read_error';
+    }
+    return '';
+}
+
+function tryAutoRecoverApplicationState_() {
+    var issue = getRecoverableStateIssue_();
+    if (!issue || wasAutoRecoveryAttempted_()) return false;
+    markAutoRecoveryAttempted_();
+    recoverApplicationState({
+        skipConfirm: true,
+        silent: true,
+        reason: 'auto_recovery:' + issue
+    });
+    return true;
+}
+
+function recoverApplicationState(options) {
+    options = options || {};
+    var proceed = options.skipConfirm ? true : (typeof window.confirm === 'function'
+        ? window.confirm('Сбросить локальное состояние калькулятора и перезагрузить страницу? Несохранённые изменения будут потеряны.')
+        : true);
+    if (!proceed) return;
+    var snapshot = getRecoverySessionSnapshot_();
+    var preserveUgMode = options.preserveUgMode !== false;
+    resetAppRuntimeState_(options.reason || 'manual_recovery');
+    clearAppStateStorage_({
+        preserveKeys: preserveUgMode ? [UG_SUPPLIER_TEST_MODE_STORAGE_KEY] : []
+    });
+    restoreRecoverySessionSnapshot_(snapshot);
+    removeUgSupplierQueryParam_({
+        preserveUgSupplierParam: preserveUgMode && !!snapshot.ugSupplierRequested
+    });
+    try {
+        localStorage.setItem(PRICES_CACHE_VERSION_STORAGE_KEY, APP_VERSION);
+    } catch (e) {}
+    if (!options.silent) {
+        clearAutoRecoveryAttempted_();
+    }
+    window.location.reload();
+}
+
 function isAssemblySpecialPriceCity_(cityRaw) {
     var city = (typeof normalizeCityAlias_ === 'function') ? (normalizeCityAlias_(cityRaw || '') || '') : String(cityRaw || '');
     var normalized = (typeof normalizeCityName === 'function') ? normalizeCityName(city) : String(city || '').trim().toLowerCase();
@@ -1743,17 +2116,18 @@ function renderEmergencyCalcBanner_() {
         calcContainer.insertBefore(existing, calcContainer.firstChild);
     }
     existing.innerHTML = '<strong>Аварийный режим.</strong> Если прямой доступ к Supabase недоступен, вход и оформление заказа идут через резервный серверный контур.';
+    setAppRuntimeStatus_({ mode: 'Аварийный', auth: 'Аварийный' });
 }
 
 async function callEmergencyCalcApi_(action, payload) {
-    var response = await fetch(EMERGENCY_CALC_2026_03_31_WEBAPP_URL, {
+    var response = await withTimeout_(fetch(EMERGENCY_CALC_2026_03_31_WEBAPP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({
             emergency_calc_api: '2026-03-31',
             action: action
         }, payload || {}))
-    });
+    }), EMERGENCY_API_TIMEOUT_MS, 'Emergency API ' + action);
     if (!response.ok) throw new Error('Emergency API HTTP ' + response.status);
     return await response.json();
 }
@@ -1765,6 +2139,30 @@ async function tryEmergencyCalcAuth_(login, password) {
         setEmergencyCalcSession_(login, password);
     }
     return res;
+}
+
+async function tryEmergencyAuthAndOpenCalculator_(login, password, authError) {
+    if (!EMERGENCY_CALC_2026_03_31_ENABLED) return false;
+    try {
+        var emergencyAuth = await withTimeout_(
+            tryEmergencyCalcAuth_(login, password),
+            AUTH_EMERGENCY_TIMEOUT_MS,
+            'Emergency auth'
+        );
+        if (emergencyAuth && emergencyAuth.ok) {
+            if (authError) authError.style.display = "none";
+            document.getElementById("auth-container").classList.add("hidden");
+            document.getElementById("calculator-container").classList.remove("hidden");
+            setAppRuntimeStatus_({ auth: 'Аварийный' });
+            await initializeCalculator();
+            clearAutoRecoveryAttempted_();
+            renderEmergencyCalcBanner_();
+            return true;
+        }
+    } catch (fallbackErr) {
+        console.error('Emergency auth error:', fallbackErr);
+    }
+    return false;
 }
 
 async function tryEmergencyCalcSaveOrder_(orderData) {
@@ -1879,7 +2277,10 @@ async function loadCityPricesWithFastFallback_(city) {
             PRICE_CITY_SUPABASE_TIMEOUT_MS,
             'Supabase city prices'
         );
-        if (data && data.length > 0) return { data: data, source: 'supabase' };
+        if (data && data.length > 0) {
+            setAppRuntimeStatus_({ prices: 'Supabase' });
+            return { data: data, source: 'supabase' };
+        }
     } catch (supabaseErr) {
         console.warn('onCityChange: Supabase prices unavailable/slow, fallback for city', city, supabaseErr);
     }
@@ -1890,7 +2291,10 @@ async function loadCityPricesWithFastFallback_(city) {
             PRICE_CITY_EMERGENCY_TIMEOUT_MS,
             'Emergency prices snapshot'
         );
-        if (data && data.length > 0) return { data: data, source: 'gas_snapshot' };
+        if (data && data.length > 0) {
+            setAppRuntimeStatus_({ prices: 'GAS snapshot' });
+            return { data: data, source: 'gas_snapshot' };
+        }
     } catch (snapshotErr) {
         console.warn('onCityChange: emergency snapshot unavailable/slow, fallback for city', city, snapshotErr);
     }
@@ -1901,11 +2305,15 @@ async function loadCityPricesWithFastFallback_(city) {
             PRICE_CITY_LOCAL_TIMEOUT_MS,
             'Local prices snapshot'
         );
-        if (data && data.length > 0) return { data: data, source: 'local_csv' };
+        if (data && data.length > 0) {
+            setAppRuntimeStatus_({ prices: 'Local CSV' });
+            return { data: data, source: 'local_csv' };
+        }
     } catch (fallbackErr) {
         console.error('onCityChange: local prices snapshot unavailable for city', city, fallbackErr);
     }
 
+    setAppRuntimeStatus_({ prices: 'Не загружены' });
     return { data: [], source: 'none' };
 }
 
@@ -1920,9 +2328,19 @@ async function loadCityCatalogWithSafeTestMode_(city) {
             if (supplierData && supplierData.length > 0) {
                 return { data: supplierData, source: 'ug_supplier' };
             }
-            console.warn('UG supplier catalog is empty, fallback to default prices for city', city);
+            console.warn('UG supplier catalog is empty for city', city);
+            return {
+                data: [],
+                source: 'ug_unavailable',
+                error: 'Каталог нового поставщика для Москвы и МО сейчас недоступен. Попробуйте обновить страницу позже.'
+            };
         } catch (ugErr) {
-            console.warn('UG supplier catalog unavailable, fallback to default prices for city', city, ugErr);
+            console.warn('UG supplier catalog unavailable for city', city, ugErr);
+            return {
+                data: [],
+                source: 'ug_unavailable',
+                error: 'Каталог нового поставщика для Москвы и МО сейчас недоступен. Попробуйте обновить страницу позже.'
+            };
         }
     }
     return loadCityPricesWithFastFallback_(city);
@@ -1994,12 +2412,17 @@ let currentRoute;
 function whenYmapsReady(callback) {
     if (typeof ymaps === 'undefined') {
         console.warn('Яндекс.Карты не загружены (сеть или ошибка API). Подсказки адреса и карта недоступны.');
+        setAppRuntimeStatus_({ maps: 'Недоступны' });
         return;
     }
     try {
-        ymaps.ready(callback);
+        ymaps.ready(function () {
+            setAppRuntimeStatus_({ maps: 'Доступны' });
+            callback();
+        });
     } catch (e) {
         console.warn('Яндекс.Карты: ошибка инициализации', e);
+        setAppRuntimeStatus_({ maps: 'Недоступны' });
     }
 }
 
@@ -2040,29 +2463,15 @@ async function authenticate() {
             return;
         }
 
-        const { data, error } = await supabaseClient.rpc('authenticate_user', {
+        const { data, error } = await withTimeout_(supabaseClient.rpc('authenticate_user', {
             p_login: login,
             p_password: password
-        });
+        }), AUTH_SUPABASE_TIMEOUT_MS, 'Supabase auth');
 
         if (error) {
-            const errorMessage = error.message || '';
-            if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-                if (EMERGENCY_CALC_2026_03_31_ENABLED) {
-                    try {
-                        var emergencyAuth = await tryEmergencyCalcAuth_(login, password);
-                        if (emergencyAuth && emergencyAuth.ok) {
-                            authError.style.display = "none";
-                            document.getElementById("auth-container").classList.add("hidden");
-                            document.getElementById("calculator-container").classList.remove("hidden");
-                            await initializeCalculator();
-                            renderEmergencyCalcBanner_();
-                            return;
-                        }
-                    } catch (fallbackErr) {
-                        console.error('Emergency auth error:', fallbackErr);
-                    }
-                }
+            if (isNetworkError(error)) {
+                var emergencyOpened = await tryEmergencyAuthAndOpenCalculator_(login, password, authError);
+                if (emergencyOpened) return;
                 if (authError) {
                     authError.textContent = "Ошибка подключения к серверу. Если у вас есть аварийные доступы, войдите ими повторно.";
                     authError.style.display = "block";
@@ -2109,12 +2518,15 @@ async function authenticate() {
 
         document.getElementById("auth-container").classList.add("hidden");
         document.getElementById("calculator-container").classList.remove("hidden");
+        setAppRuntimeStatus_({ auth: 'Основной' });
         await initializeCalculator();
+        clearAutoRecoveryAttempted_();
     } catch (err) {
         console.error("Ошибка при авторизации:", err);
-        const errorMessage = err.message || '';
         if (authError) {
-            if (errorMessage.includes('Load failed') || errorMessage.includes('TypeError') || errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+            if (isNetworkError(err)) {
+                var emergencyOpenedFromCatch = await tryEmergencyAuthAndOpenCalculator_(login, password, authError);
+                if (emergencyOpenedFromCatch) return;
                 authError.textContent = "Ошибка подключения к серверу. Проверьте интернет-соединение и попробуйте снова.";
             } else {
                 authError.textContent = "Неверный логин или пароль!";
@@ -2137,6 +2549,7 @@ function logout() {
         localStorage.removeItem(ADMIN_KEY);
         localStorage.removeItem('currentUser');
         clearEmergencyCalcSession_();
+        setAppRuntimeStatus_({ mode: 'Обычный', auth: 'Не входили', prices: 'Не загружены' });
         
         const authContainer = document.getElementById("auth-container");
         const calcContainer = document.getElementById("calculator-container");
@@ -2206,10 +2619,10 @@ async function checkPasswordVersion() {
     }
 
     try {
-        const { data, error } = await supabaseClient.rpc('validate_session', {
+        const { data, error } = await withTimeout_(supabaseClient.rpc('validate_session', {
             p_login: savedLogin,
             p_password_version: savedPasswordVersion
-        });
+        }), SESSION_VALIDATE_TIMEOUT_MS, 'validate_session');
 
         if (error) {
             if (isNetworkError(error)) {
@@ -2259,6 +2672,9 @@ function isNetworkError(error) {
            errorStr.includes('err_connection_closed') ||
            errorStr.includes('failed to fetch') ||
            errorStr.includes('networkerror') ||
+           msg.includes('load failed') ||
+           msg.includes('network') ||
+           msg.includes('timeout') ||
            msg.includes('failed to fetch') ||
            msg.includes('connection_closed');
 }
@@ -3081,7 +3497,7 @@ async function onCityChange() {
         refreshAssemblySpecialPriceUi_();
         refreshSupplierBracingTypeUi_();
         refreshSupplierLegacyExtrasVisibility_();
-        return;
+        return false;
     }
 
     ensureFreshPricesCaches_('city_change');
@@ -3100,8 +3516,18 @@ async function onCityChange() {
         }
 
         if (!data || data.length === 0) {
-            showError("Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
-            return;
+            currentCityData = [];
+            resetDropdown('form', 'Не удалось загрузить каталог');
+            resetDropdown('width', 'Сначала выберите форму');
+            resetDropdown('length', 'Сначала выберите ширину');
+            resetDropdown('frame', 'Сначала выберите длину');
+            resetDropdown('arcStep', 'Выберите шаг');
+            resetDropdown('polycarbonate', 'Не удалось загрузить каталог');
+            refreshAssemblySpecialPriceUi_();
+            refreshSupplierBracingTypeUi_();
+            refreshSupplierLegacyExtrasVisibility_();
+            showError(priceLoad.error || "Не удалось загрузить данные для выбранного города. Проверьте подключение к интернету и попробуйте снова.", 'Ошибка загрузки');
+            return false;
         }
 
         // Сохраняем в кеш
@@ -3183,6 +3609,7 @@ async function onCityChange() {
     if (orderCollapse && orderCollapse.classList.contains('open')) {
         populateOrderDeliveryDate();
     }
+    return true;
 }
 
 // Модалка «Параметры теплицы»: город из заказа. ВРЕМЯ ТЕСТОВ — при неизвестном городе подставляем fallback (поиск: EDIT_ORDER_FALLBACK).
@@ -4340,12 +4767,16 @@ async function calculateDelivery() {
         if (window.__UG_SUPPLIER_TEST_MODE__ && canUseUgSupplierTestMode_()) {
             var cityDropdownForUg = document.getElementById('city');
             var currentCityValue = cityDropdownForUg ? (cityDropdownForUg.value || '').trim() : '';
-            if (!shouldUseUgSupplierCatalogForCity_(currentCityValue) && !(Array.isArray(currentCityData) && currentCityData.some(function (item) { return isSupplierCatalogItem_(item); }))) {
+            if (!hasLoadedUgSupplierCatalog_()) {
                 var moscowForUg = findCityInDropdown('Москва') || 'Москва';
                 if (cityDropdownForUg) {
                     cityDropdownForUg.value = moscowForUg;
                     setDeliveryCalculationUiState_(true, 'Подгружаем данные поставщика UG для Москвы.');
-                    await onCityChange();
+                    var ugCatalogReady = await onCityChange();
+                    if (!ugCatalogReady || !hasLoadedUgSupplierCatalog_()) {
+                        document.getElementById('result').innerText = 'Каталог нового поставщика для Москвы и МО сейчас недоступен. Доставка UG временно недоступна.';
+                        return;
+                    }
                 }
             }
         }
@@ -6532,7 +6963,12 @@ window.onload = async function () {
     if (localStorage.getItem('appVersion') !== APP_VERSION) {
         localStorage.clear();
     }
+    if (tryAutoRecoverApplicationState_()) {
+        return;
+    }
     ensureFreshPricesCaches_('window_load');
+    setAppRuntimeStatus_({ maps: typeof ymaps === 'undefined' ? 'Недоступны' : 'Проверяем' });
+    updateAppStatusUi_();
     
     // Загружаем данные грядок из Supabase
     await loadBedsFromSupabase();
@@ -6542,10 +6978,12 @@ window.onload = async function () {
     
     if (savedLogin) {
         if (isEmergencyCalcMode_()) {
+            setAppRuntimeStatus_({ auth: 'Аварийный' });
             document.getElementById("login").value = savedLogin;
             document.getElementById("auth-container").classList.add("hidden");
             document.getElementById("calculator-container").classList.remove("hidden");
             await initializeCalculator();
+            clearAutoRecoveryAttempted_();
             renderEmergencyCalcBanner_();
             didRunCalculator = true;
         } else {
@@ -6557,19 +6995,24 @@ window.onload = async function () {
         // Проверяем актуальность версии пароля
         const isPasswordValid = await checkPasswordVersion();
         if (isPasswordValid) {
+            setAppRuntimeStatus_({ auth: 'Основной' });
             document.getElementById("login").value = savedLogin;
             document.getElementById("password").focus();
             document.getElementById("auth-container").classList.add("hidden");
             document.getElementById("calculator-container").classList.remove("hidden");
             
             await initializeCalculator();
+            clearAutoRecoveryAttempted_();
             didRunCalculator = true;
         } else {
             // Версия пароля не совпадает - разлогиниваем
             localStorage.clear();
+            clearAutoRecoveryAttempted_();
             document.getElementById("login").value = savedLogin;
         }
         }
+    } else {
+        clearAutoRecoveryAttempted_();
     }
     if (/[?&]editPhone=/.test(window.location.search)) {
         var o = document.getElementById('edit-order-loading-overlay');

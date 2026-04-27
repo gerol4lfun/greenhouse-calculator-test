@@ -450,6 +450,76 @@ label {
   letter-spacing: 0.02em;
 }
 
+.app-status-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #dbe4ee;
+  border-radius: 10px;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+.app-status-panel--auth {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.app-status-panel--info {
+  background: #f3f8ff;
+  border-color: #c9dcff;
+  color: #1e3a5f;
+}
+
+.app-status-panel--warn {
+  background: #fff8ee;
+  border-color: #f5cf96;
+  color: #7a4b00;
+}
+
+.app-status-panel__message {
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.app-status-panel__actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.app-status-link {
+  appearance: none;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.65);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.app-status-link:hover {
+  background: rgba(255, 255, 255, 0.92);
+  transform: translateY(-1px);
+}
+
+.app-status-link:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* Label с иконкой внутри */
 .label-with-icon {
   display: flex;
@@ -5699,6 +5769,19 @@ input[type="radio"] {
     width: 100%;
     padding: 12px;
     font-size: 14px;
+  }
+
+  .app-status-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-status-panel__actions {
+    justify-content: stretch;
+  }
+
+  .app-status-link {
+    width: 100%;
   }
 
   /* Заголовки */
