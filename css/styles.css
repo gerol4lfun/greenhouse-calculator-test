@@ -1261,10 +1261,23 @@ select option {
 /* Блок дат доставки после расчёта адреса */
 .delivery-result-cost {
   margin: 0;
-  font-size: 18px;
-  line-height: 1.25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.delivery-result-cost__value {
+  font-size: 19px;
+  line-height: 1.1;
   font-weight: 800;
   color: #3b82f6;
+  letter-spacing: -0.02em;
+}
+.delivery-result-cost__meta {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 600;
+  color: #64748b;
 }
 #result {
   min-height: 24px;
@@ -1273,7 +1286,7 @@ select option {
 .delivery-result-summary {
   max-width: 430px;
   margin: 0 auto;
-  padding: 14px 14px 12px;
+  padding: 12px 14px 10px;
   border: 1px solid #d7e3f2;
   border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
@@ -1281,7 +1294,7 @@ select option {
   text-align: center;
 }
 .delivery-result-summary__cost {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding-bottom: 10px;
   border-bottom: 1px solid #e5edf6;
 }
@@ -1333,15 +1346,6 @@ select option {
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
-}
-.delivery-result-dates-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #6b7a90;
-  margin-bottom: 8px;
-  text-align: center;
 }
 .delivery-date-cards {
   display: flex;
@@ -1412,8 +1416,11 @@ select option {
     padding: 12px;
     border-radius: 16px;
   }
-  .delivery-result-cost {
-    font-size: 17px;
+  .delivery-result-cost__value {
+    font-size: 18px;
+  }
+  .delivery-result-cost__meta {
+    font-size: 12px;
   }
   .delivery-result-status__title { font-size: 13px; }
   .delivery-result-status__text { font-size: 12px; }

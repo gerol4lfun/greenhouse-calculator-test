@@ -3525,7 +3525,6 @@ function renderDeliveryResultBlock(costText, dateData) {
     return '<div class="delivery-result-summary">' +
             '<div class="delivery-result-summary__cost">' + costText + '</div>' +
             '<div class="delivery-result-dates">' +
-                '<div class="delivery-result-dates-title">Ближайшие даты</div>' +
                 '<div class="delivery-date-cards">' +
                     '<div class="delivery-date-card' + activeWithout + '">' +
                         '<div class="delivery-date-card__label">Без сборки</div>' +
@@ -3569,7 +3568,7 @@ function updateDeliveryResultDate() {
     if (!resultDiv) return;
     var costEl = resultDiv.querySelector('.delivery-result-cost');
     if (!costEl) return;
-    var costText = '<div class="delivery-result-cost">' + costEl.textContent.trim() + '</div>';
+    var costText = '<div class="delivery-result-cost">' + costEl.innerHTML.trim() + '</div>';
     if (shouldUseUgSupplierDeliveryMode_()) {
         resultDiv.innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
         return;
@@ -4996,12 +4995,18 @@ async function calculateDelivery() {
             currentAvailableDatesWithoutAssembly = [];
             currentAvailableDatesWithAssembly = [];
             currentDeliveryDateStateMap = Object.create(null);
-            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (UG, от МКАД)</div>';
+            costText = '<div class="delivery-result-cost">' +
+                '<div class="delivery-result-cost__value">' + formatPrice(result.cost) + ' ₽</div>' +
+                '<div class="delivery-result-cost__meta">Доставка UG, расчёт от МКАД</div>' +
+                '</div>';
             document.getElementById('result').innerHTML = costText + renderUgSupplierDeliveryPolicyBlock_();
             await refreshCurrentUgOfferWithDelivery_();
         } else {
             currentUgDeliveryContext = null;
-            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
+            costText = '<div class="delivery-result-cost">' +
+                '<div class="delivery-result-cost__value">' + formatPrice(result.cost) + ' ₽</div>' +
+                '<div class="delivery-result-cost__meta">Доставка по складу: ' + result.nearestCity.name + '</div>' +
+                '</div>';
             dateData = getDeliveryDateBlockForUI();
             document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
         }
