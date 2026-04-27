@@ -289,6 +289,8 @@ function normalizeCityName(cityName) {
     // Маппинг альтернативных названий на стандартные (для fuzzy match delivery_calendar)
     const cityMap = {
         'мск': 'москва', 'msk': 'москва', 'москва': 'москва',
+        'москва и мо': 'москва',
+        'московская область': 'москва',
         'питер': 'санкт-петербург',
         'петербург': 'санкт-петербург',
         'спб': 'санкт-петербург',
@@ -1881,6 +1883,15 @@ function normalizeLocalPriceRow_(rowObj) {
     };
 }
 
+function getPriceCityLookupCandidates_(cityName) {
+    var city = String(cityName || '').trim();
+    if (!city) return [];
+    var normalized = normalizeCityName(city);
+    if (normalized === 'москва') return ['Москва', 'Москва и МО'];
+    if (normalized === normalizeCityName('Москва и МО')) return ['Москва и МО', 'Москва'];
+    return [city];
+}
+
 async function loadLocalPricesRows_() {
     ensureFreshPricesCaches_('load_local_prices');
     if (Array.isArray(localPricesRowsCache)) return localPricesRowsCache;
@@ -1907,11 +1918,14 @@ async function loadLocalPricesRows_() {
 }
 
 async function getLocalPricesByCity_(cityName) {
-    var city = (cityName || '').trim();
-    if (!city) return [];
+    var candidates = getPriceCityLookupCandidates_(cityName);
+    if (!candidates.length) return [];
     var rows = await loadLocalPricesRows_();
     return rows.filter(function (item) {
-        return (item.city_name || '').trim() === city;
+        var itemCity = (item.city_name || '').trim();
+        return candidates.some(function (candidate) {
+            return itemCity === candidate;
+        });
     });
 }
 
@@ -2277,22 +2291,28 @@ async function getEmergencyPricesSnapshot_() {
 }
 
 async function getEmergencyPricesByCity_(cityName) {
-    var city = (cityName || '').trim();
-    if (!city) return [];
+    var candidates = getPriceCityLookupCandidates_(cityName);
+    if (!candidates.length) return [];
     try {
-        var res = await callEmergencyCalcApi_('prices_by_city', { city: city });
-        if (res && res.ok && Array.isArray(res.rows)) {
-            persistPricesCacheMeta_(Date.now());
-            return res.rows.map(function (rowObj) {
-                return normalizeLocalPriceRow_(rowObj || {});
-            });
+        for (var i = 0; i < candidates.length; i++) {
+            var candidate = candidates[i];
+            var res = await callEmergencyCalcApi_('prices_by_city', { city: candidate });
+            if (res && res.ok && Array.isArray(res.rows) && res.rows.length > 0) {
+                persistPricesCacheMeta_(Date.now());
+                return res.rows.map(function (rowObj) {
+                    return normalizeLocalPriceRow_(rowObj || {});
+                });
+            }
         }
     } catch (cityErr) {
-        console.warn('getEmergencyPricesByCity_: prices_by_city unavailable, fallback to full snapshot', cityErr);
+        console.warn('getEmergencyPricesByCity_: prices_by_city unavailable, fallback to full snapshot', candidates[0], cityErr);
     }
     var rows = await getEmergencyPricesSnapshot_();
     return rows.filter(function (item) {
-        return (item.city_name || '').trim() === city;
+        var itemCity = (item.city_name || '').trim();
+        return candidates.some(function (candidate) {
+            return itemCity === candidate;
+        });
     });
 }
 
@@ -2320,13 +2340,19 @@ function withTimeout_(promise, timeoutMs, label) {
 }
 
 async function loadCityPricesFromSupabase_(city) {
-    let response = await supabaseClient
-        .from('prices')
-        .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment')
-        .eq('city_name', city)
-        .limit(30000);
-    if (response.error) throw response.error;
-    return response.data || [];
+    var candidates = getPriceCityLookupCandidates_(city);
+    for (var i = 0; i < candidates.length; i++) {
+        let response = await supabaseClient
+            .from('prices')
+            .select('form_name, polycarbonate_type, width, length, frame_description, price, snow_load, height, horizontal_ties, equipment')
+            .eq('city_name', candidates[i])
+            .limit(30000);
+        if (response.error) throw response.error;
+        if (response.data && response.data.length > 0) {
+            return response.data;
+        }
+    }
+    return [];
 }
 
 async function loadUgSupplierCatalogFromSupabase_() {
