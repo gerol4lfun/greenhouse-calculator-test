@@ -1309,17 +1309,58 @@ select option {
   to { transform: rotate(360deg); }
 }
 .delivery-result-dates {
-  margin-top: 12px;
+  margin-top: 14px;
   text-align: left;
-  max-width: 320px;
+  max-width: 420px;
   margin-left: auto;
   margin-right: auto;
 }
 .delivery-result-dates-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.delivery-date-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.delivery-date-card {
+  min-width: 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid #d8e5f5;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5fc 100%);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.08);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.delivery-date-card__label {
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #5b6b83;
+  margin-bottom: 6px;
+}
+.delivery-date-card__value {
+  font-size: 26px;
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #1e3a8a;
+}
+.delivery-date-card--active {
+  border-color: #4a90e2;
+  background: linear-gradient(135deg, #5fa2ee 0%, #3f84d8 100%);
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.22);
+  transform: translateY(-1px);
+}
+.delivery-date-card--active .delivery-date-card__label,
+.delivery-date-card--active .delivery-date-card__value {
+  color: #fff;
 }
 .delivery-date-row {
   font-size: 15px;
@@ -1344,6 +1385,16 @@ select option {
   .delivery-result-status__title { font-size: 13px; }
   .delivery-result-status__text { font-size: 12px; }
   .delivery-result-dates { max-width: 100%; }
+  .delivery-date-cards {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .delivery-date-card {
+    padding: 10px 12px;
+  }
+  .delivery-date-card__value {
+    font-size: 22px;
+  }
   .delivery-date-row { font-size: 14px; padding: 6px 10px; }
 }
 

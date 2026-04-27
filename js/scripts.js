@@ -3520,11 +3520,22 @@ function renderDeliveryResultBlock(costText, dateData) {
     var withoutStr = formatDateToDayMonth(dateData.without);
     var withStr = formatDateToDayMonth(dateData.withAssembly);
     var hasAssembly = !!document.getElementById('assembly')?.checked;
-    var activeWithout = hasAssembly ? '' : ' delivery-date-row--active';
-    var activeWith = hasAssembly ? ' delivery-date-row--active' : '';
-    return costText + '<div class="delivery-result-dates"><div class="delivery-result-dates-title">Даты доставки</div>' +
-        '<div class="delivery-date-row' + activeWithout + '">Без сборки — ' + withoutStr + '</div>' +
-        '<div class="delivery-date-row' + activeWith + '">Со сборкой — ' + withStr + '</div></div>';
+    var activeWithout = hasAssembly ? '' : ' delivery-date-card--active';
+    var activeWith = hasAssembly ? ' delivery-date-card--active' : '';
+    return costText +
+        '<div class="delivery-result-dates">' +
+            '<div class="delivery-result-dates-title">Ближайшие даты</div>' +
+            '<div class="delivery-date-cards">' +
+                '<div class="delivery-date-card' + activeWithout + '">' +
+                    '<div class="delivery-date-card__label">Без сборки</div>' +
+                    '<div class="delivery-date-card__value">' + withoutStr + '</div>' +
+                '</div>' +
+                '<div class="delivery-date-card' + activeWith + '">' +
+                    '<div class="delivery-date-card__label">Со сборкой</div>' +
+                    '<div class="delivery-date-card__value">' + withStr + '</div>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
 }
 
 function renderUgSupplierDeliveryPolicyBlock_() {
