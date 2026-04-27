@@ -1014,27 +1014,34 @@ function getGeoObjectRegionMeta_(geoObject) {
     return { localities: localities, administrativeAreas: administrativeAreas };
 }
 
+function resolveDeliveryRegionEntryByAddressMeta_(address, localities, administrativeAreas) {
+    var lowerAddress = String(address || '').trim().toLowerCase().replace(/ё/g, 'е');
+    var localityList = Array.isArray(localities) ? localities : [];
+    var areaList = Array.isArray(administrativeAreas) ? administrativeAreas : [];
+    for (var i = 0; i < deliveryRegions.length; i++) {
+        var entry = deliveryRegions[i];
+        var keywords = Array.isArray(entry && entry.keywords) ? entry.keywords : [];
+        for (var j = 0; j < keywords.length; j++) {
+            var keyword = String(keywords[j] || '').trim().toLowerCase().replace(/ё/g, 'е');
+            if (!keyword) continue;
+            if (lowerAddress.indexOf(keyword) !== -1) return entry;
+            if (localityList.some(function (loc) { return String(loc || '').indexOf(keyword) !== -1; })) return entry;
+            if (areaList.some(function (area) { return String(area || '').indexOf(keyword) !== -1; })) return entry;
+        }
+    }
+    return null;
+}
+
 function resolveLegacyDeliveryCityFromGeoObject_(address, geoObject) {
     var meta = getGeoObjectRegionMeta_(geoObject);
     if (!isAddressInDeliveryRegionByLocality(meta.localities, meta.administrativeAreas)) {
         return { ok: false, error: 'Доставка в этот регион не осуществляется' };
     }
 
-    var canonicalCity = null;
-    if (typeof resolveRegionToCanonicalCity_ === 'function') {
-        canonicalCity = resolveRegionToCanonicalCity_(address || '');
-        if (!canonicalCity) {
-            canonicalCity = meta.administrativeAreas
-                .map(function (area) { return resolveRegionToCanonicalCity_(area); })
-                .find(Boolean) || null;
-        }
-        if (!canonicalCity) {
-            canonicalCity = meta.localities
-                .map(function (loc) { return resolveRegionToCanonicalCity_(loc); })
-                .find(Boolean) || null;
-        }
-    }
-
+    var regionEntry = resolveDeliveryRegionEntryByAddressMeta_(address, meta.localities, meta.administrativeAreas);
+    var canonicalCity = regionEntry && Array.isArray(regionEntry.keywords) && regionEntry.keywords.length
+        ? regionEntry.keywords[0]
+        : null;
     if (!canonicalCity) {
         return { ok: false, error: 'Не удалось определить город расчёта по адресу.' };
     }
