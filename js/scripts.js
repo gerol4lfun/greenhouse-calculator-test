@@ -3522,8 +3522,7 @@ function renderDeliveryResultBlock(costText, dateData) {
     var hasAssembly = !!document.getElementById('assembly')?.checked;
     var activeWithout = hasAssembly ? '' : ' delivery-date-card--active';
     var activeWith = hasAssembly ? ' delivery-date-card--active' : '';
-    return costText +
-        '<div class="delivery-result-dates">' +
+    return '<div class="delivery-result-dates">' +
             '<div class="delivery-result-dates-title">Ближайшие даты</div>' +
             '<div class="delivery-date-cards">' +
                 '<div class="delivery-date-card' + activeWithout + '">' +
@@ -3535,7 +3534,8 @@ function renderDeliveryResultBlock(costText, dateData) {
                     '<div class="delivery-date-card__value">' + withStr + '</div>' +
                 '</div>' +
             '</div>' +
-        '</div>';
+        '</div>' +
+        costText;
 }
 
 function renderUgSupplierDeliveryPolicyBlock_() {
