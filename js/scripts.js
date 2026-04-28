@@ -823,6 +823,37 @@ function getDeliveryCalendarLookupKeys_(cityRaw, fullAddr) {
     return Object.keys(keys);
 }
 
+const DELIVERY_CALENDAR_QUERY_VARIANTS_BY_KEY_ = (function() {
+    var groups = Object.create(null);
+    for (var alias in DELIVERY_CALENDAR_CANONICAL_ALIASES_) {
+        if (!Object.prototype.hasOwnProperty.call(DELIVERY_CALENDAR_CANONICAL_ALIASES_, alias)) continue;
+        var key = DELIVERY_CALENDAR_CANONICAL_ALIASES_[alias];
+        if (!key) continue;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(alias);
+    }
+    return groups;
+})();
+
+function getDeliveryCalendarQueryCandidates_(cityRaw, fullAddr) {
+    var variants = Object.create(null);
+    function addVariant(value) {
+        if (!value || typeof value !== 'string') return;
+        var normalized = value.trim().toLowerCase().replace(/ё/g, 'е');
+        if (!normalized || normalized.length < 3) return;
+        variants[normalized] = true;
+    }
+
+    var lookupKeys = getDeliveryCalendarLookupKeys_(cityRaw, fullAddr);
+    lookupKeys.forEach(addVariant);
+    lookupKeys.forEach(function(key) {
+        var keyVariants = DELIVERY_CALENDAR_QUERY_VARIANTS_BY_KEY_[key] || [];
+        keyVariants.forEach(addVariant);
+    });
+
+    return Object.keys(variants);
+}
+
 /**
  * Канонический warehouse city key для create-flow delivery readers.
  * Priority: city dropdown -> lastCalculation.city.
@@ -3428,21 +3459,36 @@ async function loadDeliveryDate(cityName) {
     var calendarQueryResolved = false;
     try {
         var calSelect = 'city_name, delivery_date, available_without_assembly, available_with_assembly, raw_status, updated_at';
-        var calResExact = await supabaseClient
-            .from('delivery_calendar')
-            .select(calSelect)
-            .eq('city_name', cityName)
-            .order('delivery_date');
-
-        var exactRows = (!calResExact.error && calResExact.data) ? calResExact.data : [];
+        var exactRows = [];
         var likeRows = [];
-        if (!calResExact.error) {
-            var calResLike = await supabaseClient
+        var queryCandidates = getDeliveryCalendarQueryCandidates_(cityName, cityName);
+        var calResExact = null;
+
+        if (queryCandidates.length > 0) {
+            var orFilters = queryCandidates.map(function(candidate) {
+                return 'city_name.ilike.%' + candidate + '%';
+            }).join(',');
+            calResExact = await supabaseClient
                 .from('delivery_calendar')
                 .select(calSelect)
-                .ilike('city_name', '%' + cityName + '%')
+                .or(orFilters)
                 .order('delivery_date');
-            if (!calResLike.error && calResLike.data) likeRows = calResLike.data;
+            exactRows = (!calResExact.error && calResExact.data) ? calResExact.data : [];
+        } else {
+            calResExact = await supabaseClient
+                .from('delivery_calendar')
+                .select(calSelect)
+                .eq('city_name', cityName)
+                .order('delivery_date');
+            exactRows = (!calResExact.error && calResExact.data) ? calResExact.data : [];
+            if (!calResExact.error) {
+                var calResLike = await supabaseClient
+                    .from('delivery_calendar')
+                    .select(calSelect)
+                    .ilike('city_name', '%' + cityName + '%')
+                    .order('delivery_date');
+                if (!calResLike.error && calResLike.data) likeRows = calResLike.data;
+            }
         }
 
         var allRows = exactRows.concat(likeRows);
@@ -3467,6 +3513,15 @@ async function loadDeliveryDate(cityName) {
 
         var preferredGroupKey = getPreferredDeliveryCalendarGroupKey_(cityName, cityName, groupedRows);
         var matchedRows = preferredGroupKey && groupedRows[preferredGroupKey] ? groupedRows[preferredGroupKey] : [];
+        if (matchedRows.length === 0 && queryCandidates.length > 0) {
+            for (var qc = 0; qc < queryCandidates.length; qc++) {
+                var candidateKey = normalizeDeliveryCalendarGroupKey_(queryCandidates[qc]);
+                if (candidateKey && groupedRows[candidateKey]) {
+                    matchedRows = groupedRows[candidateKey];
+                    break;
+                }
+            }
+        }
 
         if (matchedRows.length === 0 && exactRows.length > 0) matchedRows = exactRows;
         if (matchedRows.length > 0) {
