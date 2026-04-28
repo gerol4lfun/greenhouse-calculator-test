@@ -17799,11 +17799,19 @@ var _orderCalSlots = [];        // ISO strings of available delivery dates
 var _orderCalSelected = '';     // currently selected ISO date
 var ORDER_CAL_DAYS_AHEAD = 90;  // generate slots for N days ahead
 
+function getValidOrderCalendarBaseISO_(baseDateStr) {
+    if (!baseDateStr) return '';
+    var raw = String(baseDateStr).trim();
+    if (!raw) return '';
+    var iso = raw.indexOf('.') !== -1 ? deliveryDateDdMmToISO(raw) : normalizeDeliveryCalendarISO(raw);
+    if (!iso) return '';
+    return iso > getTodayMoscowISO() ? iso : '';
+}
+
 /** Build available delivery slots: every day from base date for ORDER_CAL_DAYS_AHEAD days */
 function buildDeliverySlots(baseDateStr) {
     var slots = [];
-    if (!baseDateStr) return slots;
-    var iso = deliveryDateDdMmToISO(baseDateStr);
+    var iso = getValidOrderCalendarBaseISO_(baseDateStr);
     if (!iso) return slots;
     var parts = iso.split('-');
     var base = new Date(+parts[0], +parts[1] - 1, +parts[2]);
@@ -17846,10 +17854,16 @@ function populateOrderDeliveryDate() {
             if (loaded) {
                 _initCalendarWithDate(loaded);
             } else {
-                display.value = '';
-                display.placeholder = '— Нет даты для города —';
-                hidden.value = '';
                 _orderCalSlots = [];
+                _orderCalSelected = '';
+                hidden.value = '';
+                display.value = '';
+                if (deliveryDatesFromCalendar) {
+                    display.placeholder = '— Нет даты для города —';
+                } else {
+                    console.warn('populateOrderDeliveryDate: fallback date unavailable/stale, using default create date');
+                    setOrderDeliveryDateDefaultToday_();
+                }
             }
         }).catch(function (err) {
             console.error('populateOrderDeliveryDate async error:', err);
@@ -17918,11 +17932,18 @@ function toggleOrderCalendar() {
             var v = display.value.trim();
             if (v && typeof deliveryDateDdMmToISO === 'function' && deliveryDateDdMmToISO(v)) baseDateStr = v;
         }
-        if (!baseDateStr) {
-            var now = getMoscowTodayDateObject();
-            baseDateStr = String(now.getDate()).padStart(2, '0') + '.' + String(now.getMonth() + 1).padStart(2, '0') + '.' + now.getFullYear();
+        var baseIso = getValidOrderCalendarBaseISO_(baseDateStr);
+        if (!baseIso) {
+            var defaultIso = getDefaultCreateDeliveryDateISO_();
+            if (defaultIso) {
+                _initCalendarWithDate(defaultIso);
+            } else {
+                var now = getMoscowTodayDateObject();
+                _orderCalMonth = { year: now.getFullYear(), month: now.getMonth() };
+            }
+        } else {
+            _initCalendarWithDate(baseIso);
         }
-        _initCalendarWithDate(baseDateStr);
     }
     if (!_orderCalMonth) {
         var now = getMoscowTodayDateObject();
