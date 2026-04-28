@@ -1374,6 +1374,12 @@ function isAdminSession_() {
 const ASSEMBLY_SPECIAL_PRICE_FACTOR = 0.7;
 const ASSEMBLY_SPECIAL_COMMENT = 'скидка на сборку 30%';
 const ASSEMBLY_SPECIAL_PRICE_CITIES = [
+    'Воронеж',
+    'Белгород',
+    'Липецк',
+    'Тамбов',
+    'Орел',
+    'Курск',
     'Екатеринбург',
     'Ярославль',
     'Санкт-Петербург',
