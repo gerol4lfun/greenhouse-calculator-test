@@ -8154,9 +8154,16 @@ async function loadDeliveryDatesModalData(initialCity) {
         } else {
             var fd = deliveryDatesByCity[city];
             if (fd && fd.delivery_date) {
-                var isoD = typeof deliveryDateDdMmToISO === 'function' ? deliveryDateDdMmToISO(fd.delivery_date) : null;
-                nw = isoD;
-                naw = fd.assembly_date && typeof deliveryDateDdMmToISO === 'function' ? deliveryDateDdMmToISO(fd.assembly_date) : isoD;
+                var sanitizedModalDates = sanitizeFallbackDeliveryDates_(fd.delivery_date, fd.assembly_date || null);
+                if (sanitizedModalDates.valid) {
+                    var isoD = typeof deliveryDateDdMmToISO === 'function' ? deliveryDateDdMmToISO(sanitizedModalDates.deliveryDate) : null;
+                    nw = isoD;
+                    naw = sanitizedModalDates.assemblyDate && typeof deliveryDateDdMmToISO === 'function'
+                        ? deliveryDateDdMmToISO(sanitizedModalDates.assemblyDate)
+                        : isoD;
+                } else if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('loadDeliveryDatesModalData: stale fallback delivery_dates ignored for city', city, fd.delivery_date, fd.assembly_date || null);
+                }
             }
         }
         _deliveryModalCitySummary.push({
