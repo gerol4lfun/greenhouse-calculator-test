@@ -2985,6 +2985,33 @@ function isoDateToDdMm(iso) {
     return p[2] + '.' + p[1];
 }
 
+function fallbackDeliveryDdMmToCurrentYearISO_(value) {
+    if (!value || typeof value !== 'string') return '';
+    var raw = String(value).trim();
+    if (!raw) return '';
+    var parts = raw.split('.');
+    if (parts.length < 2) return '';
+    var day = parseInt(parts[0], 10);
+    var month = parseInt(parts[1], 10);
+    if (!isFinite(day) || !isFinite(month) || day < 1 || day > 31 || month < 1 || month > 12) return '';
+    var year = getTodayMoscowISO().slice(0, 4);
+    return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+
+function sanitizeFallbackDeliveryDates_(deliveryDate, assemblyDate) {
+    var todayISO = getTodayMoscowISO();
+    var deliveryIso = fallbackDeliveryDdMmToCurrentYearISO_(deliveryDate);
+    if (!deliveryIso || deliveryIso <= todayISO) {
+        return { valid: false, deliveryDate: null, assemblyDate: null };
+    }
+    var assemblyIso = fallbackDeliveryDdMmToCurrentYearISO_(assemblyDate || '');
+    return {
+        valid: true,
+        deliveryDate: String(deliveryDate || '').trim(),
+        assemblyDate: assemblyIso && assemblyIso > todayISO ? String(assemblyDate || '').trim() : null
+    };
+}
+
 function normalizeDeliveryCalendarISO(value) {
     if (!value) return null;
     var iso = typeof value === 'string' ? value : String(value);
@@ -3540,15 +3567,30 @@ async function loadDeliveryDate(cityName) {
                 });
                 if (found) {
                     if (DEBUG) console.log(`Найдена дата для "${cityName}" через "${found.city_name}": ${found.delivery_date}`);
+                    var sanitizedFoundDates = sanitizeFallbackDeliveryDates_(found.delivery_date, found.assembly_date || null);
+                    if (!sanitizedFoundDates.valid) {
+                        if (typeof console !== 'undefined' && console.warn) {
+                            console.warn('loadDeliveryDate: stale fallback delivery_dates ignored for city', cityName, found.delivery_date, found.assembly_date || null);
+                        }
+                        currentDeliveryDate = null;
+                        currentDeliveryAssemblyDate = null;
+                        currentDeliveryRestrictions = null;
+                        deliveryDatesFromCalendar = false;
+                        currentAvailableDatesWithoutAssembly = [];
+                        currentAvailableDatesWithAssembly = [];
+                        currentDeliveryDateStateMap = Object.create(null);
+                        updateDeliveryDateDisplay();
+                        return null;
+                    }
                     deliveryDatesFromCalendar = false;
                     currentAvailableDatesWithoutAssembly = [];
                     currentAvailableDatesWithAssembly = [];
                     currentDeliveryDateStateMap = Object.create(null);
-                    currentDeliveryDate = found.delivery_date;
-                    currentDeliveryAssemblyDate = found.assembly_date || null;
+                    currentDeliveryDate = sanitizedFoundDates.deliveryDate;
+                    currentDeliveryAssemblyDate = sanitizedFoundDates.assemblyDate;
                     currentDeliveryRestrictions = found.restrictions || null;
                     updateDeliveryDateDisplay();
-                    return found.delivery_date;
+                    return sanitizedFoundDates.deliveryDate;
                 }
             }
             
@@ -3564,15 +3606,30 @@ async function loadDeliveryDate(cityName) {
         }
 
         // НЕ используем "Город доставки" — источник истины только канонические города (fallback delivery_dates)
+        var sanitizedDates = sanitizeFallbackDeliveryDates_(data.delivery_date, data.assembly_date || null);
+        if (!sanitizedDates.valid) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('loadDeliveryDate: stale exact fallback delivery_dates ignored for city', cityName, data.delivery_date, data.assembly_date || null);
+            }
+            currentDeliveryDate = null;
+            currentDeliveryAssemblyDate = null;
+            currentDeliveryRestrictions = null;
+            deliveryDatesFromCalendar = false;
+            currentAvailableDatesWithoutAssembly = [];
+            currentAvailableDatesWithAssembly = [];
+            currentDeliveryDateStateMap = Object.create(null);
+            updateDeliveryDateDisplay();
+            return null;
+        }
         deliveryDatesFromCalendar = false;
         currentAvailableDatesWithoutAssembly = [];
         currentAvailableDatesWithAssembly = [];
         currentDeliveryDateStateMap = Object.create(null);
-        currentDeliveryDate = data.delivery_date;
-        currentDeliveryAssemblyDate = data.assembly_date || null;
+        currentDeliveryDate = sanitizedDates.deliveryDate;
+        currentDeliveryAssemblyDate = sanitizedDates.assemblyDate;
         currentDeliveryRestrictions = data.restrictions || null;
         updateDeliveryDateDisplay();
-        return data.delivery_date;
+        return sanitizedDates.deliveryDate;
     } catch (err) {
         console.error("Ошибка при загрузке даты доставки:", err);
         currentDeliveryDate = null;
