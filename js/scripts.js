@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v308"; // v308: обновлены цены на сборку грядок; legacy flow unchanged
+const APP_VERSION = "v309"; // v309: доставка старого контура выбирает ближайший склад, цены остаются по региону
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1027,6 +1027,104 @@ const citiesForMap = [
     { name: "Черкесск", coords: [44.226863, 42.046782], boundaryDistance: 10, pricePerKm: 50 },
     { name: "Ярославль", coords: [57.626559, 39.893813], boundaryDistance: 10, pricePerKm: 50 }
 ];
+
+const LEGACY_DELIVERY_ROUTE_CANDIDATE_LIMIT_ = 5;
+
+function calculateStraightDistanceKm_(coordsA, coordsB) {
+    if (!Array.isArray(coordsA) || !Array.isArray(coordsB) || coordsA.length < 2 || coordsB.length < 2) return Infinity;
+    var lat1 = Number(coordsA[0]);
+    var lon1 = Number(coordsA[1]);
+    var lat2 = Number(coordsB[0]);
+    var lon2 = Number(coordsB[1]);
+    if (!isFinite(lat1) || !isFinite(lon1) || !isFinite(lat2) || !isFinite(lon2)) return Infinity;
+    var toRad = function (deg) { return deg * Math.PI / 180; };
+    var earthRadiusKm = 6371;
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+}
+
+function getNearestLegacyWarehouseCandidatesByStraightDistance_(destinationCoords, selectedCity) {
+    var byName = Object.create(null);
+    var candidates = (citiesForMap || [])
+        .filter(function (city) { return city && Array.isArray(city.coords); })
+        .map(function (city) {
+            return {
+                city: city,
+                straightDistanceKm: calculateStraightDistanceKm_(city.coords, destinationCoords)
+            };
+        })
+        .filter(function (item) { return isFinite(item.straightDistanceKm); })
+        .sort(function (a, b) { return a.straightDistanceKm - b.straightDistanceKm; })
+        .slice(0, LEGACY_DELIVERY_ROUTE_CANDIDATE_LIMIT_);
+
+    if (selectedCity && selectedCity.name) {
+        var selectedAlreadyIncluded = candidates.some(function (item) {
+            return normalizeCityName(item.city.name) === normalizeCityName(selectedCity.name);
+        });
+        if (!selectedAlreadyIncluded) {
+            candidates.push({
+                city: selectedCity,
+                straightDistanceKm: calculateStraightDistanceKm_(selectedCity.coords, destinationCoords)
+            });
+        }
+    }
+
+    return candidates.filter(function (item) {
+        var key = normalizeCityName(item.city.name);
+        if (!key || byName[key]) return false;
+        byName[key] = true;
+        return true;
+    });
+}
+
+async function resolveNearestLegacyDeliveryOriginCity_(destinationCoords, selectedCity) {
+    if (!Array.isArray(destinationCoords) || destinationCoords.length < 2) {
+        return { ok: false, error: 'Не удалось определить координаты адреса.' };
+    }
+    if (typeof ymaps === 'undefined') {
+        return { ok: false, error: 'Яндекс.Карты недоступны' };
+    }
+
+    var candidates = getNearestLegacyWarehouseCandidatesByStraightDistance_(destinationCoords, selectedCity);
+    if (!candidates.length && selectedCity) {
+        candidates = [{ city: selectedCity, straightDistanceKm: 0 }];
+    }
+    if (!candidates.length) {
+        return { ok: false, error: 'Не удалось подобрать склад доставки.' };
+    }
+
+    var best = null;
+    for (var i = 0; i < candidates.length; i++) {
+        var candidate = candidates[i];
+        try {
+            var route = await ymaps.route([candidate.city.coords, destinationCoords]);
+            var distanceKm = route.getLength() / 1000;
+            if (!best || distanceKm < best.distanceKm) {
+                best = {
+                    city: candidate.city,
+                    route: route,
+                    distanceKm: distanceKm,
+                    straightDistanceKm: candidate.straightDistanceKm
+                };
+            }
+        } catch (e) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('resolveNearestLegacyDeliveryOriginCity_: route failed for ' + candidate.city.name, e);
+            }
+        }
+    }
+
+    if (!best) {
+        return { ok: false, error: 'Не удалось построить маршрут от ближайших складов.' };
+    }
+
+    return { ok: true, city: best.city, route: best.route, distanceKm: best.distanceKm };
+}
 
 function getGeoObjectRegionMeta_(geoObject) {
     if (!geoObject) return { localities: [], administrativeAreas: [] };
@@ -4995,7 +5093,8 @@ async function performCalculation(city, form, width, length, frame, polycarbonat
 
 /**
  * Боевой расчёт стоимости доставки по адресу для старого контура.
- * Точка A = центр города, который передан в функцию или уже выбран/сохранён в текущем контуре.
+ * Точка A = ближайший склад из списка старого контура доставки.
+ * Город цен/календаря остаётся выбранным по региону клиента и не подменяется ближайшим складом.
  * Точка B = адрес клиента.
  * Формула: 50 руб/км, но не менее 1000 руб.
  * Используется в create flow и edit flow.
@@ -5036,12 +5135,22 @@ async function calculateDeliveryCostFromAddress(address, selectedCityName, preGe
         var destinationLat = coords[0];
         var destinationLon = coords[1];
 
-        setDeliveryCalculationUiState_(true, 'Строим маршрут от центра выбранного города.');
-        var route = await ymaps.route([selectedCity.coords, [destinationLat, destinationLon]]);
-        var distanceInKm = route.getLength() / 1000;
+        var destinationCoords = [destinationLat, destinationLon];
+        setDeliveryCalculationUiState_(true, 'Выбираем ближайший склад и строим маршрут.');
+        var originResolved = await resolveNearestLegacyDeliveryOriginCity_(destinationCoords, selectedCity);
+        if (!originResolved.ok) return { ok: false, error: originResolved.error || 'Не удалось определить склад доставки.' };
+        var route = originResolved.route;
+        var distanceInKm = originResolved.distanceKm;
         var cost = calculateLegacyDeliveryCost_(distanceInKm);
 
-        return { ok: true, cost: cost, nearestCity: selectedCity, route: route };
+        return {
+            ok: true,
+            cost: cost,
+            nearestCity: originResolved.city,
+            priceCity: selectedCity,
+            route: route,
+            distanceKm: distanceInKm
+        };
     } catch (e) {
         return { ok: false, error: (e && e.message) ? e.message : 'Ошибка при расчёте' };
     }
@@ -5201,7 +5310,14 @@ async function calculateDelivery() {
             await refreshCurrentUgOfferWithDelivery_();
         } else {
             currentUgDeliveryContext = null;
-            costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + result.nearestCity.name + ')</div>';
+            var priceCityName = result.priceCity && result.priceCity.name ? result.priceCity.name : '';
+            var originCityName = result.nearestCity && result.nearestCity.name ? result.nearestCity.name : '';
+            if (priceCityName && originCityName && normalizeCityName(priceCityName) !== normalizeCityName(originCityName)) {
+                costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей</div>' +
+                    '<div class="delivery-result-meta">Доставка от склада: ' + escapeHtml(originCityName) + ' · цены теплицы: ' + escapeHtml(priceCityName) + '</div>';
+            } else {
+                costText = '<div class="delivery-result-cost">Стоимость доставки: ' + formatPrice(result.cost) + ' рублей (' + escapeHtml(originCityName || priceCityName) + ')</div>';
+            }
             dateData = getDeliveryDateBlockForUI();
             document.getElementById('result').innerHTML = renderDeliveryResultBlock(costText, dateData);
         }
