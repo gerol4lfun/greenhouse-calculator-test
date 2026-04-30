@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v309"; // v309: доставка старого контура выбирает ближайший склад, цены остаются по региону
+const APP_VERSION = "v310"; // v310: статус календаря "С" = только со сборкой
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1723,7 +1723,7 @@ let currentUgDeliveryContext = null; // Контекст тестовой дос
 /** Новый слой дат: true = данные из delivery_calendar, иначе fallback на delivery_dates */
 let deliveryDatesFromCalendar = false;
 let currentAvailableDatesWithoutAssembly = []; // ISO даты (ДС+Д), только даты > сегодня Москва
-let currentAvailableDatesWithAssembly = [];   // ISO даты (только ДС), только даты > сегодня Москва
+let currentAvailableDatesWithAssembly = [];   // ISO даты (ДС+С), только даты > сегодня Москва
 let currentDeliveryDateStateMap = Object.create(null); // { iso: { withoutAssembly, withAssembly, rawStatus } }
 let activeOfferTab = 'short'; // Активная вкладка КП: 'short' или 'long'
 let orderTextFilledBySubmit = false; // true = в «Текст заказа» только что подставили полный шаблон, не перезаписывать превью
@@ -3319,7 +3319,7 @@ function getDeliveryCalendarStateByMode_(meta, withAssembly) {
     var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return withAssembly ? 'blocked' : 'only-delivery';
-    if (rs === 'С') return withAssembly ? 'blocked' : 'only-delivery';
+    if (rs === 'С') return withAssembly ? 'only-assembly' : 'blocked';
     if (rs === 'X' || rs === 'Х') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return withAssembly ? 'blocked' : 'only-delivery';
@@ -3337,7 +3337,7 @@ function getDeliveryCalendarLegendState_(meta) {
     var rs = normalizeDeliveryCalendarRawStatus_(meta.rawStatus);
     if (rs === 'ДС') return 'available';
     if (rs === 'Д') return 'only-delivery';
-    if (rs === 'С') return 'only-delivery';
+    if (rs === 'С') return 'only-assembly';
     if (rs === 'X' || rs === 'Х') return 'blocked';
     if (meta.withoutAssembly && meta.withAssembly) return 'available';
     if (meta.withoutAssembly && !meta.withAssembly) return 'only-delivery';
@@ -3517,13 +3517,12 @@ function applyDeliveryCalendarRows(rows, todayMoscow) {
     var withoutAssembly = [];
     var withAssembly = [];
     var stateMap = buildDeliveryCalendarStateMap_(rows);
-    for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        var iso = normalizeDeliveryCalendarISO(r && r.delivery_date);
-        if (!iso) continue;
+    var stateDates = Object.keys(stateMap).sort();
+    for (var i = 0; i < stateDates.length; i++) {
+        var iso = stateDates[i];
         if (iso <= todayMoscow) continue;
-        if (r && r.available_without_assembly) withoutAssembly.push(iso);
-        if (r && r.available_with_assembly) withAssembly.push(iso);
+        if (isDeliveryCalendarStateSelectable_(getDeliveryCalendarStateByMode_(stateMap[iso], false))) withoutAssembly.push(iso);
+        if (isDeliveryCalendarStateSelectable_(getDeliveryCalendarStateByMode_(stateMap[iso], true))) withAssembly.push(iso);
     }
     deliveryDatesFromCalendar = true;
     currentAvailableDatesWithoutAssembly = withoutAssembly;
