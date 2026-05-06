@@ -1,7 +1,7 @@
 
 // Константа для контроля отладки
 const DEBUG = false; // Отключено для продакшена
-const APP_VERSION = "v310"; // v310: статус календаря "С" = только со сборкой
+const APP_VERSION = "v311"; // v311: обновлено количество штырей без бруса
 
 /** Пороги подарков по сумме заказа (slot model). Источник: docs/GIFT_TRUTH.md */
 const GIFT_THRESHOLDS = { slot1: 35000, slot2: 55000, slot3: 75000 };
@@ -1321,7 +1321,7 @@ const additionalServicesData = {
     "Штыри": {
         price_per_unit: 249,
         quantity_by_length: {
-            "without_bracing": { "4": 10, "6": 14, "8": 18, "10": 22, "12": 26, "14": 30, "16": 34 },
+            "without_bracing": { "4": 12, "6": 16, "8": 20, "10": 24, "12": 28, "14": 30, "16": 34 },
             "with_bracing": { "4": 6, "6": 10, "8": 14, "10": 18, "12": 22, "14": 26, "16": 30 }
         }
     }
